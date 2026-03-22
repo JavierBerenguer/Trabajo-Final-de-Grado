@@ -1,0 +1,163 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>Example_40Series</title><meta name="generator" content="MATLAB 9.7"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2020-07-11"><meta name="DC.source" content="Example_40Series.m"><style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img, h1 img, h2 img { margin-bottom:0px; } 
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, code { font-size:12px; }
+tt { font-size: 1.2em; }
+pre { margin:0px 0px 20px; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+pre.error { color:red; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style></head><body><div class="content"><h2>Contents</h2><div><ul><li><a href="#2">Example 40 Unit 4: Association of reactors. Reactor Desing I.</a></li><li><a href="#3">Solve question a and b</a></li><li><a href="#4">Kinetics</a></li></ul></div><pre class="codeinput">clear, close, clc
+</pre><h2 id="2">Example 40 Unit 4: Association of reactors. Reactor Desing I.</h2><p>The irreversible gas phase reaction A + B &reg; C is performed at 227&deg;C and 10 atm. The reaction rate (mol/(L&middot;min)) in terms of the conversion is: r_A = 0.0167 ? 0.023(XA ? 0.1)+ 0.0234(XA? 0.1)(XA ? 0.7) A feeding of 1 L/s containing 41% A, 41% B and 18% inerts (in molar basis) is going to be processed. a) What is the total conversion if two continuous stirred tank reactors of 400 L each are connected in series? b) What is the conversion if the two previous reactors are connected in parallel, with a volumetric flow rate entering each one being half of the initial? c) What is the volume of the plug flow reactor necessary to achieve a conversion of 0.6 if the total molar flow of feeding is 2 mol/min, being the composition of the feeding the same as in previous cases?</p><p>Source: Department of Chemical Engineering, University of Alicante.</p><pre class="codeinput"><span class="keyword">global</span> Feed
+
+RS = ReactionSys ;
+RS.stochiometricMatrix = [-1 -1 1 0] ; <span class="comment">% A B C Inerts</span>
+RS.userDefinedKinetics = @(concentration,T) userDefinedKinetics(concentration,T) ;
+
+Feed = Stream ;
+Feed.phase = <span class="string">'G'</span> ;
+Feed.volumetricFlow = 1/1000 ; <span class="comment">%m^3/s</span>
+Feed.P = 10*101325 ; <span class="comment">% Pa</span>
+Feed.T = 227 + 273.15 ; <span class="comment">%K</span>
+Feed.molarFlow = (Feed.P*Feed.volumetricFlow/8.314/Feed.T) * [0.41 0.41 0 0.18] ; <span class="comment">%mol/s</span>
+
+R = CSTR ;
+R.V = 400/1000 ; <span class="comment">% m^3</span>
+R.heatMode = <span class="string">'Isothermal'</span> ;
+</pre><h2 id="3">Solve question a and b</h2><pre class="codeinput">sequence1 = {R,R} ;
+auxReactorObj = Reactor ;
+[Product1 sequence1] = compute_parallel(auxReactorObj,Feed,RS,sequence1) ;
+XA = (Feed.molarFlow(1) - Product1.molarFlow(1))/Feed.molarFlow(1) ;
+</pre><h2 id="4">Kinetics</h2><pre class="codeinput"><span class="keyword">function</span> r_i = userDefinedKinetics(concentration,T)
+<span class="keyword">global</span> Feed
+
+cA = concentration(1) ;
+nA0 = Feed.molarFlow(1) ;
+Qv0 = Feed.volumetricFlow ;
+P = 10* 101325 ; <span class="comment">%Pa</span>
+T = 227+273.15 ; <span class="comment">%K</span>
+
+XA = (cA*Qv0-nA0)*Feed.P/(nA0*(cA*8.314*Feed.T-Feed.P)) ;
+
+r_i = 0.0167 - 0.023* (XA-0.1) + 0.0234*(XA-0.1)*(XA-0.7) ; <span class="comment">%mol/L/min</span>
+r_i = r_i * 1000/60 ; <span class="comment">%mol/m^3/s</span>
+<span class="keyword">end</span>
+</pre><p class="footer"><br><a href="https://www.mathworks.com/products/matlab/">Published with MATLAB&reg; R2019b</a><br></p></div><!--
+##### SOURCE BEGIN #####
+clear, close, clc
+
+%% Example 40 Unit 4: Association of reactors. Reactor Desing I.
+% 
+% The irreversible gas phase reaction A + B ® C is performed at 227°C and 10 atm. The
+% reaction rate (mol/(L·min)) in terms of the conversion is:
+% r_A = 0.0167 ? 0.023(XA ? 0.1)+ 0.0234(XA? 0.1)(XA ? 0.7)
+% A feeding of 1 L/s containing 41% A, 41% B and 18% inerts (in molar basis) is going to be
+% processed.
+% a) What is the total conversion if two continuous stirred tank reactors of 400 L each are
+% connected in series?
+% b) What is the conversion if the two previous reactors are connected in parallel, with a
+% volumetric flow rate entering each one being half of the initial?
+% c) What is the volume of the plug flow reactor necessary to achieve a conversion of 0.6 if
+% the total molar flow of feeding is 2 mol/min, being the composition of the feeding the
+% same as in previous cases?
+%
+% Source: Department of Chemical Engineering, University of Alicante.
+
+global Feed 
+
+RS = ReactionSys ;
+RS.stochiometricMatrix = [-1 -1 1 0] ; % A B C Inerts
+RS.userDefinedKinetics = @(concentration,T) userDefinedKinetics(concentration,T) ;
+
+Feed = Stream ;
+Feed.phase = 'G' ;
+Feed.volumetricFlow = 1/1000 ; %m^3/s
+Feed.P = 10*101325 ; % Pa
+Feed.T = 227 + 273.15 ; %K
+Feed.molarFlow = (Feed.P*Feed.volumetricFlow/8.314/Feed.T) * [0.41 0.41 0 0.18] ; %mol/s
+
+R = CSTR ;
+R.V = 400/1000 ; % m^3 
+R.heatMode = 'Isothermal' ;
+%% Solve question a and b
+sequence1 = {R,R} ;
+auxReactorObj = Reactor ;
+[Product1 sequence1] = compute_parallel(auxReactorObj,Feed,RS,sequence1) ; 
+XA = (Feed.molarFlow(1) - Product1.molarFlow(1))/Feed.molarFlow(1) ;
+
+%% Kinetics
+function r_i = userDefinedKinetics(concentration,T)
+global Feed
+
+cA = concentration(1) ; 
+nA0 = Feed.molarFlow(1) ;
+Qv0 = Feed.volumetricFlow ; 
+P = 10* 101325 ; %Pa
+T = 227+273.15 ; %K
+
+XA = (cA*Qv0-nA0)*Feed.P/(nA0*(cA*8.314*Feed.T-Feed.P)) ;
+
+r_i = 0.0167 - 0.023* (XA-0.1) + 0.0234*(XA-0.1)*(XA-0.7) ; %mol/L/min
+r_i = r_i * 1000/60 ; %mol/m^3/s
+end
+##### SOURCE END #####
+--></body></html>
