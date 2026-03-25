@@ -49,11 +49,14 @@ classdef NonIdealReactorApp < handle
         RTD_ExportButton
         RTD_ExportNameField
         RTD_ExportCounter = 1    % Auto-increment counter for export names
+        RTD_QvLabel
+        RTD_QvField
         RTD_ResultTau
         RTD_ResultSigma2
         RTD_ResultSigma2Theta
         RTD_ResultS3
         RTD_ResultN
+        RTD_ResultVeff
         RTD_AxesEt
         RTD_AxesFt
         RTD_AxesEtheta
@@ -100,6 +103,35 @@ classdef NonIdealReactorApp < handle
         TIS_AxesEt
         TIS_AxesXvsN
         TIS_AxesComparison
+
+        % ---- Tab 4: Dispersion Model ----
+        DispTab
+        Disp_InputMethodDropdown
+        Disp_RTDStatusLabel
+        Disp_BoField
+        Disp_BoLabel
+        Disp_PeLabel
+        Disp_BCDropdown
+        Disp_BCLabel
+        Disp_tauField
+        Disp_tauLabel
+        Disp_KineticsDropdown
+        Disp_KineticsLabel
+        Disp_kField
+        Disp_kLabel
+        Disp_CA0Field
+        Disp_CA0Label
+        Disp_ComputeButton
+        Disp_ResultX
+        Disp_ResultXcstr
+        Disp_ResultXpfr
+        Disp_ResultBo
+        Disp_AxesEt
+        Disp_AxesXvsBo
+        Disp_AxesComparison
+
+        % Stored dispersion model
+        disp_reactor            % DispersionReactor object
     end
 
     methods (Access = public)
@@ -120,6 +152,7 @@ classdef NonIdealReactorApp < handle
             app.createRTDTab() ;
             app.createPredictionTab() ;
             app.createTISTab() ;
+            app.createDispersionTab() ;
 
             % Show figure
             app.UIFigure.Visible = 'on' ;
@@ -140,8 +173,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'RTD Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [17 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 17) ;
+            leftGrid = uigridlayout(leftPanel, [20 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 20) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -168,172 +201,186 @@ classdef NonIdealReactorApp < handle
             app.RTD_TauField.Layout.Row = 2 ;
             app.RTD_TauField.Layout.Column = 2 ;
 
-            % Row 3: N field (for Tanks-in-Series) — shares row with Bo
+            % Row 3: Qv (volumetric flow rate) — always visible
+            app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Qv (m^3/s):') ;
+            app.RTD_QvLabel.Layout.Row = 3 ; app.RTD_QvLabel.Layout.Column = 1 ;
+            app.RTD_QvField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 0.001, 'Limits', [1e-12 Inf]) ;
+            app.RTD_QvField.Layout.Row = 3 ; app.RTD_QvField.Layout.Column = 2 ;
+
+            % Row 4: N field (for Tanks-in-Series) — shares row with Bo
             app.RTD_NLabel = uilabel(leftGrid, 'Text', 'N (tanks):') ;
-            app.RTD_NLabel.Layout.Row = 3 ; app.RTD_NLabel.Layout.Column = 1 ;
+            app.RTD_NLabel.Layout.Row = 4 ; app.RTD_NLabel.Layout.Column = 1 ;
             app.RTD_NField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 3, 'Limits', [0.1 Inf]) ;
-            app.RTD_NField.Layout.Row = 3 ; app.RTD_NField.Layout.Column = 2 ;
+            app.RTD_NField.Layout.Row = 4 ; app.RTD_NField.Layout.Column = 2 ;
             app.RTD_NLabel.Visible = 'off' ;
             app.RTD_NField.Visible = 'off' ;
 
-            % Row 3: Bo field (for Dispersion) — overlaps with N (only one visible)
+            % Row 4: Bo field (for Dispersion) — overlaps with N (only one visible)
             app.RTD_BoLabel = uilabel(leftGrid, 'Text', 'Bo (De/uL):') ;
-            app.RTD_BoLabel.Layout.Row = 3 ; app.RTD_BoLabel.Layout.Column = 1 ;
+            app.RTD_BoLabel.Layout.Row = 4 ; app.RTD_BoLabel.Layout.Column = 1 ;
             app.RTD_BoField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.01, 'Limits', [1e-6 Inf]) ;
-            app.RTD_BoField.Layout.Row = 3 ; app.RTD_BoField.Layout.Column = 2 ;
+            app.RTD_BoField.Layout.Row = 4 ; app.RTD_BoField.Layout.Column = 2 ;
             app.RTD_BoLabel.Visible = 'off' ;
             app.RTD_BoField.Visible = 'off' ;
 
-            % Row 4: Experimental t variable
+            % Row 5: Experimental t variable
             app.RTD_ExpTVarLabel = uilabel(leftGrid, 'Text', 't variable (workspace):') ;
-            app.RTD_ExpTVarLabel.Layout.Row = 4 ; app.RTD_ExpTVarLabel.Layout.Column = 1 ;
+            app.RTD_ExpTVarLabel.Layout.Row = 5 ; app.RTD_ExpTVarLabel.Layout.Column = 1 ;
             app.RTD_ExpTVarField = uieditfield(leftGrid, 'text', ...
                 'Value', 't_exp') ;
-            app.RTD_ExpTVarField.Layout.Row = 4 ; app.RTD_ExpTVarField.Layout.Column = 2 ;
+            app.RTD_ExpTVarField.Layout.Row = 5 ; app.RTD_ExpTVarField.Layout.Column = 2 ;
             app.RTD_ExpTVarLabel.Visible = 'off' ;
             app.RTD_ExpTVarField.Visible = 'off' ;
 
-            % Row 5: Experimental C variable
+            % Row 6: Experimental C variable
             app.RTD_ExpCVarLabel = uilabel(leftGrid, 'Text', 'C variable (workspace):') ;
-            app.RTD_ExpCVarLabel.Layout.Row = 5 ; app.RTD_ExpCVarLabel.Layout.Column = 1 ;
+            app.RTD_ExpCVarLabel.Layout.Row = 6 ; app.RTD_ExpCVarLabel.Layout.Column = 1 ;
             app.RTD_ExpCVarField = uieditfield(leftGrid, 'text', ...
                 'Value', 'C_exp') ;
-            app.RTD_ExpCVarField.Layout.Row = 5 ; app.RTD_ExpCVarField.Layout.Column = 2 ;
+            app.RTD_ExpCVarField.Layout.Row = 6 ; app.RTD_ExpCVarField.Layout.Column = 2 ;
             app.RTD_ExpCVarLabel.Visible = 'off' ;
             app.RTD_ExpCVarField.Visible = 'off' ;
 
-            % Row 6: C0 (step only)
+            % Row 7: C0 (step only)
             app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', 'C0 (step only):') ;
-            app.RTD_ExpC0Label.Layout.Row = 6 ; app.RTD_ExpC0Label.Layout.Column = 1 ;
+            app.RTD_ExpC0Label.Layout.Row = 7 ; app.RTD_ExpC0Label.Layout.Column = 1 ;
             app.RTD_ExpC0Field = uieditfield(leftGrid, 'numeric', ...
                 'Value', 1, 'Limits', [0 Inf]) ;
-            app.RTD_ExpC0Field.Layout.Row = 6 ; app.RTD_ExpC0Field.Layout.Column = 2 ;
+            app.RTD_ExpC0Field.Layout.Row = 7 ; app.RTD_ExpC0Field.Layout.Column = 2 ;
             app.RTD_ExpC0Label.Visible = 'off' ;
             app.RTD_ExpC0Field.Visible = 'off' ;
 
-            % Row 7: Import from file button (for experimental data)
+            % Row 8: Import from file button (for experimental data)
             app.RTD_ImportButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Import experimental data', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [1 1 1], ...
                 'FontColor', [0.8 0 0], ...
                 'ButtonPushedFcn', @(~,~) app.RTD_importFromFile()) ;
-            app.RTD_ImportButton.Layout.Row = 7 ;
+            app.RTD_ImportButton.Layout.Row = 8 ;
             app.RTD_ImportButton.Layout.Column = [1 2] ;
             app.RTD_ImportButton.Visible = 'off' ;
 
-            % Row 8: Import status label
+            % Row 9: Import status label
             app.RTD_ImportLabel = uilabel(leftGrid, 'Text', '') ;
-            app.RTD_ImportLabel.Layout.Row = 8 ;
+            app.RTD_ImportLabel.Layout.Row = 9 ;
             app.RTD_ImportLabel.Layout.Column = [1 2] ;
             app.RTD_ImportLabel.FontColor = [0 0.5 0] ;
             app.RTD_ImportLabel.Visible = 'off' ;
 
-            % Rows 3-6: Custom equation fields (for C(t) Equation)
+            % Rows 4-7: Custom equation fields (for C(t) Equation)
             % These share rows with N/Bo and Exp fields (never visible at same time)
             app.RTD_EqLabel = uilabel(leftGrid, 'Text', 'C(t) =') ;
-            app.RTD_EqLabel.Layout.Row = 3 ; app.RTD_EqLabel.Layout.Column = 1 ;
+            app.RTD_EqLabel.Layout.Row = 4 ; app.RTD_EqLabel.Layout.Column = 1 ;
             app.RTD_EqLabel.FontWeight = 'bold' ;
             app.RTD_EqLabel.Visible = 'off' ;
 
             app.RTD_EqField = uieditfield(leftGrid, 'text', ...
                 'Value', '5*exp(-2.5*t)', ...
                 'Tooltip', 'Use "t" as variable. Example: 5*exp(-2.5*t)') ;
-            app.RTD_EqField.Layout.Row = 3 ; app.RTD_EqField.Layout.Column = 2 ;
+            app.RTD_EqField.Layout.Row = 4 ; app.RTD_EqField.Layout.Column = 2 ;
             app.RTD_EqField.Visible = 'off' ;
 
             app.RTD_EqTStartLabel = uilabel(leftGrid, 'Text', 't start:') ;
-            app.RTD_EqTStartLabel.Layout.Row = 4 ; app.RTD_EqTStartLabel.Layout.Column = 1 ;
+            app.RTD_EqTStartLabel.Layout.Row = 5 ; app.RTD_EqTStartLabel.Layout.Column = 1 ;
             app.RTD_EqTStartLabel.Visible = 'off' ;
             app.RTD_EqTStartField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0, 'Limits', [0 Inf]) ;
-            app.RTD_EqTStartField.Layout.Row = 4 ; app.RTD_EqTStartField.Layout.Column = 2 ;
+            app.RTD_EqTStartField.Layout.Row = 5 ; app.RTD_EqTStartField.Layout.Column = 2 ;
             app.RTD_EqTStartField.Visible = 'off' ;
 
             app.RTD_EqTEndLabel = uilabel(leftGrid, 'Text', 't end:') ;
-            app.RTD_EqTEndLabel.Layout.Row = 5 ; app.RTD_EqTEndLabel.Layout.Column = 1 ;
+            app.RTD_EqTEndLabel.Layout.Row = 6 ; app.RTD_EqTEndLabel.Layout.Column = 1 ;
             app.RTD_EqTEndLabel.Visible = 'off' ;
             app.RTD_EqTEndField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 10, 'Limits', [0.001 Inf]) ;
-            app.RTD_EqTEndField.Layout.Row = 5 ; app.RTD_EqTEndField.Layout.Column = 2 ;
+            app.RTD_EqTEndField.Layout.Row = 6 ; app.RTD_EqTEndField.Layout.Column = 2 ;
             app.RTD_EqTEndField.Visible = 'off' ;
 
             app.RTD_EqNptsLabel = uilabel(leftGrid, 'Text', 'N points:') ;
-            app.RTD_EqNptsLabel.Layout.Row = 6 ; app.RTD_EqNptsLabel.Layout.Column = 1 ;
+            app.RTD_EqNptsLabel.Layout.Row = 7 ; app.RTD_EqNptsLabel.Layout.Column = 1 ;
             app.RTD_EqNptsLabel.Visible = 'off' ;
             app.RTD_EqNptsField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 500, 'Limits', [10 10000]) ;
-            app.RTD_EqNptsField.Layout.Row = 6 ; app.RTD_EqNptsField.Layout.Column = 2 ;
+            app.RTD_EqNptsField.Layout.Row = 7 ; app.RTD_EqNptsField.Layout.Column = 2 ;
             app.RTD_EqNptsField.Visible = 'off' ;
 
-            % Row 9: Generate button
+            % Row 10: Generate button
             app.RTD_GenerateButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Generate RTD', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
                 'ButtonPushedFcn', @(~,~) app.RTD_generate()) ;
-            app.RTD_GenerateButton.Layout.Row = 9 ;
+            app.RTD_GenerateButton.Layout.Row = 10 ;
             app.RTD_GenerateButton.Layout.Column = [1 2] ;
 
-            % Row 10: Results header
+            % Row 11: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 10 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 11: tau_m
+            % Row 12: tau_m
             lbl = uilabel(leftGrid, 'Text', 'tau_m (s):') ;
-            lbl.Layout.Row = 11 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultTau = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultTau.Layout.Row = 11 ;
+            app.RTD_ResultTau.Layout.Row = 12 ;
             app.RTD_ResultTau.Layout.Column = 2 ;
 
-            % Row 12: sigma^2
+            % Row 13: sigma^2
             lbl = uilabel(leftGrid, 'Text', 'sigma^2 (s^2):') ;
-            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultSigma2 = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultSigma2.Layout.Row = 12 ;
+            app.RTD_ResultSigma2.Layout.Row = 13 ;
             app.RTD_ResultSigma2.Layout.Column = 2 ;
 
-            % Row 13: sigma^2_theta
+            % Row 14: sigma^2_theta
             lbl = uilabel(leftGrid, 'Text', 'sigma^2_theta:') ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultSigma2Theta = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultSigma2Theta.Layout.Row = 13 ;
+            app.RTD_ResultSigma2Theta.Layout.Row = 14 ;
             app.RTD_ResultSigma2Theta.Layout.Column = 2 ;
 
-            % Row 14: s^3
+            % Row 15: s^3
             lbl = uilabel(leftGrid, 'Text', 's^3 (skewness):') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultS3 = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultS3.Layout.Row = 14 ;
+            app.RTD_ResultS3.Layout.Row = 15 ;
             app.RTD_ResultS3.Layout.Column = 2 ;
 
-            % Row 15: N_est
+            % Row 16: N_est
             lbl = uilabel(leftGrid, 'Text', 'N_est (= tau^2/sigma^2):') ;
-            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultN = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultN.Layout.Row = 15 ;
+            app.RTD_ResultN.Layout.Row = 16 ;
             app.RTD_ResultN.Layout.Column = 2 ;
 
-            % Row 16: Export name
+            % Row 17: V_eff
+            lbl = uilabel(leftGrid, 'Text', 'V_eff (m^3):') ;
+            lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
+            app.RTD_ResultVeff = uilabel(leftGrid, 'Text', '--') ;
+            app.RTD_ResultVeff.Layout.Row = 17 ;
+            app.RTD_ResultVeff.Layout.Column = 2 ;
+
+            % Row 18: Export name
             lbl = uilabel(leftGrid, 'Text', 'Export name:') ;
-            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
             app.RTD_ExportNameField = uieditfield(leftGrid, 'text', ...
                 'Value', 'RTD_1') ;
-            app.RTD_ExportNameField.Layout.Row = 16 ;
+            app.RTD_ExportNameField.Layout.Row = 18 ;
             app.RTD_ExportNameField.Layout.Column = 2 ;
 
-            % Row 17: Export button
+            % Row 19: Export button
             app.RTD_ExportButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Export RTD to Workspace', ...
                 'BackgroundColor', [0.2 0.7 0.3], ...
                 'FontColor', 'white', ...
                 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.RTD_export()) ;
-            app.RTD_ExportButton.Layout.Row = 17 ;
+            app.RTD_ExportButton.Layout.Row = 19 ;
             app.RTD_ExportButton.Layout.Column = [1 2] ;
 
             % ---- RIGHT PANEL (PLOTS) ----
@@ -347,21 +394,18 @@ classdef NonIdealReactorApp < handle
             title(app.RTD_AxesEt, 'E(t)') ;
             xlabel(app.RTD_AxesEt, 't (s)') ;
             ylabel(app.RTD_AxesEt, 'E(t) (1/s)') ;
-            grid(app.RTD_AxesEt, 'on') ;
 
             % F(t) plot
             app.RTD_AxesFt = uiaxes(plotGrid) ;
             title(app.RTD_AxesFt, 'F(t)') ;
             xlabel(app.RTD_AxesFt, 't (s)') ;
             ylabel(app.RTD_AxesFt, 'F(t)') ;
-            grid(app.RTD_AxesFt, 'on') ;
 
             % E(theta) plot
             app.RTD_AxesEtheta = uiaxes(plotGrid) ;
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
             xlabel(app.RTD_AxesEtheta, '\Theta = t/\tau') ;
             ylabel(app.RTD_AxesEtheta, 'E(\Theta)') ;
-            grid(app.RTD_AxesEtheta, 'on') ;
 
         end
 
@@ -552,6 +596,11 @@ classdef NonIdealReactorApp < handle
                 N_est = app.rtd.tau^2 / app.rtd.sigma2 ;
                 app.RTD_ResultN.Text = sprintf('%.2f', N_est) ;
             end
+
+            % V_eff = tau * Qv
+            Qv = app.RTD_QvField.Value ;
+            V_eff = app.rtd.tau * Qv ;
+            app.RTD_ResultVeff.Text = sprintf('%.6g', V_eff) ;
         end
 
         function RTD_updatePlots(app)
@@ -561,13 +610,22 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
+            % Build equation strings based on RTD source
+            [eq_Et, eq_Ft, eq_Etheta] = app.RTD_getEquationStrings() ;
+
             % E(t) plot
             cla(app.RTD_AxesEt) ;
             plot(app.RTD_AxesEt, app.rtd.t, app.rtd.Et, 'b-', 'LineWidth', 1.5) ;
             title(app.RTD_AxesEt, 'E(t)') ;
             xlabel(app.RTD_AxesEt, 't (s)') ;
             ylabel(app.RTD_AxesEt, 'E(t) (1/s)') ;
-            grid(app.RTD_AxesEt, 'on') ;
+            if ~isempty(eq_Et)
+                text(app.RTD_AxesEt, 0.95, 0.90, eq_Et, ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'right', ...
+                    'VerticalAlignment', 'top', 'FontSize', 9, ...
+                    'Interpreter', 'tex', ...
+                    'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
+            end
 
             % F(t) plot
             cla(app.RTD_AxesFt) ;
@@ -575,8 +633,14 @@ classdef NonIdealReactorApp < handle
             title(app.RTD_AxesFt, 'F(t)') ;
             xlabel(app.RTD_AxesFt, 't (s)') ;
             ylabel(app.RTD_AxesFt, 'F(t)') ;
-            grid(app.RTD_AxesFt, 'on') ;
             ylim(app.RTD_AxesFt, [0 1.05]) ;
+            if ~isempty(eq_Ft)
+                text(app.RTD_AxesFt, 0.95, 0.50, eq_Ft, ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'right', ...
+                    'VerticalAlignment', 'top', 'FontSize', 9, ...
+                    'Interpreter', 'tex', ...
+                    'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
+            end
 
             % E(theta) plot
             cla(app.RTD_AxesEtheta) ;
@@ -587,7 +651,66 @@ classdef NonIdealReactorApp < handle
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
             xlabel(app.RTD_AxesEtheta, '\Theta = t/\tau') ;
             ylabel(app.RTD_AxesEtheta, 'E(\Theta)') ;
-            grid(app.RTD_AxesEtheta, 'on') ;
+            if ~isempty(eq_Etheta)
+                text(app.RTD_AxesEtheta, 0.95, 0.90, eq_Etheta, ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'right', ...
+                    'VerticalAlignment', 'top', 'FontSize', 9, ...
+                    'Interpreter', 'tex', ...
+                    'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
+            end
+        end
+
+        function [eq_Et, eq_Ft, eq_Etheta] = RTD_getEquationStrings(app)
+            % Return LaTeX-like equation strings for each RTD plot
+            % based on the current RTD source type
+
+            eq_Et = '' ;
+            eq_Ft = '' ;
+            eq_Etheta = '' ;
+
+            source = app.RTD_SourceDropdown.Value ;
+            tau = app.rtd.tau ;
+
+            switch source
+                case 'Ideal CSTR'
+                    eq_Et = sprintf('E(t) = (1/\\tau) e^{-t/\\tau},  \\tau = %.4g', tau) ;
+                    eq_Ft = sprintf('F(t) = 1 - e^{-t/\\tau}') ;
+                    eq_Etheta = 'E(\Theta) = e^{-\Theta}' ;
+
+                case 'Ideal PFR'
+                    eq_Et = sprintf('E(t) = \\delta(t - \\tau),  \\tau = %.4g', tau) ;
+                    eq_Ft = sprintf('F(t) = H(t - \\tau)') ;
+                    eq_Etheta = 'E(\Theta) = \delta(\Theta - 1)' ;
+
+                case 'Tanks-in-Series'
+                    N = app.RTD_NField.Value ;
+                    eq_Et = sprintf('E(t) = \\frac{t^{N-1}}{(N-1)! \\tau_i^N} e^{-t/\\tau_i},  N=%.4g', N) ;
+                    eq_Ft = 'F(t) = 1 - e^{-t/\tau_i} \Sigma' ;
+                    eq_Etheta = sprintf('E(\\Theta) = \\frac{N(N\\Theta)^{N-1}}{(N-1)!} e^{-N\\Theta},  N=%.4g', N) ;
+
+                case 'Dispersion (open)'
+                    Bo = app.RTD_BoField.Value ;
+                    eq_Et = sprintf('E(t) = \\frac{1}{\\tau\\sqrt{4\\pi Bo}} e^{-(1-t/\\tau)^2/4Bo},  Bo=%.4g', Bo) ;
+                    eq_Ft = 'F(t) = \int_0^t E(t'') dt''' ;
+                    eq_Etheta = sprintf('\\sigma^2_\\Theta = 2Bo + 8Bo^2,  Bo=%.4g', Bo) ;
+
+                case 'Dispersion (closed)'
+                    Bo = app.RTD_BoField.Value ;
+                    eq_Et = sprintf('Danckwerts closed-closed,  Bo=%.4g', Bo) ;
+                    eq_Ft = 'F(t) = \int_0^t E(t'') dt''' ;
+                    eq_Etheta = sprintf('\\sigma^2_\\Theta = 2Bo - 2Bo^2(1-e^{-1/Bo}),  Bo=%.4g', Bo) ;
+
+                case 'C(t) Equation'
+                    eq_str = app.RTD_EqField.Value ;
+                    eq_Et = sprintf('C(t) = %s', eq_str) ;
+                    eq_Ft = sprintf('\\tau_m = %.4g s', tau) ;
+                    eq_Etheta = sprintf('\\sigma^2_\\Theta = %.4g', app.rtd.sigma2_theta) ;
+
+                case {'Experimental Pulse', 'Experimental Step'}
+                    eq_Et = sprintf('Experimental data,  \\tau_m = %.4g s', tau) ;
+                    eq_Ft = sprintf('\\sigma^2 = %.4g s^2', app.rtd.sigma2) ;
+                    eq_Etheta = sprintf('\\sigma^2_\\Theta = %.4g', app.rtd.sigma2_theta) ;
+            end
         end
 
         function RTD_export(app)
@@ -954,7 +1077,7 @@ classdef NonIdealReactorApp < handle
             lbl = uilabel(leftGrid, 'Text', 'N method:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
             app.TIS_NMethodDropdown = uidropdown(leftGrid, ...
-                'Items', {'Manual', 'From RTD (Tab 1)'}, ...
+                'Items', {'Manual', 'From calculated data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.TIS_NMethodChanged()) ;
             app.TIS_NMethodDropdown.Layout.Row = 1 ;
@@ -1084,24 +1207,51 @@ classdef NonIdealReactorApp < handle
 
         function TIS_NMethodChanged(app)
             source = app.TIS_NMethodDropdown.Value ;
-            if contains(source, 'From RTD')
-                % Auto-compute N from RTD variance
+            if contains(source, 'From calculated')
+                % Auto-compute N from RTD variance + import k from Prediction
                 app.TIS_NField.Enable = 'off' ;
+                app.TIS_tauField.Enable = 'off' ;
+                app.TIS_kField.Enable = 'off' ;
+                app.TIS_KineticsDropdown.Enable = 'off' ;
+                app.TIS_CA0Field.Enable = 'off' ;
                 app.TIS_RTDStatusLabel.Visible = 'on' ;
+
+                infoLines = {} ;
+
+                % Import RTD data (tau, sigma2 -> N)
                 if ~isempty(app.rtd) && app.rtd.sigma2 > 0
                     N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
                     app.TIS_NField.Value = N_from_rtd ;
-                    app.TIS_RTDStatusLabel.Text = sprintf( ...
-                        'RTD: tau=%.2f, sigma2=%.2f -> N=%.2f', ...
-                        app.rtd.tau, app.rtd.sigma2, N_from_rtd) ;
-                    app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
                     app.TIS_tauField.Value = app.rtd.tau ;
+                    infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
+                        app.rtd.tau, N_from_rtd) ;
                 else
-                    app.TIS_RTDStatusLabel.Text = 'RTD: not loaded (generate in Tab 1)' ;
-                    app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                    infoLines{end+1} = 'RTD: not loaded' ;
                 end
+
+                % Import kinetics from Prediction Models tab
+                if ~isempty(app.Pred_kField) && app.Pred_kField.Value > 0
+                    app.TIS_kField.Value = app.Pred_kField.Value ;
+                    app.TIS_KineticsDropdown.Value = app.Pred_KineticsDropdown.Value ;
+                    app.TIS_kineticsChanged() ;  % update CA0 visibility
+                    if ~isempty(app.Pred_CA0Field)
+                        app.TIS_CA0Field.Value = app.Pred_CA0Field.Value ;
+                    end
+                    infoLines{end+1} = sprintf('k=%.4g', app.Pred_kField.Value) ;
+                end
+
+                if any(contains(infoLines, 'not loaded'))
+                    app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                else
+                    app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
+                end
+                app.TIS_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
             else
                 app.TIS_NField.Enable = 'on' ;
+                app.TIS_tauField.Enable = 'on' ;
+                app.TIS_kField.Enable = 'on' ;
+                app.TIS_KineticsDropdown.Enable = 'on' ;
+                app.TIS_CA0Field.Enable = 'on' ;
                 app.TIS_RTDStatusLabel.Visible = 'off' ;
             end
         end
@@ -1267,6 +1417,422 @@ classdef NonIdealReactorApp < handle
                     'Color', txtColor) ;
             end
             hold(app.TIS_AxesComparison, 'off') ;
+        end
+
+        %% ============== TAB 4: DISPERSION MODEL ==============
+
+        function createDispersionTab(app)
+
+            app.DispTab = uitab(app.TabGroup, 'Title', 'Dispersion Model') ;
+
+            mainGrid = uigridlayout(app.DispTab, [1 2]) ;
+            mainGrid.ColumnWidth = {320, '1x'} ;
+
+            % ---- LEFT PANEL ----
+            leftPanel = uipanel(mainGrid, 'Title', 'Dispersion Configuration') ;
+            leftGrid = uigridlayout(leftPanel, [17 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 17) ;
+            leftGrid.ColumnWidth = {'1x', '1x'} ;
+            leftGrid.Padding = [10 10 10 10] ;
+            leftGrid.RowSpacing = 5 ;
+
+            % Row 1: Input method
+            lbl = uilabel(leftGrid, 'Text', 'Input:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
+            app.Disp_InputMethodDropdown = uidropdown(leftGrid, ...
+                'Items', {'Manual', 'From calculated data'}, ...
+                'Value', 'Manual', ...
+                'ValueChangedFcn', @(~,~) app.Disp_inputMethodChanged()) ;
+            app.Disp_InputMethodDropdown.Layout.Row = 1 ;
+            app.Disp_InputMethodDropdown.Layout.Column = 2 ;
+
+            % Row 2: Import status (hidden by default)
+            app.Disp_RTDStatusLabel = uilabel(leftGrid, ...
+                'Text', '', 'FontColor', [0 0.5 0]) ;
+            app.Disp_RTDStatusLabel.Layout.Row = 2 ;
+            app.Disp_RTDStatusLabel.Layout.Column = [1 2] ;
+            app.Disp_RTDStatusLabel.Visible = 'off' ;
+
+            % Row 3: Bo
+            app.Disp_BoLabel = uilabel(leftGrid, 'Text', 'Bo (= De/uL):') ;
+            app.Disp_BoLabel.Layout.Row = 3 ; app.Disp_BoLabel.Layout.Column = 1 ;
+            app.Disp_BoLabel.FontWeight = 'bold' ;
+            app.Disp_BoField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 0.025, 'Limits', [1e-6 100], ...
+                'ValueChangedFcn', @(~,~) app.Disp_updatePe()) ;
+            app.Disp_BoField.Layout.Row = 3 ; app.Disp_BoField.Layout.Column = 2 ;
+
+            % Row 4: Pe display (read-only)
+            lbl = uilabel(leftGrid, 'Text', 'Pe (= 1/Bo):') ;
+            lbl.Layout.Row = 4 ; lbl.Layout.Column = 1 ;
+            app.Disp_PeLabel = uilabel(leftGrid, 'Text', sprintf('%.2f', 1/0.025)) ;
+            app.Disp_PeLabel.Layout.Row = 4 ; app.Disp_PeLabel.Layout.Column = 2 ;
+
+            % Row 5: Boundary conditions
+            app.Disp_BCLabel = uilabel(leftGrid, 'Text', 'Boundary:') ;
+            app.Disp_BCLabel.Layout.Row = 5 ; app.Disp_BCLabel.Layout.Column = 1 ;
+            app.Disp_BCDropdown = uidropdown(leftGrid, ...
+                'Items', {'closed-closed', 'open-open'}, ...
+                'Value', 'closed-closed') ;
+            app.Disp_BCDropdown.Layout.Row = 5 ; app.Disp_BCDropdown.Layout.Column = 2 ;
+
+            % Row 6: tau
+            app.Disp_tauLabel = uilabel(leftGrid, 'Text', 'tau (s):') ;
+            app.Disp_tauLabel.Layout.Row = 6 ; app.Disp_tauLabel.Layout.Column = 1 ;
+            app.Disp_tauField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 10, 'Limits', [0.001 Inf]) ;
+            app.Disp_tauField.Layout.Row = 6 ; app.Disp_tauField.Layout.Column = 2 ;
+
+            % Row 7: Kinetics
+            app.Disp_KineticsLabel = uilabel(leftGrid, 'Text', 'Kinetics:') ;
+            app.Disp_KineticsLabel.Layout.Row = 7 ; app.Disp_KineticsLabel.Layout.Column = 1 ;
+            app.Disp_KineticsLabel.FontWeight = 'bold' ;
+            app.Disp_KineticsDropdown = uidropdown(leftGrid, ...
+                'Items', {'1st Order (-rA = k*CA)', ...
+                          '2nd Order (-rA = k*CA^2)'}, ...
+                'Value', '1st Order (-rA = k*CA)', ...
+                'ValueChangedFcn', @(~,~) app.Disp_kineticsChanged()) ;
+            app.Disp_KineticsDropdown.Layout.Row = 7 ;
+            app.Disp_KineticsDropdown.Layout.Column = 2 ;
+
+            % Row 8: k
+            app.Disp_kLabel = uilabel(leftGrid, 'Text', 'k (1/s):') ;
+            app.Disp_kLabel.Layout.Row = 8 ; app.Disp_kLabel.Layout.Column = 1 ;
+            app.Disp_kField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 0.1, 'Limits', [0 Inf]) ;
+            app.Disp_kField.Layout.Row = 8 ; app.Disp_kField.Layout.Column = 2 ;
+
+            % Row 9: CA0 (2nd order only)
+            app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'CA0 (mol/m^3):') ;
+            app.Disp_CA0Label.Layout.Row = 9 ; app.Disp_CA0Label.Layout.Column = 1 ;
+            app.Disp_CA0Label.Visible = 'off' ;
+            app.Disp_CA0Field = uieditfield(leftGrid, 'numeric', ...
+                'Value', 1000, 'Limits', [0.001 Inf]) ;
+            app.Disp_CA0Field.Layout.Row = 9 ; app.Disp_CA0Field.Layout.Column = 2 ;
+            app.Disp_CA0Field.Visible = 'off' ;
+
+            % Row 10: Compute button
+            app.Disp_ComputeButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Compute', ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [0.3 0.6 0.9], ...
+                'FontColor', 'white', ...
+                'ButtonPushedFcn', @(~,~) app.Disp_compute()) ;
+            app.Disp_ComputeButton.Layout.Row = 10 ;
+            app.Disp_ComputeButton.Layout.Column = [1 2] ;
+
+            % Row 11: Results header
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+                'FontWeight', 'bold', 'FontSize', 13) ;
+            lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
+
+            % Row 12: Da and Bo info
+            lbl = uilabel(leftGrid, 'Text', 'Da / Bo:') ;
+            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            app.Disp_ResultBo = uilabel(leftGrid, 'Text', '--') ;
+            app.Disp_ResultBo.Layout.Row = 12 ; app.Disp_ResultBo.Layout.Column = 2 ;
+
+            % Row 13: X_dispersion
+            lbl = uilabel(leftGrid, 'Text', 'X_dispersion:') ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            app.Disp_ResultX = uilabel(leftGrid, 'Text', '--') ;
+            app.Disp_ResultX.Layout.Row = 13 ; app.Disp_ResultX.Layout.Column = 2 ;
+            app.Disp_ResultX.FontWeight = 'bold' ;
+
+            % Row 14: X_CSTR
+            lbl = uilabel(leftGrid, 'Text', 'X_CSTR (Bo->inf):') ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
+            app.Disp_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
+            app.Disp_ResultXcstr.Layout.Row = 14 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
+
+            % Row 15: X_PFR
+            lbl = uilabel(leftGrid, 'Text', 'X_PFR (Bo->0):') ;
+            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
+            app.Disp_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
+            app.Disp_ResultXpfr.Layout.Row = 15 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
+
+            % ---- RIGHT PANEL (PLOTS) ----
+            rightPanel = uipanel(mainGrid, 'Title', 'Dispersion Results') ;
+            plotGrid = uigridlayout(rightPanel, [2 2]) ;
+            plotGrid.RowHeight = {'1x', '1x'} ;
+            plotGrid.ColumnWidth = {'1x', '1x'} ;
+
+            % E(t) plot
+            app.Disp_AxesEt = uiaxes(plotGrid) ;
+            title(app.Disp_AxesEt, 'E(t) - Dispersion') ;
+            xlabel(app.Disp_AxesEt, 't (s)') ;
+            ylabel(app.Disp_AxesEt, 'E(t) (1/s)') ;
+
+            % X vs Bo sweep
+            app.Disp_AxesXvsBo = uiaxes(plotGrid) ;
+            title(app.Disp_AxesXvsBo, 'X vs Bo') ;
+            xlabel(app.Disp_AxesXvsBo, 'Bo (dispersion number)') ;
+            ylabel(app.Disp_AxesXvsBo, 'X_A') ;
+
+            % Comparison bar chart (spans 2 columns)
+            app.Disp_AxesComparison = uiaxes(plotGrid) ;
+            app.Disp_AxesComparison.Layout.Column = [1 2] ;
+            title(app.Disp_AxesComparison, 'PFR vs Dispersion vs CSTR') ;
+            ylabel(app.Disp_AxesComparison, 'Conversion X') ;
+        end
+
+        %% ============== DISPERSION CALLBACKS ==============
+
+        function Disp_updatePe(app)
+            Bo = app.Disp_BoField.Value ;
+            Pe = 1 / Bo ;
+            app.Disp_PeLabel.Text = sprintf('%.2f', Pe) ;
+        end
+
+        function Disp_kineticsChanged(app)
+            kinetics = app.Disp_KineticsDropdown.Value ;
+            if contains(kinetics, '2nd')
+                app.Disp_CA0Label.Visible = 'on' ;
+                app.Disp_CA0Field.Visible = 'on' ;
+                app.Disp_kLabel.Text = 'k (m^3/(mol*s)):' ;
+            else
+                app.Disp_CA0Label.Visible = 'off' ;
+                app.Disp_CA0Field.Visible = 'off' ;
+                app.Disp_kLabel.Text = 'k (1/s):' ;
+            end
+        end
+
+        function Disp_inputMethodChanged(app)
+            source = app.Disp_InputMethodDropdown.Value ;
+
+            if contains(source, 'From calculated')
+                % Disable manual fields and import data
+                app.Disp_BoField.Enable = 'off' ;
+                app.Disp_tauField.Enable = 'off' ;
+                app.Disp_kField.Enable = 'off' ;
+                app.Disp_KineticsDropdown.Enable = 'off' ;
+                app.Disp_CA0Field.Enable = 'off' ;
+                app.Disp_RTDStatusLabel.Visible = 'on' ;
+
+                infoLines = {} ;
+
+                % Import RTD data (tau, sigma2_theta -> Bo)
+                if ~isempty(app.rtd) && app.rtd.sigma2 > 0
+                    app.Disp_tauField.Value = app.rtd.tau ;
+                    sigma2_theta = app.rtd.sigma2 / app.rtd.tau^2 ;
+                    bcType = app.Disp_BCDropdown.Value ;
+
+                    % Compute Bo from sigma2_theta
+                    Bo_calc = app.compute_Bo_from_variance(sigma2_theta, bcType) ;
+                    app.Disp_BoField.Value = Bo_calc ;
+                    app.Disp_updatePe() ;
+
+                    infoLines{end+1} = sprintf('RTD: tau=%.2f, sigma2_theta=%.4f, Bo=%.4g', ...
+                        app.rtd.tau, sigma2_theta, Bo_calc) ;
+                else
+                    infoLines{end+1} = 'RTD: not loaded' ;
+                end
+
+                % Import kinetics from Prediction Models tab
+                if ~isempty(app.Pred_kField) && app.Pred_kField.Value > 0
+                    app.Disp_kField.Value = app.Pred_kField.Value ;
+                    app.Disp_KineticsDropdown.Value = app.Pred_KineticsDropdown.Value ;
+                    app.Disp_kineticsChanged() ;
+                    if ~isempty(app.Pred_CA0Field)
+                        app.Disp_CA0Field.Value = app.Pred_CA0Field.Value ;
+                    end
+                    infoLines{end+1} = sprintf('k=%.4g', app.Pred_kField.Value) ;
+                end
+
+                if any(contains(infoLines, 'not loaded'))
+                    app.Disp_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                else
+                    app.Disp_RTDStatusLabel.FontColor = [0 0.5 0] ;
+                end
+                app.Disp_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
+            else
+                % Manual mode: re-enable all fields
+                app.Disp_BoField.Enable = 'on' ;
+                app.Disp_tauField.Enable = 'on' ;
+                app.Disp_kField.Enable = 'on' ;
+                app.Disp_KineticsDropdown.Enable = 'on' ;
+                app.Disp_CA0Field.Enable = 'on' ;
+                app.Disp_RTDStatusLabel.Visible = 'off' ;
+            end
+        end
+
+        function Disp_compute(app)
+
+            try
+                Bo_val = app.Disp_BoField.Value ;
+                bcType = app.Disp_BCDropdown.Value ;
+                tau_val = app.Disp_tauField.Value ;
+                k_val = app.Disp_kField.Value ;
+                kinetics = app.Disp_KineticsDropdown.Value ;
+                is2nd = contains(kinetics, '2nd') ;
+
+                Da = k_val * tau_val ;
+
+                % Create DispersionReactor
+                app.disp_reactor = DispersionReactor(Bo_val, bcType) ;
+
+                % Compute conversion
+                if is2nd
+                    CA0_val = app.Disp_CA0Field.Value ;
+                    X_disp = app.disp_reactor.compute_conversion_secondOrder(k_val, CA0_val, tau_val) ;
+                    order = 2 ;
+                else
+                    X_disp = app.disp_reactor.compute_conversion_firstOrder(k_val, tau_val) ;
+                    CA0_val = 0 ;
+                    order = 1 ;
+                end
+
+                % Reference: CSTR and PFR
+                if order == 1
+                    X_cstr = Da / (1 + Da) ;
+                    X_pfr = 1 - exp(-Da) ;
+                else
+                    X_cstr = (-1 + sqrt(1 + 4*Da*CA0_val*k_val*tau_val)) / ...
+                             (2 * k_val * CA0_val * tau_val) ;
+                    % Simplified: for 2nd order CSTR: X = (-1+sqrt(1+4*Da))/(2*Da) with Da=k*CA0*tau
+                    Da2 = k_val * CA0_val * tau_val ;
+                    X_cstr = (-1 + sqrt(1 + 4*Da2)) / (2 * Da2) ;
+                    X_pfr = Da2 / (1 + Da2) ;  % batch at t=tau
+                end
+
+                X_cstr = max(0, min(1, X_cstr)) ;
+                X_pfr = max(0, min(1, X_pfr)) ;
+
+                % Update results
+                app.Disp_ResultBo.Text = sprintf('Da=%.4g, Bo=%.4g', Da, Bo_val) ;
+                app.Disp_ResultX.Text = sprintf('%.4f', X_disp) ;
+                app.Disp_ResultXcstr.Text = sprintf('%.4f', X_cstr) ;
+                app.Disp_ResultXpfr.Text = sprintf('%.4f', X_pfr) ;
+
+                % Update plots
+                app.Disp_updatePlots(Bo_val, tau_val, k_val, CA0_val, ...
+                                     order, X_disp, X_cstr, X_pfr) ;
+
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Error in Dispersion Model') ;
+            end
+        end
+
+        function Disp_updatePlots(app, Bo_val, tau_val, k_val, CA0_val, ...
+                                  order, X_disp, X_cstr, X_pfr)
+
+            % ---- Plot 1: E(t) ----
+            cla(app.Disp_AxesEt) ;
+            rtd_obj = app.disp_reactor.generate_RTD(tau_val) ;
+            plot(app.Disp_AxesEt, rtd_obj.t, rtd_obj.Et, 'b-', 'LineWidth', 1.5) ;
+            title(app.Disp_AxesEt, sprintf('E(t) - %s, Bo=%.4g', ...
+                  app.Disp_BCDropdown.Value, Bo_val)) ;
+            xlabel(app.Disp_AxesEt, 't (s)') ;
+            ylabel(app.Disp_AxesEt, 'E(t) (1/s)') ;
+
+            % Add equation annotation
+            text(app.Disp_AxesEt, 0.95, 0.90, ...
+                sprintf('Bo = %.4g\nPe = %.4g\n\\tau = %.4g s', ...
+                        Bo_val, 1/Bo_val, tau_val), ...
+                'Units', 'normalized', 'HorizontalAlignment', 'right', ...
+                'VerticalAlignment', 'top', 'FontSize', 9, ...
+                'Interpreter', 'tex', ...
+                'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
+
+            % ---- Plot 2: X vs Bo sweep ----
+            cla(app.Disp_AxesXvsBo) ;
+            [Bo_sweep, X_sweep] = app.disp_reactor.sweep_Bo(k_val, tau_val, CA0_val, order) ;
+            semilogx(app.Disp_AxesXvsBo, Bo_sweep, X_sweep, 'b-', 'LineWidth', 1.5) ;
+            hold(app.Disp_AxesXvsBo, 'on') ;
+
+            % Mark current Bo
+            semilogx(app.Disp_AxesXvsBo, Bo_val, X_disp, 'rp', ...
+                     'MarkerSize', 12, 'MarkerFaceColor', 'r') ;
+
+            % Reference lines
+            yline(app.Disp_AxesXvsBo, X_pfr, '--', 'PFR', ...
+                  'Color', [0 0.6 0], 'LineWidth', 1, 'LabelHorizontalAlignment', 'left') ;
+            yline(app.Disp_AxesXvsBo, X_cstr, '--', 'CSTR', ...
+                  'Color', [0.8 0 0], 'LineWidth', 1, 'LabelHorizontalAlignment', 'left') ;
+            hold(app.Disp_AxesXvsBo, 'off') ;
+
+            title(app.Disp_AxesXvsBo, 'Conversion vs Bo') ;
+            xlabel(app.Disp_AxesXvsBo, 'Bo (dispersion number)') ;
+            ylabel(app.Disp_AxesXvsBo, 'X_A') ;
+            ylim(app.Disp_AxesXvsBo, [0 1]) ;
+            legend(app.Disp_AxesXvsBo, 'X(Bo)', sprintf('Bo=%.4g', Bo_val), ...
+                   'Location', 'best') ;
+
+            % ---- Plot 3: Comparison bar chart ----
+            cla(app.Disp_AxesComparison) ;
+            bar_data = [X_pfr ; X_disp ; X_cstr] ;
+            b = bar(app.Disp_AxesComparison, bar_data) ;
+            b.FaceColor = 'flat' ;
+            b.CData = [0.3 0.8 0.3 ; 0.3 0.6 0.9 ; 0.9 0.3 0.3] ;
+            set(app.Disp_AxesComparison, 'XTickLabel', ...
+                {'PFR (Bo->0)', sprintf('Disp (Bo=%.3g)', Bo_val), 'CSTR (Bo->inf)'}) ;
+            ylabel(app.Disp_AxesComparison, 'Conversion X') ;
+            title(app.Disp_AxesComparison, 'PFR vs Dispersion vs CSTR') ;
+            ylim(app.Disp_AxesComparison, [0 1.12]) ;
+
+            % Value labels
+            hold(app.Disp_AxesComparison, 'on') ;
+            vals = [X_pfr, X_disp, X_cstr] ;
+            for idx = 1:3
+                if vals(idx) > 0.85
+                    ypos = vals(idx) - 0.06 ;
+                    txtColor = [1 1 1] ;
+                else
+                    ypos = vals(idx) + 0.03 ;
+                    txtColor = [0 0 0] ;
+                end
+                text(app.Disp_AxesComparison, idx, ypos, ...
+                    sprintf('%.4f', vals(idx)), ...
+                    'HorizontalAlignment', 'center', ...
+                    'FontWeight', 'bold', 'FontSize', 10, ...
+                    'Color', txtColor) ;
+            end
+            hold(app.Disp_AxesComparison, 'off') ;
+        end
+
+    end
+
+    methods (Static, Access = private)
+
+        function Bo = compute_Bo_from_variance(sigma2_theta, bcType)
+            % Compute Bodenstein number (Bo) from dimensionless variance
+            %
+            % For open-open BCs:
+            %   sigma2_theta = 2*Bo  =>  Bo = sigma2_theta / 2
+            %
+            % For closed-closed BCs:
+            %   sigma2_theta = 2*Bo - 2*Bo^2 * (1 - exp(-1/Bo))
+            %   This cannot be solved analytically, so we use fzero
+            %   with initial guess Bo0 = sigma2_theta / 2
+
+            switch bcType
+                case 'open-open'
+                    Bo = sigma2_theta / 2 ;
+
+                case 'closed-closed'
+                    % Define f(Bo) = 2*Bo - 2*Bo^2*(1-exp(-1/Bo)) - sigma2_theta
+                    f = @(Bo_val) 2*Bo_val - 2*Bo_val^2*(1 - exp(-1/Bo_val)) - sigma2_theta ;
+
+                    % Initial guess from open-open approximation
+                    Bo0 = sigma2_theta / 2 ;
+                    if Bo0 < 1e-6
+                        Bo0 = 1e-6 ;
+                    end
+
+                    try
+                        Bo = fzero(f, Bo0) ;
+                    catch
+                        % Fallback: use approximation
+                        Bo = Bo0 ;
+                        warning('Could not solve for Bo. Using approximation Bo = sigma2_theta/2') ;
+                    end
+
+                    % Ensure positive
+                    Bo = max(Bo, 1e-8) ;
+
+                otherwise
+                    Bo = sigma2_theta / 2 ;
+            end
         end
 
     end
