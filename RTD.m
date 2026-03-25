@@ -11,6 +11,7 @@ classdef RTD
 % =========================================================================
 % Javier Berenguer Sabater
 % Created: March 21, 2026. Last update: March 22, 2026
+% Precision update: increased resolution for numerical accuracy
 % =========================================================================
 
     properties
@@ -285,7 +286,7 @@ classdef RTD
             % Analytical moments: tau = tau_val, sigma2 = tau_val^2, s3 = 2
 
             if nargin < 2
-                tspan = linspace(0, 10 * tau_val, 1000) ;
+                tspan = linspace(0, 15 * tau_val, 3000) ;
             end
 
             Et = (1/tau_val) * exp(-tspan / tau_val) ;
@@ -339,7 +340,10 @@ classdef RTD
             %   tau_total - total mean residence time (s)
 
             if nargin < 3
-                tspan = linspace(0, 5 * tau_total, 500) ;
+                % Extend range for low N (exponential tail longer)
+                multiplier = max(5, 15/sqrt(n)) ;
+                npts = max(1000, round(3000/sqrt(n))) ;
+                tspan = linspace(0, multiplier * tau_total, npts) ;
             end
 
             tau_i = tau_total / n ;  % residence time per tank
@@ -372,7 +376,8 @@ classdef RTD
             % Bo = De/(u*L) = 1/Pe (Bodenstein inverse = dispersion number)
 
             if nargin < 3
-                tspan = linspace(0, 3 * tau_val, 500) ;
+                spread = max(3, 1 + 6*sqrt(Bo)) ;  % wider range for large Bo
+                tspan = linspace(0, spread * tau_val, 2000) ;
             end
 
             Et = zeros(size(tspan)) ;
@@ -400,7 +405,8 @@ classdef RTD
             % Bo = De/(u*L) = dispersion number
 
             if nargin < 3
-                tspan = linspace(0, 3 * tau_val, 500) ;
+                spread = max(3, 1 + 6*sqrt(Bo)) ;
+                tspan = linspace(0, spread * tau_val, 2000) ;
             end
 
             theta = tspan / tau_val ;

@@ -22,7 +22,7 @@ classdef MaxMixednessModel
 %   - Plots X(lambda) profile
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 21, 2026
+% Created: March 21, 2026. Last update: March 22, 2026
 % =========================================================================
 
     properties
@@ -95,12 +95,17 @@ classdef MaxMixednessModel
             T = obj.feed.T ;
 
             % Integration limits: from lambda_max (large) to 0
-            lambda_max = max(t_rtd) * 0.999 ;  % avoid exact endpoint
+            % Start from where (1-F) is still significant
+            valid_idx = find((1 - Ft) > 1e-6, 1, 'last') ;
+            if isempty(valid_idx)
+                lambda_max = max(t_rtd) * 0.95 ;
+            else
+                lambda_max = t_rtd(valid_idx) ;
+            end
 
             % ODE: dX/d(lambda) = rA(X)/CA0 + E(lambda)/(1-F(lambda)) * X
             % Integrate from lambda_max to 0 (backwards)
-            % Use negative span to integrate backwards
-            options = odeset('RelTol', 1e-8, 'AbsTol', 1e-10, ...
+            options = odeset('RelTol', 1e-10, 'AbsTol', 1e-12, ...
                             'NonNegative', 1) ;
 
             [lambda_sol, X_sol] = ode45(@ode_maxmix, ...
@@ -172,9 +177,15 @@ classdef MaxMixednessModel
             E_interp = griddedInterpolant(t_rtd, Et, 'pchip', 'nearest') ;
             F_interp = griddedInterpolant(t_rtd, Ft, 'pchip', 'nearest') ;
 
-            lambda_max = max(t_rtd) * 0.999 ;
+            Ft = obj.rtd.Ft ;
+            valid_idx = find((1 - Ft) > 1e-6, 1, 'last') ;
+            if isempty(valid_idx)
+                lambda_max = max(t_rtd) * 0.95 ;
+            else
+                lambda_max = t_rtd(valid_idx) ;
+            end
 
-            options = odeset('RelTol', 1e-8, 'AbsTol', 1e-10) ;
+            options = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
 
             [lambda_sol, X_sol] = ode45(@ode_mm_1st, ...
                                         [lambda_max, 0], 0, options) ;
@@ -218,9 +229,15 @@ classdef MaxMixednessModel
             E_interp = griddedInterpolant(t_rtd, Et, 'pchip', 'nearest') ;
             F_interp = griddedInterpolant(t_rtd, Ft, 'pchip', 'nearest') ;
 
-            lambda_max = max(t_rtd) * 0.999 ;
+            Ft = obj.rtd.Ft ;
+            valid_idx = find((1 - Ft) > 1e-6, 1, 'last') ;
+            if isempty(valid_idx)
+                lambda_max = max(t_rtd) * 0.95 ;
+            else
+                lambda_max = t_rtd(valid_idx) ;
+            end
 
-            options = odeset('RelTol', 1e-8, 'AbsTol', 1e-10) ;
+            options = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
 
             [lambda_sol, X_sol] = ode45(@ode_mm_2nd, ...
                                         [lambda_max, 0], 0, options) ;
