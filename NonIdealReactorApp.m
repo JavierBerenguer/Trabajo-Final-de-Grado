@@ -132,6 +132,51 @@ classdef NonIdealReactorApp < handle
 
         % Stored dispersion model
         disp_reactor            % DispersionReactor object
+
+        % ---- Tab 5: Convolution / Deconvolution ----
+        ConvTab
+        Conv_ModeDropdown
+        Conv_InputDropdown
+        Conv_tVarField
+        Conv_tVarLabel
+        Conv_CinVarField
+        Conv_CinVarLabel
+        Conv_EVarField
+        Conv_EVarLabel
+        Conv_CoutVarField
+        Conv_CoutVarLabel
+        Conv_nEField
+        Conv_nELabel
+        Conv_ImportButton
+        Conv_ImportLabel
+        Conv_ComputeButton
+        Conv_ExportButton
+        Conv_ExportNameField
+        Conv_ResultLabel
+        Conv_AxesInput
+        Conv_AxesResult
+        Conv_AxesRecovered
+
+        % ---- Tab 6: Combined Models ----
+        CombTab
+        Comb_ModelDropdown
+        Comb_tauField
+        Comb_Param1Label
+        Comb_Param1Field
+        Comb_Param2Label
+        Comb_Param2Field
+        Comb_KineticsDropdown
+        Comb_kField
+        Comb_kLabel
+        Comb_CA0Field
+        Comb_CA0Label
+        Comb_ComputeButton
+        Comb_ResultX
+        Comb_ResultXcstr
+        Comb_ResultXpfr
+        Comb_ResultParams
+        Comb_AxesEt
+        Comb_AxesComparison
     end
 
     methods (Access = public)
@@ -153,6 +198,8 @@ classdef NonIdealReactorApp < handle
             app.createPredictionTab() ;
             app.createTISTab() ;
             app.createDispersionTab() ;
+            app.createConvolutionTab() ;
+            app.createCombinedTab() ;
 
             % Show figure
             app.UIFigure.Visible = 'on' ;
@@ -1788,6 +1835,729 @@ classdef NonIdealReactorApp < handle
                     'Color', txtColor) ;
             end
             hold(app.Disp_AxesComparison, 'off') ;
+        end
+
+        %% ============== TAB 5: CONVOLUTION / DECONVOLUTION ==============
+
+        function createConvolutionTab(app)
+
+            app.ConvTab = uitab(app.TabGroup, 'Title', 'Convolution') ;
+
+            mainGrid = uigridlayout(app.ConvTab, [1 2]) ;
+            mainGrid.ColumnWidth = {320, '1x'} ;
+
+            % ---- LEFT PANEL ----
+            leftPanel = uipanel(mainGrid, 'Title', 'Convolution / Deconvolution') ;
+            leftGrid = uigridlayout(leftPanel, [18 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 18) ;
+            leftGrid.ColumnWidth = {'1x', '1x'} ;
+            leftGrid.Padding = [10 10 10 10] ;
+            leftGrid.RowSpacing = 5 ;
+
+            % Row 1: Mode
+            lbl = uilabel(leftGrid, 'Text', 'Mode:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
+            app.Conv_ModeDropdown = uidropdown(leftGrid, ...
+                'Items', {'Convolution', 'Deconvolution'}, ...
+                'Value', 'Convolution', ...
+                'ValueChangedFcn', @(~,~) app.Conv_modeChanged()) ;
+            app.Conv_ModeDropdown.Layout.Row = 1 ;
+            app.Conv_ModeDropdown.Layout.Column = 2 ;
+
+            % Row 2: Input source
+            lbl = uilabel(leftGrid, 'Text', 'Data source:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
+            app.Conv_InputDropdown = uidropdown(leftGrid, ...
+                'Items', {'From workspace', 'From file'}, ...
+                'Value', 'From workspace') ;
+            app.Conv_InputDropdown.Layout.Row = 2 ;
+            app.Conv_InputDropdown.Layout.Column = 2 ;
+
+            % Row 3: t variable
+            app.Conv_tVarLabel = uilabel(leftGrid, 'Text', 't variable:') ;
+            app.Conv_tVarLabel.Layout.Row = 3 ; app.Conv_tVarLabel.Layout.Column = 1 ;
+            app.Conv_tVarField = uieditfield(leftGrid, 'text', 'Value', 't') ;
+            app.Conv_tVarField.Layout.Row = 3 ; app.Conv_tVarField.Layout.Column = 2 ;
+
+            % Row 4: C_in variable
+            app.Conv_CinVarLabel = uilabel(leftGrid, 'Text', 'C_in variable:') ;
+            app.Conv_CinVarLabel.Layout.Row = 4 ; app.Conv_CinVarLabel.Layout.Column = 1 ;
+            app.Conv_CinVarField = uieditfield(leftGrid, 'text', 'Value', 'C_in') ;
+            app.Conv_CinVarField.Layout.Row = 4 ; app.Conv_CinVarField.Layout.Column = 2 ;
+
+            % Row 5: E variable (convolution mode)
+            app.Conv_EVarLabel = uilabel(leftGrid, 'Text', 'E(t) variable:') ;
+            app.Conv_EVarLabel.Layout.Row = 5 ; app.Conv_EVarLabel.Layout.Column = 1 ;
+            app.Conv_EVarField = uieditfield(leftGrid, 'text', 'Value', 'E') ;
+            app.Conv_EVarField.Layout.Row = 5 ; app.Conv_EVarField.Layout.Column = 2 ;
+
+            % Row 5 (shared): C_out variable (deconvolution mode)
+            app.Conv_CoutVarLabel = uilabel(leftGrid, 'Text', 'C_out variable:') ;
+            app.Conv_CoutVarLabel.Layout.Row = 5 ; app.Conv_CoutVarLabel.Layout.Column = 1 ;
+            app.Conv_CoutVarLabel.Visible = 'off' ;
+            app.Conv_CoutVarField = uieditfield(leftGrid, 'text', 'Value', 'C_out') ;
+            app.Conv_CoutVarField.Layout.Row = 5 ; app.Conv_CoutVarField.Layout.Column = 2 ;
+            app.Conv_CoutVarField.Visible = 'off' ;
+
+            % Row 6: nE (deconvolution only)
+            app.Conv_nELabel = uilabel(leftGrid, 'Text', 'N points E:') ;
+            app.Conv_nELabel.Layout.Row = 6 ; app.Conv_nELabel.Layout.Column = 1 ;
+            app.Conv_nELabel.Visible = 'off' ;
+            app.Conv_nEField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 50, 'Limits', [2 10000]) ;
+            app.Conv_nEField.Layout.Row = 6 ; app.Conv_nEField.Layout.Column = 2 ;
+            app.Conv_nEField.Visible = 'off' ;
+
+            % Row 7: Import from file button
+            app.Conv_ImportButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Import from file', ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [1 1 1], ...
+                'FontColor', [0.8 0 0], ...
+                'ButtonPushedFcn', @(~,~) app.Conv_importFromFile()) ;
+            app.Conv_ImportButton.Layout.Row = 7 ;
+            app.Conv_ImportButton.Layout.Column = [1 2] ;
+
+            % Row 8: Import status
+            app.Conv_ImportLabel = uilabel(leftGrid, 'Text', '') ;
+            app.Conv_ImportLabel.Layout.Row = 8 ;
+            app.Conv_ImportLabel.Layout.Column = [1 2] ;
+            app.Conv_ImportLabel.FontColor = [0 0.5 0] ;
+
+            % Row 9: Compute button
+            app.Conv_ComputeButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Compute', ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [0.3 0.6 0.9], ...
+                'FontColor', 'white', ...
+                'ButtonPushedFcn', @(~,~) app.Conv_compute()) ;
+            app.Conv_ComputeButton.Layout.Row = 9 ;
+            app.Conv_ComputeButton.Layout.Column = [1 2] ;
+
+            % Row 10: Results header
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+                'FontWeight', 'bold', 'FontSize', 13) ;
+            lbl.Layout.Row = 10 ; lbl.Layout.Column = [1 2] ;
+
+            % Row 11-12: Result info
+            app.Conv_ResultLabel = uilabel(leftGrid, 'Text', '--') ;
+            app.Conv_ResultLabel.Layout.Row = [11 12] ;
+            app.Conv_ResultLabel.Layout.Column = [1 2] ;
+            app.Conv_ResultLabel.WordWrap = 'on' ;
+
+            % Row 13: Export name
+            lbl = uilabel(leftGrid, 'Text', 'Export name:') ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            app.Conv_ExportNameField = uieditfield(leftGrid, 'text', ...
+                'Value', 'conv_result') ;
+            app.Conv_ExportNameField.Layout.Row = 13 ;
+            app.Conv_ExportNameField.Layout.Column = 2 ;
+
+            % Row 14: Export button
+            app.Conv_ExportButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Export to Workspace', ...
+                'BackgroundColor', [0.2 0.7 0.3], ...
+                'FontColor', 'white', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.Conv_export()) ;
+            app.Conv_ExportButton.Layout.Row = 14 ;
+            app.Conv_ExportButton.Layout.Column = [1 2] ;
+
+            % ---- RIGHT PANEL (PLOTS) ----
+            rightPanel = uipanel(mainGrid, 'Title', 'Signals') ;
+            plotGrid = uigridlayout(rightPanel, [2 2]) ;
+            plotGrid.RowHeight = {'1x', '1x'} ;
+            plotGrid.ColumnWidth = {'1x', '1x'} ;
+
+            % Input signals plot
+            app.Conv_AxesInput = uiaxes(plotGrid) ;
+            title(app.Conv_AxesInput, 'Input Signals') ;
+            xlabel(app.Conv_AxesInput, 't') ;
+            ylabel(app.Conv_AxesInput, 'Amplitude') ;
+
+            % Result plot
+            app.Conv_AxesResult = uiaxes(plotGrid) ;
+            title(app.Conv_AxesResult, 'Result') ;
+            xlabel(app.Conv_AxesResult, 't') ;
+            ylabel(app.Conv_AxesResult, 'C_{out}(t)') ;
+
+            % Recovered E(t) / Comparison (spans 2 columns)
+            app.Conv_AxesRecovered = uiaxes(plotGrid) ;
+            app.Conv_AxesRecovered.Layout.Column = [1 2] ;
+            title(app.Conv_AxesRecovered, 'Verification') ;
+            xlabel(app.Conv_AxesRecovered, 't') ;
+            ylabel(app.Conv_AxesRecovered, 'Amplitude') ;
+        end
+
+        %% ============== CONVOLUTION CALLBACKS ==============
+
+        function Conv_modeChanged(app)
+            mode = app.Conv_ModeDropdown.Value ;
+            if strcmp(mode, 'Convolution')
+                % Show E field, hide C_out and nE
+                app.Conv_EVarLabel.Visible = 'on' ;
+                app.Conv_EVarField.Visible = 'on' ;
+                app.Conv_CoutVarLabel.Visible = 'off' ;
+                app.Conv_CoutVarField.Visible = 'off' ;
+                app.Conv_nELabel.Visible = 'off' ;
+                app.Conv_nEField.Visible = 'off' ;
+            else
+                % Deconvolution: show C_out and nE, hide E
+                app.Conv_EVarLabel.Visible = 'off' ;
+                app.Conv_EVarField.Visible = 'off' ;
+                app.Conv_CoutVarLabel.Visible = 'on' ;
+                app.Conv_CoutVarField.Visible = 'on' ;
+                app.Conv_nELabel.Visible = 'on' ;
+                app.Conv_nEField.Visible = 'on' ;
+            end
+        end
+
+        function Conv_importFromFile(app)
+            % Import data from Excel/CSV for convolution
+            [file, path] = uigetfile( ...
+                {'*.xlsx;*.xls;*.csv;*.tsv', 'Data files' ; ...
+                 '*.*', 'All files'}, ...
+                'Select data file') ;
+
+            if isequal(file, 0)
+                return
+            end
+
+            try
+                fullPath = fullfile(path, file) ;
+                data = readmatrix(fullPath) ;
+                data = data(~any(isnan(data(:,1:min(end,3))), 2), :) ;
+
+                % Column 1 = t, Column 2 = C_in or E, Column 3 = C_out (optional)
+                t_data = data(:, 1)' ;
+                assignin('base', app.Conv_tVarField.Value, t_data) ;
+
+                if size(data, 2) >= 2
+                    col2 = data(:, 2)' ;
+                    assignin('base', app.Conv_CinVarField.Value, col2) ;
+                end
+
+                if size(data, 2) >= 3
+                    col3 = data(:, 3)' ;
+                    mode = app.Conv_ModeDropdown.Value ;
+                    if strcmp(mode, 'Convolution')
+                        assignin('base', app.Conv_EVarField.Value, col3) ;
+                    else
+                        assignin('base', app.Conv_CoutVarField.Value, col3) ;
+                    end
+                end
+
+                app.Conv_ImportLabel.Text = sprintf('Loaded: %s (%d pts, %d cols)', ...
+                    file, length(t_data), size(data, 2)) ;
+
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Import Error') ;
+            end
+        end
+
+        function Conv_compute(app)
+            try
+                mode = app.Conv_ModeDropdown.Value ;
+                t_var = app.Conv_tVarField.Value ;
+                t_data = evalin('base', t_var) ;
+
+                if strcmp(mode, 'Convolution')
+                    % ---- CONVOLUTION ----
+                    C_in = evalin('base', app.Conv_CinVarField.Value) ;
+                    E = evalin('base', app.Conv_EVarField.Value) ;
+
+                    % Use same t for both (common case)
+                    [C_out, t_out] = ConvolutionTool.convolve(t_data, E, t_data, C_in) ;
+
+                    % Store result for export
+                    assignin('base', 'conv_t_out', t_out) ;
+                    assignin('base', 'conv_C_out', C_out) ;
+
+                    % Update plots
+                    cla(app.Conv_AxesInput) ;
+                    yyaxis(app.Conv_AxesInput, 'left') ;
+                    plot(app.Conv_AxesInput, t_data, C_in, 'b-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, 'C_{in}(t)') ;
+                    yyaxis(app.Conv_AxesInput, 'right') ;
+                    plot(app.Conv_AxesInput, t_data, E, 'r-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, 'E(t)') ;
+                    xlabel(app.Conv_AxesInput, 't') ;
+                    title(app.Conv_AxesInput, 'Input: C_{in}(t) and E(t)') ;
+                    legend(app.Conv_AxesInput, 'C_{in}', 'E(t)', 'Location', 'best') ;
+
+                    cla(app.Conv_AxesResult) ;
+                    plot(app.Conv_AxesResult, t_out, C_out, 'b-', 'LineWidth', 1.5) ;
+                    xlabel(app.Conv_AxesResult, 't') ;
+                    ylabel(app.Conv_AxesResult, 'C_{out}(t)') ;
+                    title(app.Conv_AxesResult, 'Convolution Result: C_{out} = E \otimes C_{in}') ;
+
+                    % Verification: overlay original C_in and C_out
+                    cla(app.Conv_AxesRecovered) ;
+                    plot(app.Conv_AxesRecovered, t_data, C_in, 'b--', 'LineWidth', 1) ;
+                    hold(app.Conv_AxesRecovered, 'on') ;
+                    plot(app.Conv_AxesRecovered, t_out, C_out, 'r-', 'LineWidth', 1.5) ;
+                    hold(app.Conv_AxesRecovered, 'off') ;
+                    xlabel(app.Conv_AxesRecovered, 't') ;
+                    title(app.Conv_AxesRecovered, 'Overlay: C_{in} vs C_{out}') ;
+                    legend(app.Conv_AxesRecovered, 'C_{in}(t)', 'C_{out}(t)', 'Location', 'best') ;
+
+                    app.Conv_ResultLabel.Text = sprintf( ...
+                        'Convolution OK\nC_{out}: %d points, t=[%.2f, %.2f]', ...
+                        length(C_out), t_out(1), t_out(end)) ;
+
+                else
+                    % ---- DECONVOLUTION ----
+                    C_in = evalin('base', app.Conv_CinVarField.Value) ;
+                    C_out = evalin('base', app.Conv_CoutVarField.Value) ;
+                    nE = app.Conv_nEField.Value ;
+
+                    t_Cin = t_data ;
+                    % Assume C_out has its own time vector or use extended t
+                    m = length(C_in) ;
+                    v = length(C_out) ;
+                    dt = (t_Cin(end) - t_Cin(1)) / (m - 1) ;
+                    t_Cout = t_Cin(1) + (0:(v-1)) * dt ;
+
+                    [E_rec, t_E, residual] = ConvolutionTool.deconvolve( ...
+                        t_Cin, C_in, t_Cout, C_out, nE) ;
+
+                    % Store for export
+                    assignin('base', 'deconv_t_E', t_E) ;
+                    assignin('base', 'deconv_E', E_rec) ;
+
+                    % Plot inputs
+                    cla(app.Conv_AxesInput) ;
+                    yyaxis(app.Conv_AxesInput, 'left') ;
+                    plot(app.Conv_AxesInput, t_Cin, C_in, 'b-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, 'C_{in}(t)') ;
+                    yyaxis(app.Conv_AxesInput, 'right') ;
+                    plot(app.Conv_AxesInput, t_Cout, C_out, 'r-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, 'C_{out}(t)') ;
+                    xlabel(app.Conv_AxesInput, 't') ;
+                    title(app.Conv_AxesInput, 'Input: C_{in}(t) and C_{out}(t)') ;
+                    legend(app.Conv_AxesInput, 'C_{in}', 'C_{out}', 'Location', 'best') ;
+
+                    % Plot recovered E(t)
+                    cla(app.Conv_AxesResult) ;
+                    plot(app.Conv_AxesResult, t_E, E_rec, 'm-', 'LineWidth', 1.5) ;
+                    xlabel(app.Conv_AxesResult, 't') ;
+                    ylabel(app.Conv_AxesResult, 'E(t)') ;
+                    title(app.Conv_AxesResult, sprintf('Recovered E(t) | area=%.4f', ...
+                        trapz(t_E, E_rec))) ;
+
+                    % Verification: re-convolve and compare with C_out
+                    [C_out_check, t_check] = ConvolutionTool.convolve(t_E, E_rec, t_Cin, C_in) ;
+                    cla(app.Conv_AxesRecovered) ;
+                    plot(app.Conv_AxesRecovered, t_Cout, C_out, 'b-', 'LineWidth', 1.5) ;
+                    hold(app.Conv_AxesRecovered, 'on') ;
+                    plot(app.Conv_AxesRecovered, t_check, C_out_check, 'r--', 'LineWidth', 1.5) ;
+                    hold(app.Conv_AxesRecovered, 'off') ;
+                    xlabel(app.Conv_AxesRecovered, 't') ;
+                    title(app.Conv_AxesRecovered, 'Verification: C_{out} vs Reconvolved') ;
+                    legend(app.Conv_AxesRecovered, 'C_{out} (data)', 'E_{rec} \otimes C_{in}', ...
+                           'Location', 'best') ;
+
+                    app.Conv_ResultLabel.Text = sprintf( ...
+                        'Deconvolution OK\nResidual: %.4e\nE: %d pts, t=[%.2f, %.2f]', ...
+                        residual, length(E_rec), t_E(1), t_E(end)) ;
+                end
+
+                app.Conv_ExportButton.Enable = 'on' ;
+
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Convolution Error') ;
+            end
+        end
+
+        function Conv_export(app)
+            varName = app.Conv_ExportNameField.Value ;
+            if ~isvarname(varName)
+                uialert(app.UIFigure, ...
+                    sprintf('"%s" is not a valid variable name.', varName), ...
+                    'Invalid Name') ;
+                return
+            end
+
+            mode = app.Conv_ModeDropdown.Value ;
+            if strcmp(mode, 'Convolution')
+                result.t = evalin('base', 'conv_t_out') ;
+                result.C_out = evalin('base', 'conv_C_out') ;
+                result.mode = 'convolution' ;
+            else
+                result.t = evalin('base', 'deconv_t_E') ;
+                result.E = evalin('base', 'deconv_E') ;
+                result.mode = 'deconvolution' ;
+                % Also create an RTD object from the recovered E
+                result.rtd = RTD(result.t, result.E) ;
+            end
+
+            assignin('base', varName, result) ;
+            uialert(app.UIFigure, ...
+                sprintf('Result exported as "%s"', varName), ...
+                'Export Successful', 'Icon', 'success') ;
+        end
+
+        %% ============== TAB 6: COMBINED MODELS ==============
+
+        function createCombinedTab(app)
+
+            app.CombTab = uitab(app.TabGroup, 'Title', 'Combined Models') ;
+
+            mainGrid = uigridlayout(app.CombTab, [1 2]) ;
+            mainGrid.ColumnWidth = {320, '1x'} ;
+
+            % ---- LEFT PANEL ----
+            leftPanel = uipanel(mainGrid, 'Title', 'Combined Model Configuration') ;
+            leftGrid = uigridlayout(leftPanel, [16 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 16) ;
+            leftGrid.ColumnWidth = {'1x', '1x'} ;
+            leftGrid.Padding = [10 10 10 10] ;
+            leftGrid.RowSpacing = 5 ;
+
+            % Row 1: Model selection
+            lbl = uilabel(leftGrid, 'Text', 'Model:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
+            app.Comb_ModelDropdown = uidropdown(leftGrid, ...
+                'Items', {'CSTR + Dead Volume', ...
+                          'CSTR + Bypass', ...
+                          'CSTR + Bypass + Dead Volume', ...
+                          'CSTR + PFR in Series'}, ...
+                'Value', 'CSTR + Dead Volume', ...
+                'ValueChangedFcn', @(~,~) app.Comb_modelChanged()) ;
+            app.Comb_ModelDropdown.Layout.Row = 1 ;
+            app.Comb_ModelDropdown.Layout.Column = 2 ;
+
+            % Row 2: tau
+            lbl = uilabel(leftGrid, 'Text', 'tau total (s):') ;
+            lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
+            app.Comb_tauField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 10, 'Limits', [0.001 Inf]) ;
+            app.Comb_tauField.Layout.Row = 2 ; app.Comb_tauField.Layout.Column = 2 ;
+
+            % Row 3: Parameter 1
+            app.Comb_Param1Label = uilabel(leftGrid, 'Text', 'alpha (active vol fraction):') ;
+            app.Comb_Param1Label.Layout.Row = 3 ; app.Comb_Param1Label.Layout.Column = 1 ;
+            app.Comb_Param1Field = uieditfield(leftGrid, 'numeric', ...
+                'Value', 0.8, 'Limits', [0.01 1]) ;
+            app.Comb_Param1Field.Layout.Row = 3 ; app.Comb_Param1Field.Layout.Column = 2 ;
+
+            % Row 4: Parameter 2 (hidden for 1-param models)
+            app.Comb_Param2Label = uilabel(leftGrid, 'Text', 'beta (bypass fraction):') ;
+            app.Comb_Param2Label.Layout.Row = 4 ; app.Comb_Param2Label.Layout.Column = 1 ;
+            app.Comb_Param2Label.Visible = 'off' ;
+            app.Comb_Param2Field = uieditfield(leftGrid, 'numeric', ...
+                'Value', 0.1, 'Limits', [0 0.99]) ;
+            app.Comb_Param2Field.Layout.Row = 4 ; app.Comb_Param2Field.Layout.Column = 2 ;
+            app.Comb_Param2Field.Visible = 'off' ;
+
+            % Row 5: Kinetics
+            lbl = uilabel(leftGrid, 'Text', 'Kinetics:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 5 ; lbl.Layout.Column = 1 ;
+            app.Comb_KineticsDropdown = uidropdown(leftGrid, ...
+                'Items', {'1st Order (-rA = k*CA)', ...
+                          '2nd Order (-rA = k*CA^2)'}, ...
+                'Value', '1st Order (-rA = k*CA)', ...
+                'ValueChangedFcn', @(~,~) app.Comb_kineticsChanged()) ;
+            app.Comb_KineticsDropdown.Layout.Row = 5 ;
+            app.Comb_KineticsDropdown.Layout.Column = 2 ;
+
+            % Row 6: k
+            app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k (1/s):') ;
+            app.Comb_kLabel.Layout.Row = 6 ; app.Comb_kLabel.Layout.Column = 1 ;
+            app.Comb_kField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 0.1, 'Limits', [0 Inf]) ;
+            app.Comb_kField.Layout.Row = 6 ; app.Comb_kField.Layout.Column = 2 ;
+
+            % Row 7: CA0 (2nd order only)
+            app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'CA0 (mol/m^3):') ;
+            app.Comb_CA0Label.Layout.Row = 7 ; app.Comb_CA0Label.Layout.Column = 1 ;
+            app.Comb_CA0Label.Visible = 'off' ;
+            app.Comb_CA0Field = uieditfield(leftGrid, 'numeric', ...
+                'Value', 1000, 'Limits', [0.001 Inf]) ;
+            app.Comb_CA0Field.Layout.Row = 7 ; app.Comb_CA0Field.Layout.Column = 2 ;
+            app.Comb_CA0Field.Visible = 'off' ;
+
+            % Row 8: Compute button
+            app.Comb_ComputeButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Compute', ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [0.3 0.6 0.9], ...
+                'FontColor', 'white', ...
+                'ButtonPushedFcn', @(~,~) app.Comb_compute()) ;
+            app.Comb_ComputeButton.Layout.Row = 8 ;
+            app.Comb_ComputeButton.Layout.Column = [1 2] ;
+
+            % Row 9: Results header
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+                'FontWeight', 'bold', 'FontSize', 13) ;
+            lbl.Layout.Row = 9 ; lbl.Layout.Column = [1 2] ;
+
+            % Row 10: Model params info
+            lbl = uilabel(leftGrid, 'Text', 'Parameters:') ;
+            lbl.Layout.Row = 10 ; lbl.Layout.Column = 1 ;
+            app.Comb_ResultParams = uilabel(leftGrid, 'Text', '--') ;
+            app.Comb_ResultParams.Layout.Row = 10 ;
+            app.Comb_ResultParams.Layout.Column = 2 ;
+
+            % Row 11: X combined
+            lbl = uilabel(leftGrid, 'Text', 'X_model:') ;
+            lbl.Layout.Row = 11 ; lbl.Layout.Column = 1 ;
+            app.Comb_ResultX = uilabel(leftGrid, 'Text', '--') ;
+            app.Comb_ResultX.Layout.Row = 11 ;
+            app.Comb_ResultX.Layout.Column = 2 ;
+            app.Comb_ResultX.FontWeight = 'bold' ;
+
+            % Row 12: X_CSTR
+            lbl = uilabel(leftGrid, 'Text', 'X_CSTR ideal:') ;
+            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            app.Comb_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
+            app.Comb_ResultXcstr.Layout.Row = 12 ;
+            app.Comb_ResultXcstr.Layout.Column = 2 ;
+
+            % Row 13: X_PFR
+            lbl = uilabel(leftGrid, 'Text', 'X_PFR ideal:') ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            app.Comb_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
+            app.Comb_ResultXpfr.Layout.Row = 13 ;
+            app.Comb_ResultXpfr.Layout.Column = 2 ;
+
+            % ---- RIGHT PANEL (PLOTS) ----
+            rightPanel = uipanel(mainGrid, 'Title', 'Combined Model Results') ;
+            plotGrid = uigridlayout(rightPanel, [2 1]) ;
+            plotGrid.RowHeight = {'1x', '1x'} ;
+
+            % E(t) plot
+            app.Comb_AxesEt = uiaxes(plotGrid) ;
+            title(app.Comb_AxesEt, 'E(t) - Combined Model') ;
+            xlabel(app.Comb_AxesEt, 't (s)') ;
+            ylabel(app.Comb_AxesEt, 'E(t) (1/s)') ;
+
+            % Comparison bar chart
+            app.Comb_AxesComparison = uiaxes(plotGrid) ;
+            title(app.Comb_AxesComparison, 'Conversion Comparison') ;
+            ylabel(app.Comb_AxesComparison, 'Conversion X') ;
+        end
+
+        %% ============== COMBINED CALLBACKS ==============
+
+        function Comb_modelChanged(app)
+            model = app.Comb_ModelDropdown.Value ;
+
+            switch model
+                case 'CSTR + Dead Volume'
+                    app.Comb_Param1Label.Text = 'alpha (active vol frac):' ;
+                    app.Comb_Param1Field.Value = 0.8 ;
+                    app.Comb_Param1Field.Limits = [0.01 1] ;
+                    app.Comb_Param2Label.Visible = 'off' ;
+                    app.Comb_Param2Field.Visible = 'off' ;
+
+                case 'CSTR + Bypass'
+                    app.Comb_Param1Label.Text = 'beta (bypass fraction):' ;
+                    app.Comb_Param1Field.Value = 0.1 ;
+                    app.Comb_Param1Field.Limits = [0 0.99] ;
+                    app.Comb_Param2Label.Visible = 'off' ;
+                    app.Comb_Param2Field.Visible = 'off' ;
+
+                case 'CSTR + Bypass + Dead Volume'
+                    app.Comb_Param1Label.Text = 'alpha (active vol frac):' ;
+                    app.Comb_Param1Field.Value = 0.8 ;
+                    app.Comb_Param1Field.Limits = [0.01 1] ;
+                    app.Comb_Param2Label.Text = 'beta (bypass fraction):' ;
+                    app.Comb_Param2Label.Visible = 'on' ;
+                    app.Comb_Param2Field.Visible = 'on' ;
+                    app.Comb_Param2Field.Value = 0.1 ;
+                    app.Comb_Param2Field.Limits = [0 0.99] ;
+
+                case 'CSTR + PFR in Series'
+                    app.Comb_Param1Label.Text = 'tau_CSTR (s):' ;
+                    app.Comb_Param1Field.Value = 5 ;
+                    app.Comb_Param1Field.Limits = [0.001 Inf] ;
+                    app.Comb_Param2Label.Text = 'tau_PFR (s):' ;
+                    app.Comb_Param2Label.Visible = 'on' ;
+                    app.Comb_Param2Field.Visible = 'on' ;
+                    app.Comb_Param2Field.Value = 5 ;
+                    app.Comb_Param2Field.Limits = [0.001 Inf] ;
+            end
+        end
+
+        function Comb_kineticsChanged(app)
+            kinetics = app.Comb_KineticsDropdown.Value ;
+            if contains(kinetics, '2nd')
+                app.Comb_CA0Label.Visible = 'on' ;
+                app.Comb_CA0Field.Visible = 'on' ;
+                app.Comb_kLabel.Text = 'k (m^3/(mol*s)):' ;
+            else
+                app.Comb_CA0Label.Visible = 'off' ;
+                app.Comb_CA0Field.Visible = 'off' ;
+                app.Comb_kLabel.Text = 'k (1/s):' ;
+            end
+        end
+
+        function Comb_compute(app)
+
+            try
+                model = app.Comb_ModelDropdown.Value ;
+                tau_val = app.Comb_tauField.Value ;
+                p1 = app.Comb_Param1Field.Value ;
+                p2 = app.Comb_Param2Field.Value ;
+                k_val = app.Comb_kField.Value ;
+                kinetics = app.Comb_KineticsDropdown.Value ;
+                is2nd = contains(kinetics, '2nd') ;
+                if is2nd
+                    CA0_val = app.Comb_CA0Field.Value ;
+                end
+
+                Da = k_val * tau_val ;
+
+                % Generate RTD and compute conversion
+                switch model
+                    case 'CSTR + Dead Volume'
+                        alpha = p1 ;
+                        rtd_comb = RTD.cstr_with_dead_volume(tau_val, alpha) ;
+                        tau_eff = alpha * tau_val ;
+                        if is2nd
+                            Da_eff = k_val * CA0_val * tau_eff ;
+                            X_model = (-1 + sqrt(1 + 4*Da_eff)) / (2*Da_eff) ;
+                        else
+                            X_model = (k_val * tau_eff) / (1 + k_val * tau_eff) ;
+                        end
+                        paramStr = sprintf('alpha=%.3f', alpha) ;
+
+                    case 'CSTR + Bypass'
+                        beta = p1 ;
+                        rtd_comb = RTD.cstr_with_bypass(tau_val, beta) ;
+                        tau_s = tau_val / (1 - beta) ;
+                        if is2nd
+                            Da_s = k_val * CA0_val * tau_s ;
+                            X_reactor = (-1 + sqrt(1 + 4*Da_s)) / (2*Da_s) ;
+                        else
+                            X_reactor = (k_val * tau_s) / (1 + k_val * tau_s) ;
+                        end
+                        % Overall: bypass has X=0, reactor has X_reactor
+                        X_model = (1 - beta) * X_reactor ;
+                        paramStr = sprintf('beta=%.3f', beta) ;
+
+                    case 'CSTR + Bypass + Dead Volume'
+                        alpha = p1 ;
+                        beta = p2 ;
+                        rtd_comb = RTD.cstr_with_bypass_and_dead(tau_val, alpha, beta) ;
+                        tau_s = alpha * tau_val / (1 - beta) ;
+                        if is2nd
+                            Da_s = k_val * CA0_val * tau_s ;
+                            X_reactor = (-1 + sqrt(1 + 4*Da_s)) / (2*Da_s) ;
+                        else
+                            X_reactor = (k_val * tau_s) / (1 + k_val * tau_s) ;
+                        end
+                        X_model = (1 - beta) * X_reactor ;
+                        paramStr = sprintf('alpha=%.3f, beta=%.3f', alpha, beta) ;
+
+                    case 'CSTR + PFR in Series'
+                        tau_cstr = p1 ;
+                        tau_pfr = p2 ;
+                        rtd_comb = RTD.from_cstr_series_with_pfr(tau_cstr, tau_pfr) ;
+                        if is2nd
+                            % PFR then CSTR: X_pfr first, then CSTR
+                            Da_pfr = k_val * CA0_val * tau_pfr ;
+                            X_pfr_local = Da_pfr / (1 + Da_pfr) ;
+                            CA_after_pfr = CA0_val * (1 - X_pfr_local) ;
+                            Da_cstr = k_val * CA_after_pfr * tau_cstr ;
+                            X_cstr_local = (-1 + sqrt(1 + 4*Da_cstr)) / (2*Da_cstr) ;
+                            X_model = 1 - (1 - X_pfr_local) * (1 - X_cstr_local) ;
+                        else
+                            X_pfr_local = 1 - exp(-k_val * tau_pfr) ;
+                            X_cstr_local = (k_val * tau_cstr) / (1 + k_val * tau_cstr) ;
+                            X_model = 1 - (1 - X_pfr_local) * (1 - X_cstr_local) ;
+                        end
+                        paramStr = sprintf('tau_C=%.2f, tau_P=%.2f', tau_cstr, tau_pfr) ;
+                end
+
+                X_model = max(0, min(1, X_model)) ;
+
+                % Reference ideal reactors
+                if is2nd
+                    Da_ref = k_val * CA0_val * tau_val ;
+                    X_cstr = (-1 + sqrt(1 + 4*Da_ref)) / (2*Da_ref) ;
+                    X_pfr = Da_ref / (1 + Da_ref) ;
+                else
+                    X_cstr = Da / (1 + Da) ;
+                    X_pfr = 1 - exp(-Da) ;
+                end
+                X_cstr = max(0, min(1, X_cstr)) ;
+                X_pfr = max(0, min(1, X_pfr)) ;
+
+                % Update results
+                app.Comb_ResultParams.Text = paramStr ;
+                app.Comb_ResultX.Text = sprintf('%.4f', X_model) ;
+                app.Comb_ResultXcstr.Text = sprintf('%.4f', X_cstr) ;
+                app.Comb_ResultXpfr.Text = sprintf('%.4f', X_pfr) ;
+
+                % Update plots
+                app.Comb_updatePlots(rtd_comb, model, X_model, X_cstr, X_pfr, paramStr) ;
+
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Error in Combined Model') ;
+            end
+        end
+
+        function Comb_updatePlots(app, rtd_comb, model, X_model, X_cstr, X_pfr, paramStr)
+
+            % ---- Plot 1: E(t) ----
+            cla(app.Comb_AxesEt) ;
+
+            % Plot combined model E(t)
+            plot(app.Comb_AxesEt, rtd_comb.t, rtd_comb.Et, 'b-', 'LineWidth', 1.5) ;
+            hold(app.Comb_AxesEt, 'on') ;
+
+            % Overlay ideal CSTR for reference
+            tau_val = app.Comb_tauField.Value ;
+            rtd_ideal = RTD.ideal_cstr(tau_val) ;
+            plot(app.Comb_AxesEt, rtd_ideal.t, rtd_ideal.Et, 'r--', 'LineWidth', 1) ;
+            hold(app.Comb_AxesEt, 'off') ;
+
+            title(app.Comb_AxesEt, sprintf('E(t): %s', model)) ;
+            xlabel(app.Comb_AxesEt, 't (s)') ;
+            ylabel(app.Comb_AxesEt, 'E(t) (1/s)') ;
+            legend(app.Comb_AxesEt, model, 'Ideal CSTR', 'Location', 'best') ;
+
+            % Add parameters annotation
+            text(app.Comb_AxesEt, 0.95, 0.85, paramStr, ...
+                'Units', 'normalized', 'HorizontalAlignment', 'right', ...
+                'FontSize', 9, 'BackgroundColor', [1 1 1 0.8], ...
+                'EdgeColor', [0.7 0.7 0.7]) ;
+
+            % ---- Plot 2: Comparison bar chart ----
+            cla(app.Comb_AxesComparison) ;
+            bar_data = [X_pfr ; X_model ; X_cstr] ;
+            b = bar(app.Comb_AxesComparison, bar_data) ;
+            b.FaceColor = 'flat' ;
+            b.CData = [0.3 0.8 0.3 ; 0.3 0.6 0.9 ; 0.9 0.3 0.3] ;
+
+            % Short label for model
+            modelShort = strrep(model, 'CSTR + ', '') ;
+            set(app.Comb_AxesComparison, 'XTickLabel', ...
+                {'PFR ideal', modelShort, 'CSTR ideal'}) ;
+            ylabel(app.Comb_AxesComparison, 'Conversion X') ;
+            title(app.Comb_AxesComparison, 'Conversion Comparison') ;
+            ylim(app.Comb_AxesComparison, [0 1.12]) ;
+
+            % Value labels
+            hold(app.Comb_AxesComparison, 'on') ;
+            vals = [X_pfr, X_model, X_cstr] ;
+            for idx = 1:3
+                if vals(idx) > 0.85
+                    ypos = vals(idx) - 0.06 ;
+                    txtColor = [1 1 1] ;
+                else
+                    ypos = vals(idx) + 0.03 ;
+                    txtColor = [0 0 0] ;
+                end
+                text(app.Comb_AxesComparison, idx, ypos, ...
+                    sprintf('%.4f', vals(idx)), ...
+                    'HorizontalAlignment', 'center', ...
+                    'FontWeight', 'bold', 'FontSize', 10, ...
+                    'Color', txtColor) ;
+            end
+            hold(app.Comb_AxesComparison, 'off') ;
         end
 
     end

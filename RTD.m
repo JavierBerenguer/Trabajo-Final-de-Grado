@@ -548,6 +548,116 @@ classdef RTD
             obj.sigma2 = tau_cstr^2 ;
         end
 
+        function obj = cstr_with_dead_volume(tau_total, alpha, tspan)
+            % Generate E(t) for a CSTR with dead volume
+            %   obj = RTD.cstr_with_dead_volume(tau_total, alpha)
+            %   obj = RTD.cstr_with_dead_volume(tau_total, alpha, tspan)
+            %
+            % The reactor has total volume V, but only a fraction alpha
+            % is active (well-mixed). The remaining (1-alpha)*V is dead.
+            %
+            % Effective tau = alpha * tau_total (only active volume flows)
+            % E(t) = (1/tau_eff) * exp(-t/tau_eff)
+            %
+            % Parameters:
+            %   tau_total - V/Q (total space time based on total volume)
+            %   alpha     - fraction of active volume (0 < alpha <= 1)
+
+            tau_eff = alpha * tau_total ;
+
+            if nargin < 3
+                tspan = linspace(0, 15 * tau_eff, 3000) ;
+            end
+
+            Et = (1/tau_eff) * exp(-tspan / tau_eff) ;
+
+            obj = RTD(tspan, Et) ;
+            obj.source = 'cstr_dead_volume' ;
+
+            % Analytical moments
+            obj.tau    = tau_eff ;
+            obj.sigma2 = tau_eff^2 ;
+        end
+
+        function obj = cstr_with_bypass(tau_total, beta, tspan)
+            % Generate E(t) for a CSTR with bypass
+            %   obj = RTD.cstr_with_bypass(tau_total, beta)
+            %   obj = RTD.cstr_with_bypass(tau_total, beta, tspan)
+            %
+            % A fraction beta of the feed bypasses the reactor directly.
+            % The remaining (1-beta) enters the CSTR.
+            %
+            % E(t) = beta*delta(t) + (1-beta)*(1/tau_s)*exp(-t/tau_s)
+            % where tau_s = tau_total / (1-beta)  (effective CSTR time)
+            %
+            % The delta function is approximated as a narrow Gaussian.
+            %
+            % Parameters:
+            %   tau_total - V/Q (total space time)
+            %   beta      - bypass fraction (0 <= beta < 1)
+
+            tau_s = tau_total / (1 - beta) ;
+
+            if nargin < 3
+                tspan = linspace(0, 15 * tau_s, 3000) ;
+            end
+
+            % Gaussian approximation for delta(t)
+            sigma_delta = tau_total / 200 ;
+            delta_approx = (1 / (sigma_delta * sqrt(2*pi))) * ...
+                           exp(-0.5 * (tspan / sigma_delta).^2) ;
+
+            % E(t) = beta*delta(t) + (1-beta)*(1/tau_s)*exp(-t/tau_s)
+            Et = beta * delta_approx + ...
+                 (1 - beta) * (1/tau_s) * exp(-tspan / tau_s) ;
+
+            obj = RTD(tspan, Et) ;
+            obj.source = 'cstr_bypass' ;
+
+            % Analytical moments
+            % tau = (1-beta)*tau_s = tau_total
+            % sigma2 is complex due to the delta function contribution
+            obj.tau    = tau_total ;
+            obj.sigma2 = (1 - beta) * tau_s^2 ;  % from second moment
+        end
+
+        function obj = cstr_with_bypass_and_dead(tau_total, alpha, beta, tspan)
+            % Generate E(t) for a CSTR with both bypass and dead volume
+            %   obj = RTD.cstr_with_bypass_and_dead(tau_total, alpha, beta)
+            %
+            % Combines bypass (beta) and dead volume (alpha):
+            %   - Active volume: V_active = alpha * V
+            %   - Bypass flow:   Q_bypass = beta * Q
+            %   - Through reactor: Q_reactor = (1-beta) * Q
+            %   - tau_s = alpha*V / ((1-beta)*Q) = alpha*tau_total/(1-beta)
+            %
+            % E(t) = beta*delta(t) + (1-beta)*(1/tau_s)*exp(-t/tau_s)
+            %
+            % Parameters:
+            %   tau_total - V/Q (nominal space time)
+            %   alpha     - active volume fraction (0 < alpha <= 1)
+            %   beta      - bypass fraction (0 <= beta < 1)
+
+            tau_s = alpha * tau_total / (1 - beta) ;
+
+            if nargin < 4
+                tspan = linspace(0, 15 * tau_s, 3000) ;
+            end
+
+            sigma_delta = tau_total / 200 ;
+            delta_approx = (1 / (sigma_delta * sqrt(2*pi))) * ...
+                           exp(-0.5 * (tspan / sigma_delta).^2) ;
+
+            Et = beta * delta_approx + ...
+                 (1 - beta) * (1/tau_s) * exp(-tspan / tau_s) ;
+
+            obj = RTD(tspan, Et) ;
+            obj.source = 'cstr_bypass_dead' ;
+
+            obj.tau    = beta * 0 + (1-beta) * tau_s ;  % = alpha*tau_total
+            obj.sigma2 = (1-beta) * tau_s^2 ;
+        end
+
     end
 
 end
