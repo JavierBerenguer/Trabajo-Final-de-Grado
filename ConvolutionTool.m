@@ -26,7 +26,7 @@ classdef ConvolutionTool
 %
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 26, 2026. Last update: March 26, 2026
+% Created: March 26, 2026. Last update: March 28, 2026
 % =========================================================================
 
     methods (Static)
@@ -62,7 +62,7 @@ classdef ConvolutionTool
             % Check that dt is approximately equal
             if abs(dt_E - dt_C) / max(dt_E, dt_C) > 0.01
                 warning('ConvolutionTool:dtMismatch', ...
-                    'Los incrementos de tiempo difieren (dt_E=%.4g, dt_C=%.4g). Interpolando C_in para coincidir con dt_E.', ...
+                    'Time increments differ (dt_E=%.4g, dt_C=%.4g). Interpolating C_in to match dt_E.', ...
                     dt_E, dt_C) ;
                 t_Cin_new = t_Cin(1):dt_E:t_Cin(end) ;
                 C_in = interp1(t_Cin, C_in, t_Cin_new, 'pchip')' ;
@@ -138,22 +138,37 @@ classdef ConvolutionTool
                 end
             end
 
-            % Initial guess: uniform E
-            E0 = ones(n, 1) / (n * dt) ;
+            % Initial guess: exponential decay (better than uniform)
+            t_E_vec = (0:n-1)' * dt ;
+            tau_guess = n * dt / 3 ;
+            E0 = (1/tau_guess) * exp(-t_E_vec / tau_guess) ;
+            E0 = E0 / (trapz(t_E_vec, E0) + eps) ;  % normalize to area=1
 
             % Objective function: minimize ||C_out - B*E*dt||^2
-            % with constraint E >= 0
-            obj_fun = @(E_vec) sum((C_out - B * abs(E_vec(:)) * dt).^2) ;
+            % with penalty for negative E and deviation from area=1
+            obj_fun = @(E_vec) deconv_objective(E_vec, B, C_out, dt, t_E_vec) ;
 
-            % Optimization options
-            options = optimset('MaxFunEvals', 50000, 'MaxIter', 10000, ...
-                              'TolFun', 1e-12, 'TolX', 1e-10, ...
-                              'Display', 'off') ;
-
-            [E_opt, residual] = fminsearch(obj_fun, E0, options) ;
+            % Try fmincon if available (constrained optimization)
+            try
+                lb = zeros(n, 1) ;  % E >= 0
+                fmincon_opts = optimoptions('fmincon', 'Display', 'off', ...
+                    'MaxFunctionEvaluations', 50000, 'MaxIterations', 10000, ...
+                    'OptimalityTolerance', 1e-12) ;
+                Aeq = ones(1, n) * dt ;  % integral(E) = 1
+                beq = 1 ;
+                [E_opt, residual] = fmincon( ...
+                    @(E_vec) sum((C_out - B * E_vec(:) * dt).^2), ...
+                    E0, [], [], Aeq, beq, lb, [], [], fmincon_opts) ;
+            catch
+                % Fallback to fminsearch with penalty terms
+                options = optimset('MaxFunEvals', 50000, 'MaxIter', 10000, ...
+                                  'TolFun', 1e-12, 'TolX', 1e-10, ...
+                                  'Display', 'off') ;
+                [E_opt, residual] = fminsearch(obj_fun, E0, options) ;
+            end
 
             % Ensure non-negative
-            E_rec = abs(E_opt(:))' ;
+            E_rec = max(E_opt(:)', 0) ;
 
             % Normalize so integral = 1
             area = trapz(t_E, E_rec) ;
@@ -186,4 +201,16 @@ classdef ConvolutionTool
         end
 
     end
+end
+
+function f = deconv_objective(E_vec, B, C_out, dt, t_E_vec)
+    % Penalized objective for fminsearch fallback (when fmincon unavailable)
+    E_pos = max(E_vec(:), 0) ;  % soft non-negativity
+    fit_error = sum((C_out - B * E_pos * dt).^2) ;
+    % Penalty for negative values
+    neg_penalty = 1000 * sum(min(E_vec(:), 0).^2) ;
+    % Penalty for area != 1
+    area = trapz(t_E_vec, E_pos) ;
+    area_penalty = 500 * (area - 1)^2 ;
+    f = fit_error + neg_penalty + area_penalty ;
 end

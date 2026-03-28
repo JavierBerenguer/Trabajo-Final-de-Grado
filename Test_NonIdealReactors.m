@@ -19,7 +19,7 @@
 %   - For 1st order, segregation = max mixedness = exact
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 21, 2026
+% Created: March 21, 2026. Last update: March 28, 2026
 % =========================================================================
 
 clear ; clc ; close all ;

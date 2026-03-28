@@ -26,7 +26,7 @@ classdef DispersionReactor < Reactor
 %
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 25, 2026. Last update: March 25, 2026
+% Created: March 25, 2026. Last update: March 28, 2026
 % =========================================================================
 
 % Internal units (SI):
@@ -78,7 +78,7 @@ classdef DispersionReactor < Reactor
                 case 'closed-closed'
                     rtd_obj = RTD.dispersion_closed(obj.Bo, tau) ;
                 otherwise
-                    error('Tipo de condición de frontera desconocido: %s', obj.boundaryType) ;
+                    error('Unknown boundary condition type: %s', obj.boundaryType) ;
             end
 
             obj.rtd = rtd_obj ;
@@ -105,15 +105,28 @@ classdef DispersionReactor < Reactor
             %         con T de Hysys. tau = V/Q donde Q vendria de Hysys.
 
             Da = k * tau ;
+
+            % Guard for extreme Bo → 0 (PFR limit): use analytical PFR formula
+            if obj.Bo < 1e-6
+                X = 1 - exp(-Da) ;  % PFR 1st order
+                X = max(0, min(1, X)) ;
+                return
+            end
+
             Pe = 1 / obj.Bo ;
 
             switch obj.boundaryType
                 case 'closed-closed'
                     q = sqrt(1 + 4 * Da * obj.Bo) ;
-                    num = 4 * q * exp(Pe / 2) ;
-                    den = (1 + q)^2 * exp(q * Pe / 2) - ...
-                          (1 - q)^2 * exp(-q * Pe / 2) ;
-                    X = 1 - num / den ;
+                    % Guard against numerical overflow for large Pe
+                    if Pe > 500
+                        X = 1 - exp(-Da) ;  % PFR limit
+                    else
+                        num = 4 * q * exp(Pe / 2) ;
+                        den = (1 + q)^2 * exp(q * Pe / 2) - ...
+                              (1 - q)^2 * exp(-q * Pe / 2) ;
+                        X = 1 - num / den ;
+                    end
 
                 case 'open-open'
                     q = sqrt(1 + 4 * Da * obj.Bo) ;

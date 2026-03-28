@@ -10,7 +10,7 @@ classdef RTD
 %   - Plot E(t), F(t), E(theta)
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 22, 2026
+% Created: March 21, 2026. Last update: March 28, 2026
 % Precision update: increased resolution for numerical accuracy
 % =========================================================================
 
@@ -57,7 +57,7 @@ classdef RTD
             end
 
             if nargin ~= 2
-                error('El constructor RTD requiere 0 o 2 argumentos: RTD(t, Et)') ;
+                error('RTD constructor requires 0 or 2 arguments: RTD(t, Et)') ;
             end
 
             % Ensure row vectors
@@ -65,15 +65,15 @@ classdef RTD
             if iscolumn(Et), Et = Et' ; end
 
             if length(t) ~= length(Et)
-                error('Los vectores t y Et deben tener la misma longitud') ;
+                error('Vectors t and Et must have the same length') ;
             end
 
             if any(t < 0)
-                error('El vector de tiempo t debe contener valores no negativos') ;
+                error('Time vector t must contain non-negative values') ;
             end
 
             if any(Et < 0)
-                warning('RTD:negativeValues', 'E(t) contiene valores negativos. Esto puede indicar ruido experimental.') ;
+                warning('RTD:negativeValues', 'E(t) contains negative values. This may indicate experimental noise.') ;
             end
 
             obj.t  = t ;
@@ -133,7 +133,7 @@ classdef RTD
             area = trapz(obj.t, obj.Et) ;
 
             if area <= 0
-                warning('RTD:zeroArea', 'El área bajo E(t) es cero o negativa. No se puede normalizar.') ;
+                warning('RTD:zeroArea', 'Area under E(t) is zero or negative. Cannot normalize.') ;
                 return
             end
 
@@ -180,7 +180,7 @@ classdef RTD
             %   plot_Et(obj, ax) - plot on specified axes
 
             if isempty(obj.t) || isempty(obj.Et)
-                error('El objeto RTD está vacío. No se puede graficar.') ;
+                error('RTD object is empty. Cannot plot.') ;
             end
 
             if nargin < 2
@@ -211,7 +211,7 @@ classdef RTD
             %   plot_Ft(obj, ax) - plot on specified axes
 
             if isempty(obj.t) || isempty(obj.Et)
-                error('El objeto RTD está vacío. No se puede graficar.') ;
+                error('RTD object is empty. Cannot plot.') ;
             end
 
             if nargin < 2
@@ -235,7 +235,7 @@ classdef RTD
             %   plot_Etheta(obj, ax) - plot on specified axes
 
             if isempty(obj.t) || isempty(obj.Et) || isempty(obj.tau)
-                error('El objeto RTD está vacío o tau no calculado. No se puede graficar.') ;
+                error('RTD object is empty or tau not computed. Cannot plot.') ;
             end
 
             if nargin < 2
@@ -417,8 +417,9 @@ classdef RTD
             theta = tspan / tau_val ;
             Etheta = zeros(size(theta)) ;
 
-            if Bo < 0.01
-                % Small dispersion: Gaussian approximation
+            if Bo < 0.05
+                % Small-to-moderate dispersion: Gaussian approximation
+                % Valid for Bo < 0.05 (Pe > 20)
                 idx = theta > 0 ;
                 Etheta(idx) = (1 ./ sqrt(4*pi*Bo)) .* ...
                              exp(-(1 - theta(idx)).^2 ./ (4*Bo)) ;
@@ -427,10 +428,10 @@ classdef RTD
                 % E(theta) = sum_{n=1}^{inf} c_n * exp(-lambda_n * theta)
                 % Approximation using eigenvalue expansion
                 idx = theta > 0 ;
-                nTerms = 200 ;
+                nTerms = 500 ;
+                Etheta_prev = Etheta ;
                 for k = 1:nTerms
                     % Eigenvalues from: tan(alpha) = 2*alpha*Bo / (alpha^2*Bo^2 - 1)
-                    % Approximate eigenvalues
                     alpha_k = k * pi ;  % initial guess
                     try
                         alpha_k = fzero(@(a) tan(a) - 2*a*Bo./(a.^2*Bo^2 - 1), ...
@@ -442,6 +443,15 @@ classdef RTD
                     c_k = 2 * Bo * alpha_k^2 / ...
                           (alpha_k^2 * Bo^2 + Bo + alpha_k^2 * Bo) ;
                     Etheta(idx) = Etheta(idx) + c_k * exp(-lambda_k * theta(idx)) ;
+
+                    % Convergence check every 50 terms
+                    if mod(k, 50) == 0
+                        change = max(abs(Etheta - Etheta_prev)) ;
+                        if change < 1e-10
+                            break ;
+                        end
+                        Etheta_prev = Etheta ;
+                    end
                 end
             end
 
@@ -469,13 +479,13 @@ classdef RTD
             if iscolumn(Cpulse), Cpulse = Cpulse' ; end
 
             if length(t) ~= length(Cpulse)
-                error('Los vectores t y Cpulse deben tener la misma longitud') ;
+                error('Vectors t and Cpulse must have the same length') ;
             end
 
             % Normalize: E(t) = C(t) / integral(C(t)dt)
             area = trapz(t, Cpulse) ;
             if area <= 0
-                error('El área bajo la respuesta al pulso es cero o negativa. Verifica los datos.') ;
+                error('Area under pulse response is zero or negative. Check data.') ;
             end
 
             Et = Cpulse / area ;
@@ -502,7 +512,7 @@ classdef RTD
             if iscolumn(Cstep), Cstep = Cstep' ; end
 
             if length(t) ~= length(Cstep)
-                error('Los vectores t y Cstep deben tener la misma longitud') ;
+                error('Vectors t and Cstep must have the same length') ;
             end
 
             if nargin < 3
@@ -690,6 +700,13 @@ classdef RTD
 
             obj = RTD(tspan, Et) ;
             obj.source = 'laminar_flow' ;
+
+            % Override mean residence time with exact analytical value.
+            % Note: the variance of laminar flow E(t) = tau^2/(2*t^3) for
+            % t >= tau/2 is mathematically INFINITE (the integral diverges
+            % as ln(t) at the upper limit). The numerical sigma2 from trapz
+            % is a finite approximation due to truncation at 10*tau.
+            obj.tau = tau_val ;
         end
 
     end

@@ -22,7 +22,7 @@ classdef MaxMixednessModel
 %   - Plots X(lambda) profile
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 22, 2026
+% Created: March 21, 2026. Last update: March 28, 2026
 % =========================================================================
 
 % Internal units (SI):
@@ -79,7 +79,7 @@ classdef MaxMixednessModel
             % Result: X_exit = X(lambda=0)
 
             if isempty(obj.rtd) || isempty(obj.reactionSys) || isempty(obj.feed)
-                error('MaxMixednessModel requiere que rtd, reactionSys y feed estén establecidos') ;
+                error('MaxMixednessModel requires rtd, reactionSys and feed to be set') ;
             end
 
             % Prepare E(lambda) and F(lambda) as interpolation functions
@@ -175,7 +175,7 @@ classdef MaxMixednessModel
             %         con T de Hysys via Stream.defineStreamFromHysys().
 
             if isempty(obj.rtd)
-                error('RTD debe estar establecida antes de calcular') ;
+                error('RTD must be set before computing') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -230,7 +230,7 @@ classdef MaxMixednessModel
             %         CA0 podria venir de composicion de corriente Hysys.
 
             if isempty(obj.rtd)
-                error('RTD debe estar establecida antes de calcular') ;
+                error('RTD must be set before computing') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -313,7 +313,7 @@ classdef MaxMixednessModel
                 denom = max(1 - F_val, 1e-12) ;
                 CA = CA0 * (1 - X) ;
                 rA_over_CA0 = a * (1 - X) / (1 + b * CA) ;
-                dXdl = rA_over_CA0 + (E_val / denom) * X ;
+                dXdl = -rA_over_CA0 + (E_val / denom) * X ;
             end
         end
 
@@ -325,7 +325,7 @@ classdef MaxMixednessModel
             % -rA = k_fwd * CA - k_rev * CB = k_fwd*CA0*(1-X) - k_rev*CA0*X
             % rA/CA0 = -(k_fwd*(1-X) - k_rev*X)
             %
-            % ODE: dX/dlambda = (k_fwd*(1-X) - k_rev*X) + E/(1-F) * X
+            % ODE: dX/dlambda = -(k_fwd*(1-X) - k_rev*X) + E/(1-F) * X
             %
             % [HYSYS] k_fwd y k_rev dependen de T via Arrhenius.
             %         T y CA0 podrian venir de corriente Hysys.
@@ -355,7 +355,7 @@ classdef MaxMixednessModel
                 E_val = E_interp(lam) ;
                 F_val = F_interp(lam) ;
                 denom = max(1 - F_val, 1e-12) ;
-                dXdl = (k_fwd*(1-X) - k_rev*X) + (E_val / denom) * X ;
+                dXdl = -(k_fwd*(1-X) - k_rev*X) + (E_val / denom) * X ;
             end
         end
 
@@ -402,7 +402,7 @@ classdef MaxMixednessModel
                 denom = max(1 - F_val, 1e-12) ;
                 CA = CA0 * max(1 - X, 0) ;
                 rA_total = k1 * CA^n1 + k2 * CA^n2 ;
-                dXdl = rA_total / CA0 + (E_val / denom) * X ;
+                dXdl = -rA_total / CA0 + (E_val / denom) * X ;
             end
         end
 
@@ -484,7 +484,7 @@ classdef MaxMixednessModel
             %   from lambda_max to lambda=0
 
             if isempty(obj.X_profile) || isempty(obj.X_exit)
-                error('Debe ejecutar compute() o compute_firstOrder() primero') ;
+                error('Must run compute() or compute_firstOrder() first') ;
             end
 
             fig = figure('Name', 'Maximum Mixedness Model Results', 'NumberTitle', 'off') ;

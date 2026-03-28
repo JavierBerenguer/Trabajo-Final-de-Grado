@@ -8,7 +8,7 @@ classdef TanksInSeries < Reactor
 %   - Can determine N from experimental RTD variance: N = (tm/sigma)^2
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 21, 2026
+% Created: March 21, 2026. Last update: March 28, 2026
 % =========================================================================
 
 % Internal units (SI):
@@ -34,7 +34,7 @@ classdef TanksInSeries < Reactor
 
         function R = set.nTanks(R, n)
             if n <= 0
-                error('El número de tanques debe ser positivo') ;
+                error('Number of tanks must be positive') ;
             end
             R.nTanks = n ;
         end
@@ -42,7 +42,7 @@ classdef TanksInSeries < Reactor
         function R = set.nTanks_method(R, method)
             valid = {'manual', 'from_rtd'} ;
             if ~ismember(method, valid)
-                error('nTanks_method debe ser ''manual'' o ''from_rtd''') ;
+                error('nTanks_method must be ''manual'' or ''from_rtd''') ;
             end
             R.nTanks_method = method ;
         end
@@ -57,11 +57,11 @@ classdef TanksInSeries < Reactor
             %   rtd_obj - RTD object with computed moments
 
             if isempty(rtd_obj.tau) || isempty(rtd_obj.sigma2)
-                error('El objeto RTD debe tener momentos calculados (tau y sigma2)') ;
+                error('RTD object must have computed moments (tau and sigma2)') ;
             end
 
             if rtd_obj.sigma2 <= 0
-                error('La varianza de la RTD debe ser positiva') ;
+                error('RTD variance must be positive') ;
             end
 
             R.nTanks = rtd_obj.tau^2 / rtd_obj.sigma2 ;
@@ -80,7 +80,7 @@ classdef TanksInSeries < Reactor
             %   tspan     - (optional) time vector
 
             if nargin < 2 || isempty(tau_total)
-                error('Debe proporcionar tau_total (tiempo medio de residencia)') ;
+                error('Must provide tau_total (mean residence time)') ;
             end
 
             if nargin < 3
@@ -107,6 +107,11 @@ classdef TanksInSeries < Reactor
             N = round(R.nTanks) ;  % Must be integer for sequential computation
             if N < 1
                 N = 1 ;
+            end
+            if abs(R.nTanks - N) > 0.01
+                warning('TIS:nonIntegerN', ...
+                    'Rounding N = %.2f to %d for sequential CSTR computation.', ...
+                    R.nTanks, N) ;
             end
 
             % Volume per tank

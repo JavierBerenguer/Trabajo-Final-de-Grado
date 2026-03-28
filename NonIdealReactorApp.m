@@ -8,7 +8,7 @@ classdef NonIdealReactorApp < handle
 %
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 22, 2026
+% Created: March 21, 2026. Last update: March 28, 2026
 % =========================================================================
 
     properties (Access = private)
@@ -16,6 +16,8 @@ classdef NonIdealReactorApp < handle
         UIFigure
         TabGroup
         UnitConvButton
+        HelpButton
+        StatusBar               % Status bar label at bottom of figure
 
         % Shared state
         rtd                 % Current RTD object (shared across tabs)
@@ -179,6 +181,22 @@ classdef NonIdealReactorApp < handle
         Conv_AxesInput
         Conv_AxesResult
         Conv_AxesRecovered
+        Conv_RTDStatusLabel         % RTD status for Tab 1 source mode
+        Conv_CinEqLabel             % Label for C_in equation
+        Conv_CinEqField             % Text field for C_in equation
+        Conv_EEqLabel               % Label for E(t) equation
+        Conv_EEqField               % Text field for E(t) equation
+        Conv_CoutEqLabel            % Label for C_out equation
+        Conv_CoutEqField            % Text field for C_out equation
+        Conv_TstartLabel            % Label for t_start
+        Conv_TstartField            % Numeric field for t_start
+        Conv_TendLabel              % Label for t_end
+        Conv_TendField              % Numeric field for t_end
+        Conv_NptsLabel              % Label for N points
+        Conv_NptsField              % Numeric field for N points
+        Conv_UsePrevButton          % "Use Previous C_out as C_in" button
+        Conv_lastCout               % Stored C_out from last convolution (for chaining)
+        Conv_lastTout               % Stored t_out from last convolution (for chaining)
 
         % ---- Tab 6: Combined Models ----
         CombTab
@@ -238,11 +256,30 @@ classdef NonIdealReactorApp < handle
             % Create main figure
             app.UIFigure = uifigure('Name', 'Non-Ideal Reactor Analysis', ...
                 'Position', [100 100 1200 750], ...
-                'Resize', 'on') ;
+                'Resize', 'on', ...
+                'SizeChangedFcn', @(~,~) app.onFigureResize()) ;
 
-            % Create tab group
+            % Menu bar (T7)
+            mFile = uimenu(app.UIFigure, 'Text', 'File') ;
+            uimenu(mFile, 'Text', 'Exit', ...
+                'MenuSelectedFcn', @(~,~) delete(app.UIFigure)) ;
+            mHelp = uimenu(app.UIFigure, 'Text', 'Help') ;
+            uimenu(mHelp, 'Text', 'User Guide', ...
+                'MenuSelectedFcn', @(~,~) app.showHelp()) ;
+            uimenu(mHelp, 'Text', 'About', ...
+                'MenuSelectedFcn', @(~,~) app.showAbout()) ;
+
+            % Status bar at bottom (T8)
+            app.StatusBar = uilabel(app.UIFigure, ...
+                'Text', '  Ready', ...
+                'Position', [0 0 1200 22], ...
+                'BackgroundColor', [0.94 0.94 0.94], ...
+                'FontSize', 11, ...
+                'FontColor', [0.3 0.3 0.3]) ;
+
+            % Create tab group (above status bar)
             app.TabGroup = uitabgroup(app.UIFigure, ...
-                'Position', [0 0 1200 750]) ;
+                'Position', [0 22 1200 728]) ;
 
             % Unit Converter button (accessible from any tab)
             app.UnitConvButton = uibutton(app.UIFigure, 'push', ...
@@ -252,6 +289,15 @@ classdef NonIdealReactorApp < handle
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', [1 1 1], ...
                 'ButtonPushedFcn', @(~,~) UnitConverterHelper.launch()) ;
+
+            % Help button (accessible from any tab)
+            app.HelpButton = uibutton(app.UIFigure, 'push', ...
+                'Text', '? Help', ...
+                'Position', [940 718 120 28], ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [0.2 0.7 0.3], ...
+                'FontColor', [1 1 1], ...
+                'ButtonPushedFcn', @(~,~) app.showHelp()) ;
 
             % Build tabs
             app.createRTDTab() ;
@@ -270,6 +316,56 @@ classdef NonIdealReactorApp < handle
 
     methods (Access = private)
 
+        %% ============== RESPONSIVE RESIZE (T6) ==============
+
+        function onFigureResize(app)
+            pos = app.UIFigure.Position ;
+            w = pos(3) ; h = pos(4) ;
+
+            % Tab group fills figure above status bar
+            app.TabGroup.Position = [0 22 w h - 22] ;
+
+            % Status bar stretches full width at bottom
+            app.StatusBar.Position = [0 0 w 22] ;
+
+            % Buttons in top-right corner
+            app.UnitConvButton.Position = [w - 130, h - 32, 120, 28] ;
+            app.HelpButton.Position = [w - 260, h - 32, 120, 28] ;
+        end
+
+        %% ============== ABOUT DIALOG (T7) ==============
+
+        function showAbout(app) %#ok<INUSD>
+            fig = uifigure('Name', 'About', ...
+                'Position', [400 300 380 220], 'Resize', 'off') ;
+            g = uigridlayout(fig, [6 1]) ;
+            g.RowHeight = {'fit','fit','fit','fit','fit','fit'} ;
+            g.Padding = [20 20 20 20] ;
+            g.RowSpacing = 8 ;
+
+            uilabel(g, 'Text', 'Non-Ideal Reactor Analysis', ...
+                'FontSize', 18, 'FontWeight', 'bold', ...
+                'HorizontalAlignment', 'center') ;
+            uilabel(g, 'Text', 'Version 1.0 — March 2026', ...
+                'HorizontalAlignment', 'center') ;
+            uilabel(g, 'Text', 'Javier Berenguer Sabater', ...
+                'HorizontalAlignment', 'center', 'FontWeight', 'bold') ;
+            uilabel(g, 'Text', 'TFG — Chemical Engineering', ...
+                'HorizontalAlignment', 'center') ;
+            uilabel(g, 'Text', sprintf('MATLAB %s', version), ...
+                'HorizontalAlignment', 'center', ...
+                'FontColor', [0.5 0.5 0.5]) ;
+            uibutton(g, 'Text', 'Close', ...
+                'ButtonPushedFcn', @(~,~) delete(fig)) ;
+        end
+
+        %% ============== STATUS BAR (T8) ==============
+
+        function updateStatus(app, msg)
+            app.StatusBar.Text = ['  ' msg] ;
+            drawnow limitrate ;
+        end
+
         %% ============== TAB 1: RTD ANALYSIS ==============
         function createRTDTab(app)
 
@@ -280,7 +376,7 @@ classdef NonIdealReactorApp < handle
             mainGrid.ColumnWidth = {320, '1x'} ;
 
             % ---- LEFT PANEL ----
-            leftPanel = uipanel(mainGrid, 'Title', 'Configuracion RTD') ;
+            leftPanel = uipanel(mainGrid, 'Title', 'RTD Configuration') ;
             leftGrid = uigridlayout(leftPanel, [30 2]) ;
             leftGrid.RowHeight = repmat({28}, 1, 30) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
@@ -303,7 +399,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_SourceDropdown.Layout.Column = 2 ;
 
             % Row 2: Tau field
-            lbl = uilabel(leftGrid, 'Text', 'tau [s]:') ;
+            lbl = uilabel(leftGrid, 'Text', '&tau; [s]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
             app.RTD_TauField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 10, 'Limits', [0.001 Inf]) ;
@@ -311,7 +407,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_TauField.Layout.Column = 2 ;
 
             % Row 3: Qv (volumetric flow rate) — always visible
-            app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Qv [m^3/s]:') ;
+            app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Q<sub>v</sub> [m&sup3;/s]:', 'Interpreter', 'html') ;
             app.RTD_QvLabel.Layout.Row = 3 ; app.RTD_QvLabel.Layout.Column = 1 ;
             app.RTD_QvField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.001, 'Limits', [1e-12 Inf]) ;
@@ -327,11 +423,11 @@ classdef NonIdealReactorApp < handle
             app.RTD_NField.Visible = 'off' ;
 
             % Row 4: Bo field (for Dispersion) — overlaps with N (only one visible)
-            app.RTD_BoLabel = uilabel(leftGrid, 'Text', 'Bo [De/uL]:') ;
+            app.RTD_BoLabel = uilabel(leftGrid, 'Text', 'Bo [D<sub>e</sub>/uL]:', 'Interpreter', 'html') ;
             app.RTD_BoLabel.Layout.Row = 4 ; app.RTD_BoLabel.Layout.Column = 1 ;
             app.RTD_BoField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.01, 'Limits', [1e-6 Inf], ...
-                'Tooltip', 'Numero de dispersion Bo = De/(u*L). Bo->0: flujo piston, Bo->inf: mezcla perfecta.') ;
+                'Tooltip', 'Dispersion number Bo = De/(u·L). Bo→0: plug flow, Bo→∞: perfect mixing.') ;
             app.RTD_BoField.Layout.Row = 4 ; app.RTD_BoField.Layout.Column = 2 ;
             app.RTD_BoLabel.Visible = 'off' ;
             app.RTD_BoField.Visible = 'off' ;
@@ -355,7 +451,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpCVarField.Visible = 'off' ;
 
             % Row 7: C0 (step only)
-            app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', 'C0 [mol/m^3] (step):') ;
+            app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', 'C<sub>0</sub> [mol/m&sup3;] (step):', 'Interpreter', 'html') ;
             app.RTD_ExpC0Label.Layout.Row = 7 ; app.RTD_ExpC0Label.Layout.Column = 1 ;
             app.RTD_ExpC0Field = uieditfield(leftGrid, 'numeric', ...
                 'Value', 1, 'Limits', [0 Inf]) ;
@@ -365,7 +461,7 @@ classdef NonIdealReactorApp < handle
 
             % Row 8: Import from file button (for experimental data)
             app.RTD_ImportButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Importar datos experimentales', ...
+                'Text', 'Import Experimental Data', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [1 1 1], ...
                 'FontColor', [0.8 0 0], ...
@@ -429,47 +525,47 @@ classdef NonIdealReactorApp < handle
             app.RTD_GenerateButton.Layout.Column = [1 2] ;
 
             % Row 11: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Resultados:', ...
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
 
             % Row 12: tau_m
-            lbl = uilabel(leftGrid, 'Text', 'tau_m [s]:') ;
+            lbl = uilabel(leftGrid, 'Text', '&tau;<sub>m</sub> [s]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultTau = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultTau.Layout.Row = 12 ;
             app.RTD_ResultTau.Layout.Column = 2 ;
 
             % Row 13: sigma^2
-            lbl = uilabel(leftGrid, 'Text', 'sigma^2 [s^2]:') ;
+            lbl = uilabel(leftGrid, 'Text', '&sigma;&sup2; [s&sup2;]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultSigma2 = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultSigma2.Layout.Row = 13 ;
             app.RTD_ResultSigma2.Layout.Column = 2 ;
 
             % Row 14: sigma^2_theta
-            lbl = uilabel(leftGrid, 'Text', 'sigma^2_theta:') ;
+            lbl = uilabel(leftGrid, 'Text', '&sigma;&sup2;<sub>&theta;</sub>:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultSigma2Theta = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultSigma2Theta.Layout.Row = 14 ;
             app.RTD_ResultSigma2Theta.Layout.Column = 2 ;
 
             % Row 15: s^3
-            lbl = uilabel(leftGrid, 'Text', 's^3 [skewness]:') ;
+            lbl = uilabel(leftGrid, 'Text', 's&sup3; [skewness]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultS3 = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultS3.Layout.Row = 15 ;
             app.RTD_ResultS3.Layout.Column = 2 ;
 
             % Row 16: N_est
-            lbl = uilabel(leftGrid, 'Text', 'N_est [= tau^2/sigma^2]:') ;
+            lbl = uilabel(leftGrid, 'Text', 'N<sub>est</sub> [= &tau;&sup2;/&sigma;&sup2;]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultN = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultN.Layout.Row = 16 ;
             app.RTD_ResultN.Layout.Column = 2 ;
 
             % Row 17: V_eff
-            lbl = uilabel(leftGrid, 'Text', 'V_eff [m^3]:') ;
+            lbl = uilabel(leftGrid, 'Text', 'V<sub>eff</sub> [m&sup3;]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultVeff = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultVeff.Layout.Row = 17 ;
@@ -485,7 +581,7 @@ classdef NonIdealReactorApp < handle
 
             % Row 19: Export button
             app.RTD_ExportButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Exportar RTD a Workspace', ...
+                'Text', 'Export RTD to Workspace', ...
                 'BackgroundColor', [0.2 0.7 0.3], ...
                 'FontColor', 'white', ...
                 'Enable', 'off', ...
@@ -494,7 +590,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExportButton.Layout.Column = [1 2] ;
 
             % ---- RIGHT PANEL (PLOTS) ----
-            rightPanel = uipanel(mainGrid, 'Title', 'Graficas RTD') ;
+            rightPanel = uipanel(mainGrid, 'Title', 'RTD Plots') ;
             plotGrid = uigridlayout(rightPanel, [2 2]) ;
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
@@ -602,6 +698,7 @@ classdef NonIdealReactorApp < handle
             % Generate RTD based on selected source and parameters
 
             try
+                app.updateStatus('Generating RTD...') ;
                 source = app.RTD_SourceDropdown.Value ;
                 tau_val = app.RTD_TauField.Value ;
 
@@ -654,13 +751,13 @@ classdef NonIdealReactorApp < handle
                         try
                             C_data = eval(eq_str) ;
                         catch evalErr
-                            error('Error al evaluar la ecuación "%s": %s', ...
+                            error('Error evaluating equation "%s": %s', ...
                                 eq_str, evalErr.message) ;
                         end
 
                         % Validate result
                         if ~isnumeric(C_data) || length(C_data) ~= length(t)
-                            error('La ecuación debe devolver un vector numérico del mismo tamaño que t. Verifica que uses operadores elemento a elemento (.*  ./  .^)') ;
+                            error('The equation must return a numeric vector of the same size as t. Make sure you use element-wise operators (.*  ./  .^)') ;
                         end
 
                         % Ensure non-negative
@@ -686,8 +783,11 @@ classdef NonIdealReactorApp < handle
                     app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
                 end
 
+                app.updateStatus('Ready') ;
+
             catch ME
-                uialert(app.UIFigure, ME.message, 'Error generando RTD') ;
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'RTD Generation Error') ;
             end
         end
 
@@ -841,7 +941,7 @@ classdef NonIdealReactorApp < handle
             % Auto-increments the name for subsequent exports
 
             if isempty(app.rtd)
-                uialert(app.UIFigure, 'No hay RTD para exportar. Genera una primero.', 'Advertencia') ;
+                uialert(app.UIFigure, 'No RTD to export. Generate one first.', 'Warning') ;
                 return
             end
 
@@ -850,15 +950,15 @@ classdef NonIdealReactorApp < handle
             % Validate variable name
             if ~isvarname(varName)
                 uialert(app.UIFigure, ...
-                    sprintf('"%s" no es un nombre de variable MATLAB válido.', varName), ...
-                    'Nombre inválido') ;
+                    sprintf('"%s" is not a valid MATLAB variable name.', varName), ...
+                    'Invalid Name') ;
                 return
             end
 
             assignin('base', varName, app.rtd) ;
             uialert(app.UIFigure, ...
-                sprintf('RTD exportada al workspace como "%s"', varName), ...
-                'Exportación exitosa', 'Icon', 'success') ;
+                sprintf('RTD exported to workspace as "%s"', varName), ...
+                'Export Successful', 'Icon', 'success') ;
 
             % Auto-increment for next export
             app.RTD_ExportCounter = app.RTD_ExportCounter + 1 ;
@@ -898,8 +998,8 @@ classdef NonIdealReactorApp < handle
 
                 if size(data, 2) < 2
                     uialert(app.UIFigure, ...
-                        'El archivo debe tener al menos 2 columnas (t y C).', ...
-                        'Error de importación') ;
+                        'The file must have at least 2 columns (t and C).', ...
+                        'Import Error') ;
                     return
                 end
 
@@ -921,7 +1021,7 @@ classdef NonIdealReactorApp < handle
                 app.RTD_ImportLabel.Visible = 'on' ;
 
             catch ME
-                uialert(app.UIFigure, ME.message, 'Error de importación') ;
+                uialert(app.UIFigure, ME.message, 'Import Error') ;
             end
         end
 
@@ -935,7 +1035,7 @@ classdef NonIdealReactorApp < handle
             mainGrid.ColumnWidth = {320, '1x'} ;
 
             % ---- LEFT PANEL ----
-            leftPanel = uipanel(mainGrid, 'Title', 'Limites de conversion') ;
+            leftPanel = uipanel(mainGrid, 'Title', 'Conversion Bounds') ;
             leftGrid = uigridlayout(leftPanel, [26 2]) ;
             leftGrid.RowHeight = repmat({28}, 1, 26) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
@@ -950,57 +1050,57 @@ classdef NonIdealReactorApp < handle
                 'FontColor', [0.8 0 0]) ;
 
             % Kinetics dropdown
-            uilabel(leftGrid, 'Text', 'Cinetica:', ...
+            uilabel(leftGrid, 'Text', 'Kinetics:', ...
                 'FontWeight', 'bold') ;
             app.Pred_KineticsDropdown = uidropdown(leftGrid, ...
-                'Items', {'1er Orden: -rA = k*CA', ...
-                          '2do Orden: -rA = k*CA^2', ...
+                'Items', {'1st Order: -rA = k*CA', ...
+                          '2nd Order: -rA = k*CA^2', ...
                           'Michaelis-Menten: -rA = a*CA/(1+b*CA)', ...
-                          'Reversible 1er Orden: A <-> B', ...
-                          'Paralelas: A->B + A->C', ...
-                          'Ley cinetica personalizada'}, ...
-                'Value', '1er Orden: -rA = k*CA', ...
+                          'Reversible 1st Order: A <-> B', ...
+                          'Parallel: A->B + A->C', ...
+                          'Custom Rate Law'}, ...
+                'Value', '1st Order: -rA = k*CA', ...
                 'ValueChangedFcn', @(~,~) app.Pred_kineticsChanged()) ;
 
             % k field
-            app.Pred_kLabel = uilabel(leftGrid, 'Text', 'k [1/s]:') ;
+            app.Pred_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.Pred_kField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.1, 'Limits', [0 Inf], ...
-                'Tooltip', 'Constante cinetica. Unidades dependen del orden: 1/s (1er orden), m^3/(mol*s) (2do orden).') ;
+                'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
 
             % CA0 field (only for 2nd order)
-            app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'CA0 [mol/m^3]:') ;
+            app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             app.Pred_CA0Field = uieditfield(leftGrid, 'numeric', ...
                 'Value', 1000, 'Limits', [0.001 Inf], ...
-                'Tooltip', 'Concentracion inicial del reactivo limitante en la alimentacion.') ;
+                'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
             app.Pred_CA0Label.Visible = 'off' ;
             app.Pred_CA0Field.Visible = 'off' ;
 
             % --- Michaelis-Menten / Reversible parameters ---
-            app.Pred_aLabel = uilabel(leftGrid, 'Text', 'a [1/s]:', 'Visible', 'off') ;
+            app.Pred_aLabel = uilabel(leftGrid, 'Text', 'a [s<sup>-1</sup>]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_aLabel.Layout.Row = 5 ; app.Pred_aLabel.Layout.Column = 1 ;
             app.Pred_aField = uieditfield(leftGrid, 'numeric', 'Value', 1, 'Visible', 'off', ...
-                'Tooltip', 'Velocidad maxima de reaccion (Vmax/Km para Michaelis-Menten, k_directa para reversible).') ;
+                'Tooltip', 'Maximum reaction rate (Vmax/Km for Michaelis-Menten, k_forward for reversible).') ;
             app.Pred_aField.Layout.Row = 5 ; app.Pred_aField.Layout.Column = 2 ;
 
-            app.Pred_bLabel = uilabel(leftGrid, 'Text', 'b [m^3/mol]:', 'Visible', 'off') ;
+            app.Pred_bLabel = uilabel(leftGrid, 'Text', 'b [m&sup3;/mol]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_bLabel.Layout.Row = 6 ; app.Pred_bLabel.Layout.Column = 1 ;
             app.Pred_bField = uieditfield(leftGrid, 'numeric', 'Value', 0.5, 'Visible', 'off', ...
-                'Tooltip', 'Parametro de saturacion (1/Km para Michaelis-Menten, k_inversa para reversible).') ;
+                'Tooltip', 'Saturation parameter (1/Km for Michaelis-Menten, k_reverse for reversible).') ;
             app.Pred_bField.Layout.Row = 6 ; app.Pred_bField.Layout.Column = 2 ;
 
             % --- Parallel reaction parameters ---
-            app.Pred_k2Label = uilabel(leftGrid, 'Text', 'k2 [1/s]:', 'Visible', 'off') ;
+            app.Pred_k2Label = uilabel(leftGrid, 'Text', 'k<sub>2</sub> [s<sup>-1</sup>]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_k2Label.Layout.Row = 7 ; app.Pred_k2Label.Layout.Column = 1 ;
             app.Pred_k2Field = uieditfield(leftGrid, 'numeric', 'Value', 0.1, 'Visible', 'off') ;
             app.Pred_k2Field.Layout.Row = 7 ; app.Pred_k2Field.Layout.Column = 2 ;
 
-            app.Pred_n1Label = uilabel(leftGrid, 'Text', 'n1 [order]:', 'Visible', 'off') ;
+            app.Pred_n1Label = uilabel(leftGrid, 'Text', 'n<sub>1</sub> [order]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_n1Label.Layout.Row = 8 ; app.Pred_n1Label.Layout.Column = 1 ;
             app.Pred_n1Field = uieditfield(leftGrid, 'numeric', 'Value', 2, 'Visible', 'off') ;
             app.Pred_n1Field.Layout.Row = 8 ; app.Pred_n1Field.Layout.Column = 2 ;
 
-            app.Pred_n2Label = uilabel(leftGrid, 'Text', 'n2 [order]:', 'Visible', 'off') ;
+            app.Pred_n2Label = uilabel(leftGrid, 'Text', 'n<sub>2</sub> [order]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_n2Label.Layout.Row = 9 ; app.Pred_n2Label.Layout.Column = 1 ;
             app.Pred_n2Field = uieditfield(leftGrid, 'numeric', 'Value', 1, 'Visible', 'off') ;
             app.Pred_n2Field.Layout.Row = 9 ; app.Pred_n2Field.Layout.Column = 2 ;
@@ -1017,7 +1117,7 @@ classdef NonIdealReactorApp < handle
 
             % Compute button
             app.Pred_ComputeButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Calcular', ...
+                'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
@@ -1029,14 +1129,14 @@ classdef NonIdealReactorApp < handle
             uilabel(leftGrid, 'Text', '') ;
 
             % Results panel
-            uilabel(leftGrid, 'Text', 'Resultados:', ...
+            uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             uilabel(leftGrid, 'Text', '') ;
 
-            uilabel(leftGrid, 'Text', 'Segregation X_mean:') ;
+            uilabel(leftGrid, 'Text', 'Segregation X<sub>mean</sub>:', 'Interpreter', 'html') ;
             app.Pred_ResultSegLabel = uilabel(leftGrid, 'Text', '--') ;
 
-            uilabel(leftGrid, 'Text', 'Max Mixedness X_exit:') ;
+            uilabel(leftGrid, 'Text', 'Max Mixedness X<sub>exit</sub>:', 'Interpreter', 'html') ;
             app.Pred_ResultMMLabel = uilabel(leftGrid, 'Text', '--') ;
 
             % Spacer
@@ -1061,7 +1161,7 @@ classdef NonIdealReactorApp < handle
             uilabel(leftGrid, 'Text', '') ;
 
             % ---- RIGHT PANEL (PLOTS) ----
-            rightPanel = uipanel(mainGrid, 'Title', 'Resultados del modelo') ;
+            rightPanel = uipanel(mainGrid, 'Title', 'Model Results') ;
             plotGrid = uigridlayout(rightPanel, [2 2]) ;
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
@@ -1113,25 +1213,25 @@ classdef NonIdealReactorApp < handle
             app.Pred_ResultSelectLabel.Visible = 'off' ;
             app.Pred_ResultYieldLabel.Visible = 'off' ;
 
-            if contains(kinetics, '2do Orden')
+            if contains(kinetics, '2nd Order')
                 app.Pred_CA0Label.Visible = 'on' ;
                 app.Pred_CA0Field.Visible = 'on' ;
-                app.Pred_kLabel.Text = 'k [m^3/(mol·s)]:' ;
+                app.Pred_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             elseif contains(kinetics, 'Michaelis')
                 app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Visible = 'off' ;
                 app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
                 app.Pred_aLabel.Visible = 'on' ; app.Pred_aField.Visible = 'on' ;
                 app.Pred_bLabel.Visible = 'on' ; app.Pred_bField.Visible = 'on' ;
-                app.Pred_aLabel.Text = 'a [1/s]:' ;
-                app.Pred_bLabel.Text = 'b [m^3/mol]:' ;
+                app.Pred_aLabel.Text = 'a [s<sup>-1</sup>]:' ;
+                app.Pred_bLabel.Text = 'b [m&sup3;/mol]:' ;
             elseif contains(kinetics, 'Reversible')
                 app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Visible = 'off' ;
                 app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
                 app.Pred_aLabel.Visible = 'on' ; app.Pred_aField.Visible = 'on' ;
                 app.Pred_bLabel.Visible = 'on' ; app.Pred_bField.Visible = 'on' ;
-                app.Pred_aLabel.Text = 'k_fwd [1/s]:' ;
-                app.Pred_bLabel.Text = 'k_rev [1/s]:' ;
-            elseif contains(kinetics, 'Paralelas')
+                app.Pred_aLabel.Text = 'k<sub>fwd</sub> [s<sup>-1</sup>]:' ;
+                app.Pred_bLabel.Text = 'k<sub>rev</sub> [s<sup>-1</sup>]:' ;
+            elseif contains(kinetics, 'Parallel')
                 app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
                 app.Pred_k2Label.Visible = 'on' ; app.Pred_k2Field.Visible = 'on' ;
                 app.Pred_n1Label.Visible = 'on' ; app.Pred_n1Field.Visible = 'on' ;
@@ -1139,12 +1239,12 @@ classdef NonIdealReactorApp < handle
                 app.Pred_ResultSelectLabel.Visible = 'on' ;
                 app.Pred_ResultYieldLabel.Visible = 'on' ;
                 app.Pred_kLabel.Text = 'k1 [1/s]:' ;
-            elseif contains(kinetics, 'personalizada')
+            elseif contains(kinetics, 'Custom')
                 app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Visible = 'off' ;
                 app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
                 app.Pred_CustomRateLabel.Visible = 'on' ; app.Pred_CustomRateField.Visible = 'on' ;
             else
-                % 1er Orden - solo k visible (por defecto)
+                % 1st Order - only k visible (default)
                 app.Pred_kLabel.Text = 'k [1/s]:' ;
             end
         end
@@ -1153,11 +1253,12 @@ classdef NonIdealReactorApp < handle
             % Compute segregation and max mixedness bounds
 
             try
+                app.updateStatus('Computing conversion bounds...') ;
                 % Check RTD is available
                 if isempty(app.rtd)
                     uialert(app.UIFigure, ...
-                        'No hay RTD disponible. Ve a la Pestaña 1 y genera una RTD primero.', ...
-                        'RTD requerida') ;
+                        'No RTD available. Go to Tab 1 and generate an RTD first.', ...
+                        'RTD Required') ;
                     return
                 end
 
@@ -1171,13 +1272,13 @@ classdef NonIdealReactorApp < handle
                 app.mm_model = MaxMixednessModel ;
                 app.mm_model.rtd = app.rtd ;
 
-                if contains(kinetics, '1er')
-                    % Primer orden
+                if contains(kinetics, '1st')
+                    % First order
                     app.seg_model = app.seg_model.compute_firstOrder(k_val) ;
                     app.mm_model = app.mm_model.compute_firstOrder(k_val) ;
                     order = 1 ;
                 else
-                    % Segundo orden
+                    % Second order
                     CA0_val = app.Pred_CA0Field.Value ;
                     app.seg_model = app.seg_model.compute_secondOrder(k_val, CA0_val) ;
                     app.mm_model = app.mm_model.compute_secondOrder(k_val, CA0_val) ;
@@ -1191,10 +1292,10 @@ classdef NonIdealReactorApp < handle
                 app.Pred_ResultSegLabel.Text = sprintf('%.4f', X_seg) ;
                 app.Pred_ResultMMLabel.Text = sprintf('%.4f', X_mm) ;
 
-                % Interpretacion
+                % Interpretation
                 if order == 1
                     app.Pred_ResultBoundsLabel.Text = ...
-                        sprintf('1er orden: Seg = MM = exacto = %.4f', X_seg) ;
+                        sprintf('1st order: Seg = MM = exact = %.4f', X_seg) ;
                     app.Pred_ResultBoundsLabel.FontColor = [0 0.5 0] ;
                 elseif order == 2
                     app.Pred_ResultBoundsLabel.Text = ...
@@ -1210,8 +1311,11 @@ classdef NonIdealReactorApp < handle
                     app.rtd.tau, app.rtd.sigma2) ;
                 app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
 
+                app.updateStatus('Ready') ;
+
             catch ME
-                uialert(app.UIFigure, ME.message, 'Error calculando límites') ;
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'Computation Error') ;
             end
         end
 
@@ -1273,7 +1377,7 @@ classdef NonIdealReactorApp < handle
             mainGrid.ColumnWidth = {320, '1x'} ;
 
             % ---- LEFT PANEL ----
-            leftPanel = uipanel(mainGrid, 'Title', 'Configuracion TIS') ;
+            leftPanel = uipanel(mainGrid, 'Title', 'TIS Configuration') ;
             leftGrid = uigridlayout(leftPanel, [16 2]) ;
             leftGrid.RowHeight = repmat({28}, 1, 16) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
@@ -1281,10 +1385,10 @@ classdef NonIdealReactorApp < handle
             leftGrid.RowSpacing = 5 ;
 
             % Row 1: N method
-            lbl = uilabel(leftGrid, 'Text', 'Metodo N:', 'FontWeight', 'bold') ;
+            lbl = uilabel(leftGrid, 'Text', 'N Method:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
             app.TIS_NMethodDropdown = uidropdown(leftGrid, ...
-                'Items', {'Manual', 'Desde datos calculados'}, ...
+                'Items', {'Manual', 'From Calculated Data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.TIS_NMethodChanged()) ;
             app.TIS_NMethodDropdown.Layout.Row = 1 ;
@@ -1295,12 +1399,12 @@ classdef NonIdealReactorApp < handle
             app.TIS_NLabel.Layout.Row = 2 ; app.TIS_NLabel.Layout.Column = 1 ;
             app.TIS_NField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 3, 'Limits', [0.1 Inf], ...
-                'Tooltip', 'Numero de tanques en serie. N=1: CSTR, N->inf: PFR. Puede ser no entero para RTD.') ;
+                'Tooltip', 'Number of tanks in series. N=1: CSTR, N→∞: PFR. Can be non-integer for RTD.') ;
             app.TIS_NField.Layout.Row = 2 ; app.TIS_NField.Layout.Column = 2 ;
 
             % Row 3: RTD status (shown when "From RTD")
             app.TIS_RTDStatusLabel = uilabel(leftGrid, ...
-                'Text', 'RTD: no cargada', 'FontColor', [0.6 0 0]) ;
+                'Text', 'RTD: not loaded', 'FontColor', [0.6 0 0]) ;
             app.TIS_RTDStatusLabel.Layout.Row = 3 ;
             app.TIS_RTDStatusLabel.Layout.Column = [1 2] ;
             app.TIS_RTDStatusLabel.Visible = 'off' ;
@@ -1310,41 +1414,41 @@ classdef NonIdealReactorApp < handle
             app.TIS_tauLabel.Layout.Row = 4 ; app.TIS_tauLabel.Layout.Column = 1 ;
             app.TIS_tauField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 10, 'Limits', [0.001 Inf], ...
-                'Tooltip', 'Tiempo medio de residencia total: tau = V_total / Q.') ;
+                'Tooltip', 'Total mean residence time: tau = V_total / Q.') ;
             app.TIS_tauField.Layout.Row = 4 ; app.TIS_tauField.Layout.Column = 2 ;
 
             % Row 5: Kinetics dropdown
-            lbl = uilabel(leftGrid, 'Text', 'Cinetica:', 'FontWeight', 'bold') ;
+            lbl = uilabel(leftGrid, 'Text', 'Kinetics:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 5 ; lbl.Layout.Column = 1 ;
             app.TIS_KineticsDropdown = uidropdown(leftGrid, ...
-                'Items', {'1er Orden (-rA = k*CA)', ...
-                          '2do Orden (-rA = k*CA^2)'}, ...
-                'Value', '1er Orden (-rA = k*CA)', ...
+                'Items', {'1st Order (-rA = k*CA)', ...
+                          '2nd Order (-rA = k*CA^2)'}, ...
+                'Value', '1st Order (-rA = k*CA)', ...
                 'ValueChangedFcn', @(~,~) app.TIS_kineticsChanged()) ;
             app.TIS_KineticsDropdown.Layout.Row = 5 ;
             app.TIS_KineticsDropdown.Layout.Column = 2 ;
 
             % Row 6: k
-            app.TIS_kLabel = uilabel(leftGrid, 'Text', 'k [1/s]:') ;
+            app.TIS_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.TIS_kLabel.Layout.Row = 6 ; app.TIS_kLabel.Layout.Column = 1 ;
             app.TIS_kField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.1, 'Limits', [0 Inf], ...
-                'Tooltip', 'Constante cinetica. Unidades dependen del orden: 1/s (1er orden), m^3/(mol*s) (2do orden).') ;
+                'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
             app.TIS_kField.Layout.Row = 6 ; app.TIS_kField.Layout.Column = 2 ;
 
             % Row 7: CA0 (only for 2nd order)
-            app.TIS_CA0Label = uilabel(leftGrid, 'Text', 'CA0 [mol/m^3]:') ;
+            app.TIS_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             app.TIS_CA0Label.Layout.Row = 7 ; app.TIS_CA0Label.Layout.Column = 1 ;
             app.TIS_CA0Label.Visible = 'off' ;
             app.TIS_CA0Field = uieditfield(leftGrid, 'numeric', ...
                 'Value', 1000, 'Limits', [0.001 Inf], ...
-                'Tooltip', 'Concentracion inicial del reactivo limitante en la alimentacion.') ;
+                'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
             app.TIS_CA0Field.Layout.Row = 7 ; app.TIS_CA0Field.Layout.Column = 2 ;
             app.TIS_CA0Field.Visible = 'off' ;
 
             % Row 8: Compute button
             app.TIS_ComputeButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Calcular', ...
+                'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
@@ -1353,7 +1457,7 @@ classdef NonIdealReactorApp < handle
             app.TIS_ComputeButton.Layout.Column = [1 2] ;
 
             % Row 9: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Resultados:', ...
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 9 ; lbl.Layout.Column = [1 2] ;
 
@@ -1365,7 +1469,7 @@ classdef NonIdealReactorApp < handle
             app.TIS_ResultNused.Layout.Column = 2 ;
 
             % Row 11: X_TIS
-            lbl = uilabel(leftGrid, 'Text', 'X_TIS:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>TIS</sub>:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 11 ; lbl.Layout.Column = 1 ;
             app.TIS_ResultXtis = uilabel(leftGrid, 'Text', '--') ;
             app.TIS_ResultXtis.Layout.Row = 11 ;
@@ -1373,21 +1477,21 @@ classdef NonIdealReactorApp < handle
             app.TIS_ResultXtis.FontWeight = 'bold' ;
 
             % Row 12: X_CSTR (N=1 reference)
-            lbl = uilabel(leftGrid, 'Text', 'X_CSTR [N=1]:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> [N=1]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
             app.TIS_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
             app.TIS_ResultXcstr.Layout.Row = 12 ;
             app.TIS_ResultXcstr.Layout.Column = 2 ;
 
             % Row 13: X_PFR (N→inf reference)
-            lbl = uilabel(leftGrid, 'Text', 'X_PFR [N->inf]:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> [N&#8594;&#8734;]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.TIS_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
             app.TIS_ResultXpfr.Layout.Row = 13 ;
             app.TIS_ResultXpfr.Layout.Column = 2 ;
 
             % ---- RIGHT PANEL (PLOTS) ----
-            rightPanel = uipanel(mainGrid, 'Title', 'Resultados TIS') ;
+            rightPanel = uipanel(mainGrid, 'Title', 'TIS Results') ;
             plotGrid = uigridlayout(rightPanel, [2 2]) ;
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
@@ -1418,7 +1522,7 @@ classdef NonIdealReactorApp < handle
 
         function TIS_NMethodChanged(app)
             source = app.TIS_NMethodDropdown.Value ;
-            if contains(source, 'Desde datos')
+            if contains(source, 'From Calculated')
                 % Auto-compute N from RTD variance + import k from Prediction
                 app.TIS_NField.Enable = 'off' ;
                 app.TIS_tauField.Enable = 'off' ;
@@ -1437,7 +1541,7 @@ classdef NonIdealReactorApp < handle
                     infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
                         app.rtd.tau, N_from_rtd) ;
                 else
-                    infoLines{end+1} = 'RTD: no cargada' ;
+                    infoLines{end+1} = 'RTD: not loaded' ;
                 end
 
                 % Import kinetics from Prediction Models tab
@@ -1451,7 +1555,7 @@ classdef NonIdealReactorApp < handle
                     infoLines{end+1} = sprintf('k=%.4g', app.Pred_kField.Value) ;
                 end
 
-                if any(contains(infoLines, 'no cargada'))
+                if any(contains(infoLines, 'not loaded'))
                     app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
                 else
                     app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
@@ -1469,24 +1573,25 @@ classdef NonIdealReactorApp < handle
 
         function TIS_kineticsChanged(app)
             kinetics = app.TIS_KineticsDropdown.Value ;
-            if contains(kinetics, '2do')
+            if contains(kinetics, '2nd')
                 app.TIS_CA0Label.Visible = 'on' ;
                 app.TIS_CA0Field.Visible = 'on' ;
-                app.TIS_kLabel.Text = 'k [m^3/(mol·s)]:' ;
+                app.TIS_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             else
                 app.TIS_CA0Label.Visible = 'off' ;
                 app.TIS_CA0Field.Visible = 'off' ;
-                app.TIS_kLabel.Text = 'k [1/s]:' ;
+                app.TIS_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
             end
         end
 
         function TIS_compute(app)
             try
+                app.updateStatus('Computing TIS model...') ;
                 N_val = app.TIS_NField.Value ;
                 tau_val = app.TIS_tauField.Value ;
                 k_val = app.TIS_kField.Value ;
                 kinetics = app.TIS_KineticsDropdown.Value ;
-                is2nd = contains(kinetics, '2do') ;
+                is2nd = contains(kinetics, '2nd') ;
 
                 if is2nd
                     CA0_val = app.TIS_CA0Field.Value ;
@@ -1534,8 +1639,11 @@ classdef NonIdealReactorApp < handle
                 app.TIS_updatePlots(N_val, tau_val, k_val, is2nd, ...
                     X_tis, X_cstr, X_pfr) ;
 
+                app.updateStatus('Ready') ;
+
             catch ME
-                uialert(app.UIFigure, ME.message, 'Error calculando TIS') ;
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'TIS Computation Error') ;
             end
         end
 
@@ -1640,7 +1748,7 @@ classdef NonIdealReactorApp < handle
             mainGrid.ColumnWidth = {320, '1x'} ;
 
             % ---- LEFT PANEL ----
-            leftPanel = uipanel(mainGrid, 'Title', 'Configuracion Dispersion') ;
+            leftPanel = uipanel(mainGrid, 'Title', 'Dispersion Configuration') ;
             leftGrid = uigridlayout(leftPanel, [17 2]) ;
             leftGrid.RowHeight = repmat({28}, 1, 17) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
@@ -1648,10 +1756,10 @@ classdef NonIdealReactorApp < handle
             leftGrid.RowSpacing = 5 ;
 
             % Row 1: Input method
-            lbl = uilabel(leftGrid, 'Text', 'Entrada:', 'FontWeight', 'bold') ;
+            lbl = uilabel(leftGrid, 'Text', 'Input:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
             app.Disp_InputMethodDropdown = uidropdown(leftGrid, ...
-                'Items', {'Manual', 'Desde datos calculados'}, ...
+                'Items', {'Manual', 'From Calculated Data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.Disp_inputMethodChanged()) ;
             app.Disp_InputMethodDropdown.Layout.Row = 1 ;
@@ -1665,13 +1773,13 @@ classdef NonIdealReactorApp < handle
             app.Disp_RTDStatusLabel.Visible = 'off' ;
 
             % Row 3: Bo
-            app.Disp_BoLabel = uilabel(leftGrid, 'Text', 'Bo [= De/uL]:') ;
+            app.Disp_BoLabel = uilabel(leftGrid, 'Text', 'Bo [= D<sub>e</sub>/uL]:', 'Interpreter', 'html') ;
             app.Disp_BoLabel.Layout.Row = 3 ; app.Disp_BoLabel.Layout.Column = 1 ;
             app.Disp_BoLabel.FontWeight = 'bold' ;
             app.Disp_BoField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.025, 'Limits', [1e-6 100], ...
                 'ValueChangedFcn', @(~,~) app.Disp_updatePe(), ...
-                'Tooltip', 'Numero de dispersion Bo = De/(u*L). Bo->0: flujo piston (PFR), Bo->inf: mezcla perfecta (CSTR).') ;
+                'Tooltip', 'Dispersion number Bo = De/(u·L). Bo→0: plug flow (PFR), Bo→∞: perfect mixing (CSTR).') ;
             app.Disp_BoField.Layout.Row = 3 ; app.Disp_BoField.Layout.Column = 2 ;
 
             % Row 4: Pe display (read-only)
@@ -1681,55 +1789,55 @@ classdef NonIdealReactorApp < handle
             app.Disp_PeLabel.Layout.Row = 4 ; app.Disp_PeLabel.Layout.Column = 2 ;
 
             % Row 5: Boundary conditions
-            app.Disp_BCLabel = uilabel(leftGrid, 'Text', 'Frontera:') ;
+            app.Disp_BCLabel = uilabel(leftGrid, 'Text', 'Boundary:') ;
             app.Disp_BCLabel.Layout.Row = 5 ; app.Disp_BCLabel.Layout.Column = 1 ;
             app.Disp_BCDropdown = uidropdown(leftGrid, ...
                 'Items', {'closed-closed', 'open-open'}, ...
                 'Value', 'closed-closed', ...
-                'Tooltip', 'closed-closed: reactor confinado (Danckwerts). open-open: reactor abierto (aproximacion gaussiana).') ;
+                'Tooltip', 'closed-closed: confined reactor (Danckwerts). open-open: open reactor (Gaussian approximation).') ;
             app.Disp_BCDropdown.Layout.Row = 5 ; app.Disp_BCDropdown.Layout.Column = 2 ;
 
             % Row 6: tau
-            app.Disp_tauLabel = uilabel(leftGrid, 'Text', 'tau [s]:') ;
+            app.Disp_tauLabel = uilabel(leftGrid, 'Text', '&tau; [s]:', 'Interpreter', 'html') ;
             app.Disp_tauLabel.Layout.Row = 6 ; app.Disp_tauLabel.Layout.Column = 1 ;
             app.Disp_tauField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 10, 'Limits', [0.001 Inf], ...
-                'Tooltip', 'Tiempo medio de residencia: tau = V/Q = L/u.') ;
+                'Tooltip', 'Mean residence time: tau = V/Q = L/u.') ;
             app.Disp_tauField.Layout.Row = 6 ; app.Disp_tauField.Layout.Column = 2 ;
 
             % Row 7: Kinetics
-            app.Disp_KineticsLabel = uilabel(leftGrid, 'Text', 'Cinetica:') ;
+            app.Disp_KineticsLabel = uilabel(leftGrid, 'Text', 'Kinetics:') ;
             app.Disp_KineticsLabel.Layout.Row = 7 ; app.Disp_KineticsLabel.Layout.Column = 1 ;
             app.Disp_KineticsLabel.FontWeight = 'bold' ;
             app.Disp_KineticsDropdown = uidropdown(leftGrid, ...
-                'Items', {'1er Orden (-rA = k*CA)', ...
-                          '2do Orden (-rA = k*CA^2)'}, ...
-                'Value', '1er Orden (-rA = k*CA)', ...
+                'Items', {'1st Order (-rA = k*CA)', ...
+                          '2nd Order (-rA = k*CA^2)'}, ...
+                'Value', '1st Order (-rA = k*CA)', ...
                 'ValueChangedFcn', @(~,~) app.Disp_kineticsChanged()) ;
             app.Disp_KineticsDropdown.Layout.Row = 7 ;
             app.Disp_KineticsDropdown.Layout.Column = 2 ;
 
             % Row 8: k
-            app.Disp_kLabel = uilabel(leftGrid, 'Text', 'k [1/s]:') ;
+            app.Disp_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.Disp_kLabel.Layout.Row = 8 ; app.Disp_kLabel.Layout.Column = 1 ;
             app.Disp_kField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.1, 'Limits', [0 Inf], ...
-                'Tooltip', 'Constante cinetica. Unidades dependen del orden: 1/s (1er orden), m^3/(mol*s) (2do orden).') ;
+                'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
             app.Disp_kField.Layout.Row = 8 ; app.Disp_kField.Layout.Column = 2 ;
 
             % Row 9: CA0 (2nd order only)
-            app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'CA0 [mol/m^3]:') ;
+            app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             app.Disp_CA0Label.Layout.Row = 9 ; app.Disp_CA0Label.Layout.Column = 1 ;
             app.Disp_CA0Label.Visible = 'off' ;
             app.Disp_CA0Field = uieditfield(leftGrid, 'numeric', ...
                 'Value', 1000, 'Limits', [0.001 Inf], ...
-                'Tooltip', 'Concentracion inicial del reactivo limitante en la alimentacion.') ;
+                'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
             app.Disp_CA0Field.Layout.Row = 9 ; app.Disp_CA0Field.Layout.Column = 2 ;
             app.Disp_CA0Field.Visible = 'off' ;
 
             % Row 10: Compute button
             app.Disp_ComputeButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Calcular', ...
+                'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
@@ -1738,7 +1846,7 @@ classdef NonIdealReactorApp < handle
             app.Disp_ComputeButton.Layout.Column = [1 2] ;
 
             % Row 11: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Resultados:', ...
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
 
@@ -1749,26 +1857,26 @@ classdef NonIdealReactorApp < handle
             app.Disp_ResultBo.Layout.Row = 12 ; app.Disp_ResultBo.Layout.Column = 2 ;
 
             % Row 13: X_dispersion
-            lbl = uilabel(leftGrid, 'Text', 'X_dispersion:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>dispersion</sub>:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultX = uilabel(leftGrid, 'Text', '--') ;
             app.Disp_ResultX.Layout.Row = 13 ; app.Disp_ResultX.Layout.Column = 2 ;
             app.Disp_ResultX.FontWeight = 'bold' ;
 
             % Row 14: X_CSTR
-            lbl = uilabel(leftGrid, 'Text', 'X_CSTR [Bo->inf]:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> [Bo&#8594;&#8734;]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
             app.Disp_ResultXcstr.Layout.Row = 14 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
 
             % Row 15: X_PFR
-            lbl = uilabel(leftGrid, 'Text', 'X_PFR [Bo->0]:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> [Bo&#8594;0]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
             app.Disp_ResultXpfr.Layout.Row = 15 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
 
             % ---- RIGHT PANEL (PLOTS) ----
-            rightPanel = uipanel(mainGrid, 'Title', 'Resultados Dispersion') ;
+            rightPanel = uipanel(mainGrid, 'Title', 'Dispersion Results') ;
             plotGrid = uigridlayout(rightPanel, [2 2]) ;
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
@@ -1802,21 +1910,21 @@ classdef NonIdealReactorApp < handle
 
         function Disp_kineticsChanged(app)
             kinetics = app.Disp_KineticsDropdown.Value ;
-            if contains(kinetics, '2do')
+            if contains(kinetics, '2nd')
                 app.Disp_CA0Label.Visible = 'on' ;
                 app.Disp_CA0Field.Visible = 'on' ;
-                app.Disp_kLabel.Text = 'k [m^3/(mol·s)]:' ;
+                app.Disp_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             else
                 app.Disp_CA0Label.Visible = 'off' ;
                 app.Disp_CA0Field.Visible = 'off' ;
-                app.Disp_kLabel.Text = 'k [1/s]:' ;
+                app.Disp_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
             end
         end
 
         function Disp_inputMethodChanged(app)
             source = app.Disp_InputMethodDropdown.Value ;
 
-            if contains(source, 'Desde datos')
+            if contains(source, 'From Calculated')
                 % Disable manual fields and import data
                 app.Disp_BoField.Enable = 'off' ;
                 app.Disp_tauField.Enable = 'off' ;
@@ -1841,17 +1949,17 @@ classdef NonIdealReactorApp < handle
                     infoLines{end+1} = sprintf('RTD: tau=%.2f, sigma2_theta=%.4f, Bo=%.4g', ...
                         app.rtd.tau, sigma2_theta, Bo_calc) ;
                 else
-                    infoLines{end+1} = 'RTD: no cargada' ;
+                    infoLines{end+1} = 'RTD: not loaded' ;
                 end
 
                 % Import kinetics from Prediction Models tab
                 if ~isempty(app.Pred_kField) && app.Pred_kField.Value > 0
                     app.Disp_kField.Value = app.Pred_kField.Value ;
                     % Map Pred kinetics to Disp (only 1st/2nd available)
-                    if contains(app.Pred_KineticsDropdown.Value, '2do')
-                        app.Disp_KineticsDropdown.Value = '2do Orden (-rA = k*CA^2)' ;
+                    if contains(app.Pred_KineticsDropdown.Value, '2nd')
+                        app.Disp_KineticsDropdown.Value = '2nd Order (-rA = k*CA^2)' ;
                     else
-                        app.Disp_KineticsDropdown.Value = '1er Orden (-rA = k*CA)' ;
+                        app.Disp_KineticsDropdown.Value = '1st Order (-rA = k*CA)' ;
                     end
                     app.Disp_kineticsChanged() ;
                     if ~isempty(app.Pred_CA0Field)
@@ -1860,7 +1968,7 @@ classdef NonIdealReactorApp < handle
                     infoLines{end+1} = sprintf('k=%.4g', app.Pred_kField.Value) ;
                 end
 
-                if any(contains(infoLines, 'no cargada'))
+                if any(contains(infoLines, 'not loaded'))
                     app.Disp_RTDStatusLabel.FontColor = [0.8 0 0] ;
                 else
                     app.Disp_RTDStatusLabel.FontColor = [0 0.5 0] ;
@@ -1880,12 +1988,13 @@ classdef NonIdealReactorApp < handle
         function Disp_compute(app)
 
             try
+                app.updateStatus('Computing dispersion model...') ;
                 Bo_val = app.Disp_BoField.Value ;
                 bcType = app.Disp_BCDropdown.Value ;
                 tau_val = app.Disp_tauField.Value ;
                 k_val = app.Disp_kField.Value ;
                 kinetics = app.Disp_KineticsDropdown.Value ;
-                is2nd = contains(kinetics, '2do') ;
+                is2nd = contains(kinetics, '2nd') ;
 
                 Da = k_val * tau_val ;
 
@@ -1929,8 +2038,11 @@ classdef NonIdealReactorApp < handle
                 app.Disp_updatePlots(Bo_val, tau_val, k_val, CA0_val, ...
                                      order, X_disp, X_cstr, X_pfr) ;
 
+                app.updateStatus('Ready') ;
+
             catch ME
-                uialert(app.UIFigure, ME.message, 'Error en el modelo de dispersión') ;
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'Dispersion Model Error') ;
             end
         end
 
@@ -2021,185 +2133,376 @@ classdef NonIdealReactorApp < handle
             mainGrid.ColumnWidth = {320, '1x'} ;
 
             % ---- LEFT PANEL ----
-            leftPanel = uipanel(mainGrid, 'Title', 'Convolucion / Deconvolucion') ;
-            leftGrid = uigridlayout(leftPanel, [18 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 18) ;
+            leftPanel = uipanel(mainGrid, 'Title', 'Convolution / Deconvolution') ;
+            leftGrid = uigridlayout(leftPanel, [21 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 21) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
-            leftGrid.RowSpacing = 5 ;
+            leftGrid.RowSpacing = 4 ;
 
             % Row 1: Workflow hint
-            lbl = uilabel(leftGrid, 'Text', '1) Elige modo  2) Carga datos  3) Calcula', ...
+            lbl = uilabel(leftGrid, 'Text', '1) Choose mode  2) Select source  3) Compute', ...
                 'FontAngle', 'italic', 'FontColor', [0.4 0.4 0.4], 'FontSize', 10) ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = [1 2] ;
 
             % Row 2: Mode
-            lbl = uilabel(leftGrid, 'Text', 'Modo:', 'FontWeight', 'bold') ;
+            lbl = uilabel(leftGrid, 'Text', 'Mode:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
             app.Conv_ModeDropdown = uidropdown(leftGrid, ...
-                'Items', {'Convolucion', 'Deconvolucion'}, ...
-                'Value', 'Convolucion', ...
+                'Items', {'Convolution', 'Deconvolution'}, ...
+                'Value', 'Convolution', ...
                 'ValueChangedFcn', @(~,~) app.Conv_modeChanged()) ;
             app.Conv_ModeDropdown.Layout.Row = 2 ;
             app.Conv_ModeDropdown.Layout.Column = 2 ;
 
-            % Row 3: Input source
-            lbl = uilabel(leftGrid, 'Text', 'Fuente de datos:', 'FontWeight', 'bold') ;
+            % Row 3: Data Source (expanded)
+            lbl = uilabel(leftGrid, 'Text', 'Data Source:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 3 ; lbl.Layout.Column = 1 ;
             app.Conv_InputDropdown = uidropdown(leftGrid, ...
-                'Items', {'Desde workspace', 'Desde archivo'}, ...
-                'Value', 'Desde workspace') ;
+                'Items', {'From Workspace', 'From Equation', 'From Tab 1 (RTD)', 'From File'}, ...
+                'Value', 'From Workspace', ...
+                'ValueChangedFcn', @(~,~) app.Conv_sourceChanged()) ;
             app.Conv_InputDropdown.Layout.Row = 3 ;
             app.Conv_InputDropdown.Layout.Column = 2 ;
 
-            % Row 4: t variable
+            % Row 4: RTD Status (Tab1 mode only — hidden by default)
+            app.Conv_RTDStatusLabel = uilabel(leftGrid, ...
+                'Text', 'RTD: not loaded', ...
+                'FontAngle', 'italic', 'FontColor', [0.5 0.5 0.5], ...
+                'WordWrap', 'on', 'Visible', 'off') ;
+            app.Conv_RTDStatusLabel.Layout.Row = 4 ;
+            app.Conv_RTDStatusLabel.Layout.Column = [1 2] ;
+
+            % ---- Workspace / File fields (rows 5-7, visible by default) ----
             app.Conv_tVarLabel = uilabel(leftGrid, 'Text', 'Variable t [s]:') ;
-            app.Conv_tVarLabel.Layout.Row = 4 ; app.Conv_tVarLabel.Layout.Column = 1 ;
+            app.Conv_tVarLabel.Layout.Row = 5 ; app.Conv_tVarLabel.Layout.Column = 1 ;
             app.Conv_tVarField = uieditfield(leftGrid, 'text', 'Value', 't') ;
-            app.Conv_tVarField.Layout.Row = 4 ; app.Conv_tVarField.Layout.Column = 2 ;
+            app.Conv_tVarField.Layout.Row = 5 ; app.Conv_tVarField.Layout.Column = 2 ;
 
-            % Row 5: C_in variable
-            app.Conv_CinVarLabel = uilabel(leftGrid, 'Text', 'Variable C_{in}(t):') ;
-            app.Conv_CinVarLabel.Layout.Row = 5 ; app.Conv_CinVarLabel.Layout.Column = 1 ;
+            app.Conv_CinVarLabel = uilabel(leftGrid, ...
+                'Text', 'Variable C<sub>in</sub>(t):', 'Interpreter', 'html') ;
+            app.Conv_CinVarLabel.Layout.Row = 6 ; app.Conv_CinVarLabel.Layout.Column = 1 ;
             app.Conv_CinVarField = uieditfield(leftGrid, 'text', 'Value', 'C_in') ;
-            app.Conv_CinVarField.Layout.Row = 5 ; app.Conv_CinVarField.Layout.Column = 2 ;
+            app.Conv_CinVarField.Layout.Row = 6 ; app.Conv_CinVarField.Layout.Column = 2 ;
 
-            % Row 6: E variable (convolution mode)
             app.Conv_EVarLabel = uilabel(leftGrid, 'Text', 'Variable E(t) [1/s]:') ;
-            app.Conv_EVarLabel.Layout.Row = 6 ; app.Conv_EVarLabel.Layout.Column = 1 ;
+            app.Conv_EVarLabel.Layout.Row = 7 ; app.Conv_EVarLabel.Layout.Column = 1 ;
             app.Conv_EVarField = uieditfield(leftGrid, 'text', 'Value', 'E') ;
-            app.Conv_EVarField.Layout.Row = 6 ; app.Conv_EVarField.Layout.Column = 2 ;
+            app.Conv_EVarField.Layout.Row = 7 ; app.Conv_EVarField.Layout.Column = 2 ;
 
-            % Row 6 (shared): C_out variable (deconvolution mode — hidden by default)
-            app.Conv_CoutVarLabel = uilabel(leftGrid, 'Text', 'Variable C_{out}(t):') ;
-            app.Conv_CoutVarLabel.Layout.Row = 6 ; app.Conv_CoutVarLabel.Layout.Column = 1 ;
-            app.Conv_CoutVarLabel.Visible = 'off' ;
-            app.Conv_CoutVarField = uieditfield(leftGrid, 'text', 'Value', 'C_out') ;
-            app.Conv_CoutVarField.Layout.Row = 6 ; app.Conv_CoutVarField.Layout.Column = 2 ;
-            app.Conv_CoutVarField.Visible = 'off' ;
+            app.Conv_CoutVarLabel = uilabel(leftGrid, ...
+                'Text', 'Variable C<sub>out</sub>(t):', 'Interpreter', 'html', ...
+                'Visible', 'off') ;
+            app.Conv_CoutVarLabel.Layout.Row = 7 ; app.Conv_CoutVarLabel.Layout.Column = 1 ;
+            app.Conv_CoutVarField = uieditfield(leftGrid, 'text', ...
+                'Value', 'C_out', 'Visible', 'off') ;
+            app.Conv_CoutVarField.Layout.Row = 7 ; app.Conv_CoutVarField.Layout.Column = 2 ;
 
-            % Row 7: nE (deconvolution only)
-            app.Conv_nELabel = uilabel(leftGrid, 'Text', 'N puntos E(t):', ...
-                'Tooltip', 'Numero de puntos para reconstruir E(t). Tipicamente 30-100.') ;
-            app.Conv_nELabel.Layout.Row = 7 ; app.Conv_nELabel.Layout.Column = 1 ;
-            app.Conv_nELabel.Visible = 'off' ;
+            % ---- Equation mode: time params (rows 5-7, overlapping WS) ----
+            app.Conv_TstartLabel = uilabel(leftGrid, ...
+                'Text', 't start [s]:', 'Visible', 'off') ;
+            app.Conv_TstartLabel.Layout.Row = 5 ; app.Conv_TstartLabel.Layout.Column = 1 ;
+            app.Conv_TstartField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 0, 'Visible', 'off') ;
+            app.Conv_TstartField.Layout.Row = 5 ; app.Conv_TstartField.Layout.Column = 2 ;
+
+            app.Conv_TendLabel = uilabel(leftGrid, ...
+                'Text', 't end [s]:', 'Visible', 'off') ;
+            app.Conv_TendLabel.Layout.Row = 6 ; app.Conv_TendLabel.Layout.Column = 1 ;
+            app.Conv_TendField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 50, 'Limits', [0.001 Inf], 'Visible', 'off') ;
+            app.Conv_TendField.Layout.Row = 6 ; app.Conv_TendField.Layout.Column = 2 ;
+
+            app.Conv_NptsLabel = uilabel(leftGrid, ...
+                'Text', 'N points:', 'Visible', 'off') ;
+            app.Conv_NptsLabel.Layout.Row = 7 ; app.Conv_NptsLabel.Layout.Column = 1 ;
+            app.Conv_NptsField = uieditfield(leftGrid, 'numeric', ...
+                'Value', 200, 'Limits', [10 100000], 'Visible', 'off') ;
+            app.Conv_NptsField.Layout.Row = 7 ; app.Conv_NptsField.Layout.Column = 2 ;
+
+            % ---- Equation fields (rows 8-11, hidden by default) ----
+            % C_in equation (shown for Equation and Tab1 modes)
+            app.Conv_CinEqLabel = uilabel(leftGrid, ...
+                'Text', 'C<sub>in</sub>(t) equation:', ...
+                'Interpreter', 'html', 'FontWeight', 'bold', 'Visible', 'off') ;
+            app.Conv_CinEqLabel.Layout.Row = 8 ; app.Conv_CinEqLabel.Layout.Column = [1 2] ;
+            app.Conv_CinEqField = uieditfield(leftGrid, 'text', ...
+                'Value', '5*exp(-0.1*t)', ...
+                'Tooltip', 'MATLAB expression using t. Examples: 5*exp(-t/10), 10*(1-exp(-t/5))', ...
+                'Visible', 'off') ;
+            app.Conv_CinEqField.Layout.Row = 9 ; app.Conv_CinEqField.Layout.Column = [1 2] ;
+
+            % E(t) equation (Equation + Conv mode only)
+            app.Conv_EEqLabel = uilabel(leftGrid, ...
+                'Text', 'E(t) equation:', ...
+                'FontWeight', 'bold', 'Visible', 'off') ;
+            app.Conv_EEqLabel.Layout.Row = 10 ; app.Conv_EEqLabel.Layout.Column = [1 2] ;
+            app.Conv_EEqField = uieditfield(leftGrid, 'text', ...
+                'Value', '(1/5)*exp(-t/5)', ...
+                'Tooltip', 'MATLAB expression using t. E(t) >= 0, integral ~ 1.', ...
+                'Visible', 'off') ;
+            app.Conv_EEqField.Layout.Row = 11 ; app.Conv_EEqField.Layout.Column = [1 2] ;
+
+            % C_out equation (Equation + Deconv mode, overlapping rows 10-11)
+            app.Conv_CoutEqLabel = uilabel(leftGrid, ...
+                'Text', 'C<sub>out</sub>(t) equation:', ...
+                'Interpreter', 'html', 'FontWeight', 'bold', 'Visible', 'off') ;
+            app.Conv_CoutEqLabel.Layout.Row = 10 ; app.Conv_CoutEqLabel.Layout.Column = [1 2] ;
+            app.Conv_CoutEqField = uieditfield(leftGrid, 'text', ...
+                'Value', 't.*exp(-t/2)', ...
+                'Tooltip', 'MATLAB expression using t.', ...
+                'Visible', 'off') ;
+            app.Conv_CoutEqField.Layout.Row = 11 ; app.Conv_CoutEqField.Layout.Column = [1 2] ;
+
+            % Row 12: nE (deconvolution only)
+            app.Conv_nELabel = uilabel(leftGrid, 'Text', 'N points E(t):', ...
+                'Tooltip', 'Number of points to reconstruct E(t). Typically 30-100.', ...
+                'Visible', 'off') ;
+            app.Conv_nELabel.Layout.Row = 12 ; app.Conv_nELabel.Layout.Column = 1 ;
             app.Conv_nEField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 50, 'Limits', [2 10000], ...
-                'Tooltip', 'Mas puntos = mayor resolucion pero mas lento') ;
-            app.Conv_nEField.Layout.Row = 7 ; app.Conv_nEField.Layout.Column = 2 ;
-            app.Conv_nEField.Visible = 'off' ;
+                'Tooltip', 'More points = higher resolution but slower', ...
+                'Visible', 'off') ;
+            app.Conv_nEField.Layout.Row = 12 ; app.Conv_nEField.Layout.Column = 2 ;
 
-            % Row 8: Import from file button
+            % Row 13: Import from file button (File mode only)
             app.Conv_ImportButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Importar desde archivo', ...
+                'Text', 'Import from File', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [1 1 1], ...
                 'FontColor', [0.8 0 0], ...
+                'Visible', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Conv_importFromFile()) ;
-            app.Conv_ImportButton.Layout.Row = 8 ;
+            app.Conv_ImportButton.Layout.Row = 13 ;
             app.Conv_ImportButton.Layout.Column = [1 2] ;
 
-            % Row 9: Import status
+            % Row 14: Import / status label
             app.Conv_ImportLabel = uilabel(leftGrid, 'Text', '') ;
-            app.Conv_ImportLabel.Layout.Row = 9 ;
+            app.Conv_ImportLabel.Layout.Row = 14 ;
             app.Conv_ImportLabel.Layout.Column = [1 2] ;
             app.Conv_ImportLabel.FontColor = [0 0.5 0] ;
             app.Conv_ImportLabel.WordWrap = 'on' ;
 
-            % Row 10: Compute button
+            % Row 15: Compute button
             app.Conv_ComputeButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Calcular', ...
+                'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
                 'ButtonPushedFcn', @(~,~) app.Conv_compute()) ;
-            app.Conv_ComputeButton.Layout.Row = 10 ;
+            app.Conv_ComputeButton.Layout.Row = 15 ;
             app.Conv_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 11: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Resultados:', ...
+            % Row 16: Results header
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 16 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 12-13: Result info
+            % Row 17-18: Result text
             app.Conv_ResultLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Conv_ResultLabel.Layout.Row = [12 13] ;
+            app.Conv_ResultLabel.Layout.Row = [17 18] ;
             app.Conv_ResultLabel.Layout.Column = [1 2] ;
             app.Conv_ResultLabel.WordWrap = 'on' ;
 
-            % Row 14: Export name
-            lbl = uilabel(leftGrid, 'Text', 'Nombre exportar:') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
+            % Row 19: Use Previous Result as C_in (chaining)
+            app.Conv_UsePrevButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Use Previous C_out as C_in', ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [0.95 0.85 0.55], ...
+                'FontColor', [0.3 0.2 0], ...
+                'Enable', 'off', ...
+                'Tooltip', 'Load the last convolution output as new input for chaining.', ...
+                'ButtonPushedFcn', @(~,~) app.Conv_usePreviousResult()) ;
+            app.Conv_UsePrevButton.Layout.Row = 19 ;
+            app.Conv_UsePrevButton.Layout.Column = [1 2] ;
+
+            % Row 20: Export name
+            lbl = uilabel(leftGrid, 'Text', 'Export Name:') ;
+            lbl.Layout.Row = 20 ; lbl.Layout.Column = 1 ;
             app.Conv_ExportNameField = uieditfield(leftGrid, 'text', ...
                 'Value', 'conv_result') ;
-            app.Conv_ExportNameField.Layout.Row = 14 ;
+            app.Conv_ExportNameField.Layout.Row = 20 ;
             app.Conv_ExportNameField.Layout.Column = 2 ;
 
-            % Row 15: Export button
+            % Row 21: Export button
             app.Conv_ExportButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Exportar a Workspace', ...
+                'Text', 'Export to Workspace', ...
                 'BackgroundColor', [0.2 0.7 0.3], ...
                 'FontColor', 'white', ...
                 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Conv_export()) ;
-            app.Conv_ExportButton.Layout.Row = 15 ;
+            app.Conv_ExportButton.Layout.Row = 21 ;
             app.Conv_ExportButton.Layout.Column = [1 2] ;
 
             % ---- RIGHT PANEL (PLOTS) ----
-            rightPanel = uipanel(mainGrid, 'Title', 'Senales') ;
+            rightPanel = uipanel(mainGrid, 'Title', 'Signals') ;
             plotGrid = uigridlayout(rightPanel, [2 2]) ;
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
 
-            % Input signals plot
             app.Conv_AxesInput = uiaxes(plotGrid) ;
-            title(app.Conv_AxesInput, 'Senales de entrada') ;
+            title(app.Conv_AxesInput, 'Input Signals') ;
             xlabel(app.Conv_AxesInput, 't [s]') ;
-            ylabel(app.Conv_AxesInput, 'Concentracion / E(t)') ;
+            ylabel(app.Conv_AxesInput, 'Concentration / E(t)') ;
 
-            % Result plot
             app.Conv_AxesResult = uiaxes(plotGrid) ;
-            title(app.Conv_AxesResult, 'Resultado') ;
+            title(app.Conv_AxesResult, 'Result') ;
             xlabel(app.Conv_AxesResult, 't [s]') ;
             ylabel(app.Conv_AxesResult, 'C_{out}(t)') ;
 
-            % Recovered E(t) / Comparison (spans 2 columns)
             app.Conv_AxesRecovered = uiaxes(plotGrid) ;
             app.Conv_AxesRecovered.Layout.Column = [1 2] ;
-            title(app.Conv_AxesRecovered, 'Verificacion') ;
+            title(app.Conv_AxesRecovered, 'Verification') ;
             xlabel(app.Conv_AxesRecovered, 't [s]') ;
-            ylabel(app.Conv_AxesRecovered, 'Amplitud') ;
+            ylabel(app.Conv_AxesRecovered, 'Amplitude') ;
         end
 
         %% ============== CONVOLUTION CALLBACKS ==============
 
         function Conv_modeChanged(app)
             mode = app.Conv_ModeDropdown.Value ;
-            if strcmp(mode, 'Convolucion')
-                % Show E field, hide C_out and nE
-                app.Conv_EVarLabel.Visible = 'on' ;
-                app.Conv_EVarField.Visible = 'on' ;
-                app.Conv_CoutVarLabel.Visible = 'off' ;
-                app.Conv_CoutVarField.Visible = 'off' ;
-                app.Conv_nELabel.Visible = 'off' ;
-                app.Conv_nEField.Visible = 'off' ;
+            if strcmp(mode, 'Convolution')
+                app.Conv_InputDropdown.Items = ...
+                    {'From Workspace', 'From Equation', 'From Tab 1 (RTD)', 'From File'} ;
             else
-                % Deconvolution: show C_out and nE, hide E
+                % Tab 1 RTD not applicable for deconvolution
+                if strcmp(app.Conv_InputDropdown.Value, 'From Tab 1 (RTD)')
+                    app.Conv_InputDropdown.Value = 'From Workspace' ;
+                end
+                app.Conv_InputDropdown.Items = ...
+                    {'From Workspace', 'From Equation', 'From File'} ;
+            end
+            app.Conv_updateVisibility() ;
+        end
+
+        function Conv_sourceChanged(app)
+            app.Conv_updateVisibility() ;
+        end
+
+        function Conv_updateVisibility(app)
+            source = app.Conv_InputDropdown.Value ;
+            isConv = strcmp(app.Conv_ModeDropdown.Value, 'Convolution') ;
+            isWS   = strcmp(source, 'From Workspace') ;
+            isEq   = strcmp(source, 'From Equation') ;
+            isTab1 = strcmp(source, 'From Tab 1 (RTD)') ;
+            isFile = strcmp(source, 'From File') ;
+
+            showWS = isWS || isFile ;
+
+            % ---- Workspace / File variable fields (rows 5-7) ----
+            if showWS
+                app.Conv_tVarLabel.Visible = 'on' ;
+                app.Conv_tVarField.Visible = 'on' ;
+                app.Conv_CinVarLabel.Visible = 'on' ;
+                app.Conv_CinVarField.Visible = 'on' ;
+                if isConv
+                    app.Conv_EVarLabel.Visible = 'on' ;
+                    app.Conv_EVarField.Visible = 'on' ;
+                    app.Conv_CoutVarLabel.Visible = 'off' ;
+                    app.Conv_CoutVarField.Visible = 'off' ;
+                else
+                    app.Conv_EVarLabel.Visible = 'off' ;
+                    app.Conv_EVarField.Visible = 'off' ;
+                    app.Conv_CoutVarLabel.Visible = 'on' ;
+                    app.Conv_CoutVarField.Visible = 'on' ;
+                end
+            else
+                app.Conv_tVarLabel.Visible = 'off' ;
+                app.Conv_tVarField.Visible = 'off' ;
+                app.Conv_CinVarLabel.Visible = 'off' ;
+                app.Conv_CinVarField.Visible = 'off' ;
                 app.Conv_EVarLabel.Visible = 'off' ;
                 app.Conv_EVarField.Visible = 'off' ;
-                app.Conv_CoutVarLabel.Visible = 'on' ;
-                app.Conv_CoutVarField.Visible = 'on' ;
+                app.Conv_CoutVarLabel.Visible = 'off' ;
+                app.Conv_CoutVarField.Visible = 'off' ;
+            end
+
+            % ---- Equation time params (rows 5-7, overlapping WS) ----
+            if isEq
+                app.Conv_TstartLabel.Visible = 'on' ;
+                app.Conv_TstartField.Visible = 'on' ;
+                app.Conv_TendLabel.Visible = 'on' ;
+                app.Conv_TendField.Visible = 'on' ;
+                app.Conv_NptsLabel.Visible = 'on' ;
+                app.Conv_NptsField.Visible = 'on' ;
+            else
+                app.Conv_TstartLabel.Visible = 'off' ;
+                app.Conv_TstartField.Visible = 'off' ;
+                app.Conv_TendLabel.Visible = 'off' ;
+                app.Conv_TendField.Visible = 'off' ;
+                app.Conv_NptsLabel.Visible = 'off' ;
+                app.Conv_NptsField.Visible = 'off' ;
+            end
+
+            % ---- C_in equation (rows 8-9, Equation and Tab1 modes) ----
+            if isEq || isTab1
+                app.Conv_CinEqLabel.Visible = 'on' ;
+                app.Conv_CinEqField.Visible = 'on' ;
+            else
+                app.Conv_CinEqLabel.Visible = 'off' ;
+                app.Conv_CinEqField.Visible = 'off' ;
+            end
+
+            % ---- E(t) equation (rows 10-11, Equation + Conv only) ----
+            if isEq && isConv
+                app.Conv_EEqLabel.Visible = 'on' ;
+                app.Conv_EEqField.Visible = 'on' ;
+            else
+                app.Conv_EEqLabel.Visible = 'off' ;
+                app.Conv_EEqField.Visible = 'off' ;
+            end
+
+            % ---- C_out equation (rows 10-11, Equation + Deconv only) ----
+            if isEq && ~isConv
+                app.Conv_CoutEqLabel.Visible = 'on' ;
+                app.Conv_CoutEqField.Visible = 'on' ;
+            else
+                app.Conv_CoutEqLabel.Visible = 'off' ;
+                app.Conv_CoutEqField.Visible = 'off' ;
+            end
+
+            % ---- RTD status (row 4, Tab1 only) ----
+            if isTab1
+                app.Conv_RTDStatusLabel.Visible = 'on' ;
+                if ~isempty(app.rtd) && ~isempty(app.rtd.t)
+                    app.Conv_RTDStatusLabel.Text = sprintf( ...
+                        'RTD loaded: tau=%.2f s, %d pts', ...
+                        app.rtd.tau, length(app.rtd.t)) ;
+                    app.Conv_RTDStatusLabel.FontColor = [0 0.5 0] ;
+                else
+                    app.Conv_RTDStatusLabel.Text = ...
+                        'RTD: not loaded (generate in Tab 1 first)' ;
+                    app.Conv_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                end
+            else
+                app.Conv_RTDStatusLabel.Visible = 'off' ;
+            end
+
+            % ---- Import button (row 13, File mode only) ----
+            if isFile
+                app.Conv_ImportButton.Visible = 'on' ;
+            else
+                app.Conv_ImportButton.Visible = 'off' ;
+            end
+
+            % ---- nE (row 12, deconvolution only) ----
+            if ~isConv
                 app.Conv_nELabel.Visible = 'on' ;
                 app.Conv_nEField.Visible = 'on' ;
+            else
+                app.Conv_nELabel.Visible = 'off' ;
+                app.Conv_nEField.Visible = 'off' ;
             end
+
+            app.Conv_ImportLabel.Text = '' ;
         end
 
         function Conv_importFromFile(app)
-            % Importar datos desde archivo Excel/CSV para convolucion
+            % Import data from Excel/CSV/TSV file for convolution
             [file, filepath] = uigetfile( ...
-                {'*.xlsx;*.xls;*.csv;*.tsv', 'Archivos de datos' ; ...
-                 '*.*', 'Todos los archivos'}, ...
-                'Seleccionar archivo de datos') ;
+                {'*.xlsx;*.xls;*.csv;*.tsv', 'Data Files' ; ...
+                 '*.*', 'All Files'}, ...
+                'Select Data File') ;
 
             if isequal(file, 0)
                 return
@@ -2212,66 +2515,106 @@ classdef NonIdealReactorApp < handle
 
                 if size(data, 2) < 2
                     uialert(app.UIFigure, ...
-                        'El archivo debe tener al menos 2 columnas.', ...
-                        'Error de importacion') ;
+                        'The file must have at least 2 columns (t, signal).', ...
+                        'Import Error') ;
                     return
                 end
 
-                % Validate uniform dt
                 t_data = data(:, 1)' ;
                 dt_vec = diff(t_data) ;
                 if max(dt_vec) - min(dt_vec) > 0.01 * mean(dt_vec)
-                    app.Conv_ImportLabel.Text = 'Aviso: dt no es uniforme. Los resultados pueden ser imprecisos.' ;
+                    app.Conv_ImportLabel.Text = ...
+                        'Warning: dt is not uniform. Results may be inaccurate.' ;
                     app.Conv_ImportLabel.FontColor = [0.8 0.5 0] ;
                 end
 
                 assignin('base', app.Conv_tVarField.Value, t_data) ;
 
                 if size(data, 2) >= 2
-                    col2 = data(:, 2)' ;
-                    assignin('base', app.Conv_CinVarField.Value, col2) ;
+                    assignin('base', app.Conv_CinVarField.Value, data(:, 2)') ;
                 end
 
                 if size(data, 2) >= 3
-                    col3 = data(:, 3)' ;
                     mode = app.Conv_ModeDropdown.Value ;
-                    if strcmp(mode, 'Convolucion')
-                        assignin('base', app.Conv_EVarField.Value, col3) ;
+                    if strcmp(mode, 'Convolution')
+                        assignin('base', app.Conv_EVarField.Value, data(:, 3)') ;
                     else
-                        assignin('base', app.Conv_CoutVarField.Value, col3) ;
+                        assignin('base', app.Conv_CoutVarField.Value, data(:, 3)') ;
                     end
                 end
 
-                app.Conv_ImportLabel.Text = sprintf('Cargado: %s (%d puntos, %d columnas)', ...
+                app.Conv_ImportLabel.Text = sprintf( ...
+                    'Loaded: %s (%d pts, %d cols)', ...
                     file, length(t_data), size(data, 2)) ;
                 app.Conv_ImportLabel.FontColor = [0 0.5 0] ;
 
             catch ME
                 uialert(app.UIFigure, ...
-                    sprintf('Error al importar: %s', ME.message), ...
-                    'Error de importacion') ;
+                    sprintf('Import error: %s', ME.message), ...
+                    'Import Error') ;
             end
         end
 
         function Conv_compute(app)
             try
+                app.updateStatus('Computing...') ;
                 mode = app.Conv_ModeDropdown.Value ;
-                t_var = app.Conv_tVarField.Value ;
-                t_data = evalin('base', t_var) ;
+                source = app.Conv_InputDropdown.Value ;
+                isConv = strcmp(mode, 'Convolution') ;
 
-                if strcmp(mode, 'Convolucion')
-                    % ---- CONVOLUCION ----
-                    C_in = evalin('base', app.Conv_CinVarField.Value) ;
-                    E = evalin('base', app.Conv_EVarField.Value) ;
+                % ---- Resolve signals based on source mode ----
+                switch source
+                    case {'From Workspace', 'From File'}
+                        t_data = evalin('base', app.Conv_tVarField.Value) ;
+                        C_in = evalin('base', app.Conv_CinVarField.Value) ;
+                        if isConv
+                            E = evalin('base', app.Conv_EVarField.Value) ;
+                        else
+                            C_out_data = evalin('base', app.Conv_CoutVarField.Value) ;
+                        end
 
-                    % Use same t for both (common case)
-                    [C_out, t_out] = ConvolutionTool.convolve(t_data, E, t_data, C_in) ;
+                    case 'From Equation'
+                        t_data = linspace( ...
+                            app.Conv_TstartField.Value, ...
+                            app.Conv_TendField.Value, ...
+                            round(app.Conv_NptsField.Value)) ;
+                        t = t_data ; %#ok<NASGU>
+                        C_in = eval(app.Conv_CinEqField.Value) ;
+                        if isConv
+                            E = eval(app.Conv_EEqField.Value) ;
+                        else
+                            C_out_data = eval(app.Conv_CoutEqField.Value) ;
+                        end
 
-                    % Store result for export
+                    case 'From Tab 1 (RTD)'
+                        if isempty(app.rtd) || isempty(app.rtd.t)
+                            error('No RTD available. Generate one in Tab 1 first.') ;
+                        end
+                        t_data = app.rtd.t ;
+                        E = app.rtd.Et ;
+                        t = t_data ; %#ok<NASGU>
+                        C_in = eval(app.Conv_CinEqField.Value) ;
+                end
+
+                % Ensure row vectors
+                t_data = t_data(:)' ;
+                C_in = C_in(:)' ;
+
+                if isConv
+                    E = E(:)' ;
+
+                    % ---- CONVOLUTION ----
+                    [C_out, t_out] = ConvolutionTool.convolve( ...
+                        t_data, E, t_data, C_in) ;
+
+                    % Store for chaining and export
+                    app.Conv_lastCout = C_out ;
+                    app.Conv_lastTout = t_out ;
+                    app.Conv_UsePrevButton.Enable = 'on' ;
                     assignin('base', 'conv_t_out', t_out) ;
                     assignin('base', 'conv_C_out', C_out) ;
 
-                    % Update plots
+                    % Plot inputs (dual y-axis)
                     cla(app.Conv_AxesInput) ;
                     yyaxis(app.Conv_AxesInput, 'left') ;
                     plot(app.Conv_AxesInput, t_data, C_in, 'b-', 'LineWidth', 1.5) ;
@@ -2280,45 +2623,45 @@ classdef NonIdealReactorApp < handle
                     plot(app.Conv_AxesInput, t_data, E, 'r-', 'LineWidth', 1.5) ;
                     ylabel(app.Conv_AxesInput, 'E(t) [1/s]') ;
                     xlabel(app.Conv_AxesInput, 't [s]') ;
-                    title(app.Conv_AxesInput, 'Entrada: C_{in}(t) y E(t)') ;
+                    title(app.Conv_AxesInput, 'Input: C_{in}(t) and E(t)') ;
                     legend(app.Conv_AxesInput, 'C_{in}', 'E(t)', 'Location', 'best') ;
 
+                    % Plot result
                     cla(app.Conv_AxesResult) ;
                     plot(app.Conv_AxesResult, t_out, C_out, 'b-', 'LineWidth', 1.5) ;
                     xlabel(app.Conv_AxesResult, 't [s]') ;
                     ylabel(app.Conv_AxesResult, 'C_{out}(t)') ;
-                    title(app.Conv_AxesResult, 'Resultado: C_{out} = E \otimes C_{in}') ;
+                    title(app.Conv_AxesResult, 'Result: C_{out} = E \otimes C_{in}') ;
 
-                    % Verification: overlay original C_in and C_out
+                    % Verification: overlay C_in and C_out
                     cla(app.Conv_AxesRecovered) ;
                     plot(app.Conv_AxesRecovered, t_data, C_in, 'b--', 'LineWidth', 1) ;
                     hold(app.Conv_AxesRecovered, 'on') ;
                     plot(app.Conv_AxesRecovered, t_out, C_out, 'r-', 'LineWidth', 1.5) ;
                     hold(app.Conv_AxesRecovered, 'off') ;
                     xlabel(app.Conv_AxesRecovered, 't [s]') ;
-                    title(app.Conv_AxesRecovered, 'Comparacion: C_{in} vs C_{out}') ;
-                    legend(app.Conv_AxesRecovered, 'C_{in}(t)', 'C_{out}(t)', 'Location', 'best') ;
+                    title(app.Conv_AxesRecovered, 'Comparison: C_{in} vs C_{out}') ;
+                    legend(app.Conv_AxesRecovered, 'C_{in}(t)', 'C_{out}(t)', ...
+                        'Location', 'best') ;
 
                     app.Conv_ResultLabel.Text = sprintf( ...
-                        'Convolucion OK\nC_{out}: %d puntos, t=[%.2f, %.2f] s', ...
-                        length(C_out), t_out(1), t_out(end)) ;
+                        'Convolution OK\nC_{out}: %d points, t=[%.2f, %.2f] s\nSource: %s', ...
+                        length(C_out), t_out(1), t_out(end), source) ;
 
                 else
-                    % ---- DECONVOLUCION ----
-                    C_in = evalin('base', app.Conv_CinVarField.Value) ;
-                    C_out = evalin('base', app.Conv_CoutVarField.Value) ;
-                    nE = app.Conv_nEField.Value ;
+                    C_out_data = C_out_data(:)' ;
 
+                    % ---- DECONVOLUTION ----
+                    nE = app.Conv_nEField.Value ;
                     t_Cin = t_data ;
                     m = length(C_in) ;
-                    v = length(C_out) ;
+                    v = length(C_out_data) ;
                     dt = (t_Cin(end) - t_Cin(1)) / (m - 1) ;
                     t_Cout = t_Cin(1) + (0:(v-1)) * dt ;
 
                     [E_rec, t_E, residual] = ConvolutionTool.deconvolve( ...
-                        t_Cin, C_in, t_Cout, C_out, nE) ;
+                        t_Cin, C_in, t_Cout, C_out_data, nE) ;
 
-                    % Store for export
                     assignin('base', 'deconv_t_E', t_E) ;
                     assignin('base', 'deconv_E', E_rec) ;
 
@@ -2328,10 +2671,10 @@ classdef NonIdealReactorApp < handle
                     plot(app.Conv_AxesInput, t_Cin, C_in, 'b-', 'LineWidth', 1.5) ;
                     ylabel(app.Conv_AxesInput, 'C_{in}(t)') ;
                     yyaxis(app.Conv_AxesInput, 'right') ;
-                    plot(app.Conv_AxesInput, t_Cout, C_out, 'r-', 'LineWidth', 1.5) ;
+                    plot(app.Conv_AxesInput, t_Cout, C_out_data, 'r-', 'LineWidth', 1.5) ;
                     ylabel(app.Conv_AxesInput, 'C_{out}(t)') ;
                     xlabel(app.Conv_AxesInput, 't [s]') ;
-                    title(app.Conv_AxesInput, 'Entrada: C_{in}(t) y C_{out}(t)') ;
+                    title(app.Conv_AxesInput, 'Input: C_{in}(t) and C_{out}(t)') ;
                     legend(app.Conv_AxesInput, 'C_{in}', 'C_{out}', 'Location', 'best') ;
 
                     % Plot recovered E(t)
@@ -2339,46 +2682,82 @@ classdef NonIdealReactorApp < handle
                     plot(app.Conv_AxesResult, t_E, E_rec, 'm-', 'LineWidth', 1.5) ;
                     xlabel(app.Conv_AxesResult, 't [s]') ;
                     ylabel(app.Conv_AxesResult, 'E(t) [1/s]') ;
-                    title(app.Conv_AxesResult, sprintf('E(t) recuperada | area=%.4f', ...
+                    title(app.Conv_AxesResult, sprintf('Recovered E(t) | area=%.4f', ...
                         trapz(t_E, E_rec))) ;
 
-                    % Verification: re-convolve and compare with C_out
-                    [C_out_check, t_check] = ConvolutionTool.convolve(t_E, E_rec, t_Cin, C_in) ;
+                    % Verification: re-convolve and compare (T5e)
+                    [C_out_check, t_check] = ConvolutionTool.convolve( ...
+                        t_E, E_rec, t_Cin, C_in) ;
+                    v_min = min(length(t_Cout), length(t_check)) ;
+                    residual_norm = norm( ...
+                        C_out_data(1:v_min) - C_out_check(1:v_min)) / v_min ;
+
                     cla(app.Conv_AxesRecovered) ;
-                    plot(app.Conv_AxesRecovered, t_Cout, C_out, 'b-', 'LineWidth', 1.5) ;
+                    plot(app.Conv_AxesRecovered, t_Cout, C_out_data, ...
+                        'b-', 'LineWidth', 1.5) ;
                     hold(app.Conv_AxesRecovered, 'on') ;
-                    plot(app.Conv_AxesRecovered, t_check, C_out_check, 'r--', 'LineWidth', 1.5) ;
+                    plot(app.Conv_AxesRecovered, t_check, C_out_check, ...
+                        'r--', 'LineWidth', 1.5) ;
                     hold(app.Conv_AxesRecovered, 'off') ;
                     xlabel(app.Conv_AxesRecovered, 't [s]') ;
-                    title(app.Conv_AxesRecovered, 'Verificacion: C_{out} vs reconvolucion') ;
-                    legend(app.Conv_AxesRecovered, 'C_{out} (datos)', 'E_{rec} \otimes C_{in}', ...
-                           'Location', 'best') ;
+                    title(app.Conv_AxesRecovered, sprintf( ...
+                        'Verification (err=%.2e)', residual_norm)) ;
+                    legend(app.Conv_AxesRecovered, 'C_{out} (data)', ...
+                        'E_{rec} \otimes C_{in}', 'Location', 'best') ;
 
                     app.Conv_ResultLabel.Text = sprintf( ...
-                        'Deconvolucion OK\nResiduo: %.4e\nE: %d puntos, t=[%.2f, %.2f] s', ...
-                        residual, length(E_rec), t_E(1), t_E(end)) ;
+                        'Deconvolution OK\nResidual: %.4e\nReconv. error: %.4e\nE: %d pts, t=[%.2f, %.2f] s', ...
+                        residual, residual_norm, length(E_rec), t_E(1), t_E(end)) ;
                 end
 
                 app.Conv_ExportButton.Enable = 'on' ;
+                app.updateStatus(sprintf('%s completed', mode)) ;
 
             catch ME
+                app.updateStatus('Error') ;
                 uialert(app.UIFigure, ...
-                    sprintf('Error en el calculo: %s\nSugerencia: comprueba que las variables existen y tienen la misma longitud.', ME.message), ...
-                    'Error de convolucion') ;
+                    sprintf('Computation error: %s\nHint: check variables exist or equations use valid MATLAB syntax with t as the variable.', ...
+                    ME.message), ...
+                    'Convolution Error') ;
             end
+        end
+
+        function Conv_usePreviousResult(app)
+            % Load the last convolution C_out as new C_in for chaining
+            if isempty(app.Conv_lastCout) || isempty(app.Conv_lastTout)
+                uialert(app.UIFigure, ...
+                    'No previous result available. Run a convolution first.', ...
+                    'No Data') ;
+                return
+            end
+
+            % Store in workspace
+            assignin('base', 'conv_prev_t', app.Conv_lastTout) ;
+            assignin('base', 'conv_prev_Cin', app.Conv_lastCout) ;
+
+            % Switch to Workspace mode and set variable names
+            app.Conv_InputDropdown.Value = 'From Workspace' ;
+            app.Conv_tVarField.Value = 'conv_prev_t' ;
+            app.Conv_CinVarField.Value = 'conv_prev_Cin' ;
+            app.Conv_updateVisibility() ;
+
+            app.Conv_ImportLabel.Text = sprintf( ...
+                'Previous C_out loaded as C_in (%d pts)', ...
+                length(app.Conv_lastCout)) ;
+            app.Conv_ImportLabel.FontColor = [0 0.5 0] ;
         end
 
         function Conv_export(app)
             varName = app.Conv_ExportNameField.Value ;
             if ~isvarname(varName)
                 uialert(app.UIFigure, ...
-                    sprintf('"%s" no es un nombre de variable valido.', varName), ...
-                    'Nombre no valido') ;
+                    sprintf('"%s" is not a valid variable name.', varName), ...
+                    'Invalid Name') ;
                 return
             end
 
             mode = app.Conv_ModeDropdown.Value ;
-            if strcmp(mode, 'Convolucion')
+            if strcmp(mode, 'Convolution')
                 result.t = evalin('base', 'conv_t_out') ;
                 result.C_out = evalin('base', 'conv_C_out') ;
                 result.mode = 'convolution' ;
@@ -2391,8 +2770,8 @@ classdef NonIdealReactorApp < handle
 
             assignin('base', varName, result) ;
             uialert(app.UIFigure, ...
-                sprintf('Resultado exportado como "%s"', varName), ...
-                'Exportacion exitosa', 'Icon', 'success') ;
+                sprintf('Result exported as "%s"', varName), ...
+                'Export Successful', 'Icon', 'success') ;
         end
 
         %% ============== TAB 6: COMBINED MODELS ==============
@@ -2405,7 +2784,7 @@ classdef NonIdealReactorApp < handle
             mainGrid.ColumnWidth = {320, '1x'} ;
 
             % ---- LEFT PANEL ----
-            leftPanel = uipanel(mainGrid, 'Title', 'Configuracion de modelo combinado') ;
+            leftPanel = uipanel(mainGrid, 'Title', 'Combined Model Configuration') ;
             leftGrid = uigridlayout(leftPanel, [17 2]) ;
             leftGrid.RowHeight = repmat({28}, 1, 17) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
@@ -2413,21 +2792,22 @@ classdef NonIdealReactorApp < handle
             leftGrid.RowSpacing = 5 ;
 
             % Row 1: Model selection
-            lbl = uilabel(leftGrid, 'Text', 'Modelo:', 'FontWeight', 'bold') ;
+            lbl = uilabel(leftGrid, 'Text', 'Model:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
             app.Comb_ModelDropdown = uidropdown(leftGrid, ...
-                'Items', {'CSTR + Vol. muerto', ...
+                'Items', {'CSTR + Dead Vol.', ...
                           'CSTR + Bypass', ...
-                          'CSTR + Bypass + Vol. muerto', ...
-                          'CSTR + PFR en serie'}, ...
-                'Value', 'CSTR + Vol. muerto', ...
+                          'CSTR + Bypass + Dead Vol.', ...
+                          'CSTR + PFR in Series'}, ...
+                'Value', 'CSTR + Dead Vol.', ...
                 'ValueChangedFcn', @(~,~) app.Comb_modelChanged()) ;
             app.Comb_ModelDropdown.Layout.Row = 1 ;
             app.Comb_ModelDropdown.Layout.Column = 2 ;
 
             % Row 2: Model description (dynamic)
             app.Comb_ModelDescLabel = uilabel(leftGrid, ...
-                'Text', 'V_activo = alpha * V_total. El resto es volumen muerto.', ...
+                'Text', 'V<sub>active</sub> = &alpha; &middot; V<sub>total</sub>. The rest is dead volume.', ...
+                'Interpreter', 'html', ...
                 'FontAngle', 'italic', 'FontColor', [0.4 0.4 0.4], ...
                 'FontSize', 10, 'WordWrap', 'on') ;
             app.Comb_ModelDescLabel.Layout.Row = 2 ; app.Comb_ModelDescLabel.Layout.Column = [1 2] ;
@@ -2441,8 +2821,9 @@ classdef NonIdealReactorApp < handle
 
             % Row 4: Parameter 1
             app.Comb_Param1Label = uilabel(leftGrid, ...
-                'Text', 'alpha (frac. vol. activo):', ...
-                'Tooltip', 'Fraccion de volumen del reactor que esta bien mezclada (0 < alpha <= 1). El resto es volumen muerto sin flujo.') ;
+                'Text', 'alpha (active vol. frac.):', ...
+                'Interpreter', 'html', ...
+                'Tooltip', 'Fraction of reactor volume that is well-mixed (0 < alpha <= 1). The rest is dead volume with no flow.') ;
             app.Comb_Param1Label.Layout.Row = 4 ; app.Comb_Param1Label.Layout.Column = 1 ;
             app.Comb_Param1Field = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.8, 'Limits', [0.01 1]) ;
@@ -2450,8 +2831,9 @@ classdef NonIdealReactorApp < handle
 
             % Row 5: Parameter 2 (hidden for 1-param models)
             app.Comb_Param2Label = uilabel(leftGrid, ...
-                'Text', 'beta (frac. bypass):', ...
-                'Tooltip', 'Fraccion del caudal que pasa directamente sin reaccionar (0 <= beta < 1).') ;
+                'Text', 'beta (bypass frac.):', ...
+                'Interpreter', 'html', ...
+                'Tooltip', 'Fraction of flow that bypasses directly without reacting (0 <= beta < 1).') ;
             app.Comb_Param2Label.Layout.Row = 5 ; app.Comb_Param2Label.Layout.Column = 1 ;
             app.Comb_Param2Label.Visible = 'off' ;
             app.Comb_Param2Field = uieditfield(leftGrid, 'numeric', ...
@@ -2460,37 +2842,37 @@ classdef NonIdealReactorApp < handle
             app.Comb_Param2Field.Visible = 'off' ;
 
             % Row 6: Kinetics
-            lbl = uilabel(leftGrid, 'Text', 'Cinetica:', 'FontWeight', 'bold') ;
+            lbl = uilabel(leftGrid, 'Text', 'Kinetics:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 6 ; lbl.Layout.Column = 1 ;
             app.Comb_KineticsDropdown = uidropdown(leftGrid, ...
-                'Items', {'1er Orden (-rA = k*CA)', ...
-                          '2do Orden (-rA = k*CA^2)'}, ...
-                'Value', '1er Orden (-rA = k*CA)', ...
+                'Items', {'1st Order (-rA = k*CA)', ...
+                          '2nd Order (-rA = k*CA^2)'}, ...
+                'Value', '1st Order (-rA = k*CA)', ...
                 'ValueChangedFcn', @(~,~) app.Comb_kineticsChanged()) ;
             app.Comb_KineticsDropdown.Layout.Row = 6 ;
             app.Comb_KineticsDropdown.Layout.Column = 2 ;
 
             % Row 7: k
-            app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k [1/s]:') ;
+            app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.Comb_kLabel.Layout.Row = 7 ; app.Comb_kLabel.Layout.Column = 1 ;
             app.Comb_kField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 0.1, 'Limits', [0 Inf], ...
-                'Tooltip', 'Constante cinetica. Unidades dependen del orden: 1/s (1er orden), m^3/(mol*s) (2do orden).') ;
+                'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
             app.Comb_kField.Layout.Row = 7 ; app.Comb_kField.Layout.Column = 2 ;
 
             % Row 8: CA0 (2nd order only)
-            app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'CA0 [mol/m^3]:') ;
+            app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             app.Comb_CA0Label.Layout.Row = 8 ; app.Comb_CA0Label.Layout.Column = 1 ;
             app.Comb_CA0Label.Visible = 'off' ;
             app.Comb_CA0Field = uieditfield(leftGrid, 'numeric', ...
                 'Value', 1000, 'Limits', [0.001 Inf], ...
-                'Tooltip', 'Concentracion inicial del reactivo limitante en la alimentacion.') ;
+                'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
             app.Comb_CA0Field.Layout.Row = 8 ; app.Comb_CA0Field.Layout.Column = 2 ;
             app.Comb_CA0Field.Visible = 'off' ;
 
             % Row 9: Compute button
             app.Comb_ComputeButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Calcular', ...
+                'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
@@ -2499,19 +2881,19 @@ classdef NonIdealReactorApp < handle
             app.Comb_ComputeButton.Layout.Column = [1 2] ;
 
             % Row 10: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Resultados:', ...
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 10 ; lbl.Layout.Column = [1 2] ;
 
             % Row 11: Model params info
-            lbl = uilabel(leftGrid, 'Text', 'Parametros:') ;
+            lbl = uilabel(leftGrid, 'Text', 'Parameters:') ;
             lbl.Layout.Row = 11 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultParams = uilabel(leftGrid, 'Text', '--') ;
             app.Comb_ResultParams.Layout.Row = 11 ;
             app.Comb_ResultParams.Layout.Column = 2 ;
 
             % Row 12: X combined
-            lbl = uilabel(leftGrid, 'Text', 'X_modelo:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>model</sub>:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultX = uilabel(leftGrid, 'Text', '--') ;
             app.Comb_ResultX.Layout.Row = 12 ;
@@ -2519,21 +2901,21 @@ classdef NonIdealReactorApp < handle
             app.Comb_ResultX.FontWeight = 'bold' ;
 
             % Row 13: X_CSTR
-            lbl = uilabel(leftGrid, 'Text', 'X_CSTR ideal:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> ideal:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
             app.Comb_ResultXcstr.Layout.Row = 13 ;
             app.Comb_ResultXcstr.Layout.Column = 2 ;
 
             % Row 14: X_PFR
-            lbl = uilabel(leftGrid, 'Text', 'X_PFR ideal:') ;
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> ideal:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
             app.Comb_ResultXpfr.Layout.Row = 14 ;
             app.Comb_ResultXpfr.Layout.Column = 2 ;
 
             % ---- RIGHT PANEL (PLOTS) ----
-            rightPanel = uipanel(mainGrid, 'Title', 'Resultados del modelo combinado') ;
+            rightPanel = uipanel(mainGrid, 'Title', 'Combined Model Results') ;
             plotGrid = uigridlayout(rightPanel, [2 2]) ;
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
@@ -2541,20 +2923,20 @@ classdef NonIdealReactorApp < handle
             % E(t) plot
             app.Comb_AxesEt = uiaxes(plotGrid) ;
             app.Comb_AxesEt.Layout.Row = 1 ; app.Comb_AxesEt.Layout.Column = [1 2] ;
-            title(app.Comb_AxesEt, 'E(t) - Modelo combinado') ;
+            title(app.Comb_AxesEt, 'E(t) - Combined Model') ;
             xlabel(app.Comb_AxesEt, 't [s]') ;
             ylabel(app.Comb_AxesEt, 'E(t) [1/s]') ;
 
             % Comparison bar chart
             app.Comb_AxesComparison = uiaxes(plotGrid) ;
             app.Comb_AxesComparison.Layout.Row = 2 ; app.Comb_AxesComparison.Layout.Column = 1 ;
-            title(app.Comb_AxesComparison, 'Comparacion de conversion') ;
+            title(app.Comb_AxesComparison, 'Conversion Comparison') ;
             ylabel(app.Comb_AxesComparison, 'Conversion X') ;
 
             % Sensitivity plot (new)
             app.Comb_AxesSensitivity = uiaxes(plotGrid) ;
             app.Comb_AxesSensitivity.Layout.Row = 2 ; app.Comb_AxesSensitivity.Layout.Column = 2 ;
-            title(app.Comb_AxesSensitivity, 'Sensibilidad al parametro') ;
+            title(app.Comb_AxesSensitivity, 'Parameter Sensitivity') ;
             ylabel(app.Comb_AxesSensitivity, 'Conversion X') ;
         end
 
@@ -2564,75 +2946,76 @@ classdef NonIdealReactorApp < handle
             model = app.Comb_ModelDropdown.Value ;
 
             switch model
-                case 'CSTR + Vol. muerto'
-                    app.Comb_Param1Label.Text = 'alpha (frac. vol. activo):' ;
-                    app.Comb_Param1Label.Tooltip = 'Fraccion de volumen del reactor que esta bien mezclada (0 < alpha <= 1). El resto es volumen muerto sin flujo.' ;
+                case 'CSTR + Dead Vol.'
+                    app.Comb_Param1Label.Text = 'alpha (active vol. frac.):' ;
+                    app.Comb_Param1Label.Tooltip = 'Fraction of reactor volume that is well-mixed (0 < alpha <= 1). The rest is dead volume with no flow.' ;
                     app.Comb_Param1Field.Value = 0.8 ;
                     app.Comb_Param1Field.Limits = [0.01 1] ;
                     app.Comb_Param2Label.Visible = 'off' ;
                     app.Comb_Param2Field.Visible = 'off' ;
-                    app.Comb_ModelDescLabel.Text = 'V_activo = alpha * V_total. El resto es volumen muerto.' ;
+                    app.Comb_ModelDescLabel.Text = 'V<sub>active</sub> = &alpha; &middot; V<sub>total</sub>. The rest is dead volume.' ;
 
                 case 'CSTR + Bypass'
-                    app.Comb_Param1Label.Text = 'beta (frac. bypass):' ;
-                    app.Comb_Param1Label.Tooltip = 'Fraccion del caudal que pasa directamente sin reaccionar (0 <= beta < 1).' ;
+                    app.Comb_Param1Label.Text = 'beta (bypass frac.):' ;
+                    app.Comb_Param1Label.Tooltip = 'Fraction of flow that bypasses directly without reacting (0 <= beta < 1).' ;
                     app.Comb_Param1Field.Value = 0.1 ;
                     app.Comb_Param1Field.Limits = [0 0.99] ;
                     app.Comb_Param2Label.Visible = 'off' ;
                     app.Comb_Param2Field.Visible = 'off' ;
-                    app.Comb_ModelDescLabel.Text = 'Q_bypass = beta * Q. El resto entra al CSTR.' ;
+                    app.Comb_ModelDescLabel.Text = 'Q<sub>bypass</sub> = &beta; &middot; Q. The rest enters the CSTR.' ;
 
-                case 'CSTR + Bypass + Vol. muerto'
-                    app.Comb_Param1Label.Text = 'alpha (frac. vol. activo):' ;
-                    app.Comb_Param1Label.Tooltip = 'Fraccion de volumen activo (0 < alpha <= 1).' ;
+                case 'CSTR + Bypass + Dead Vol.'
+                    app.Comb_Param1Label.Text = 'alpha (active vol. frac.):' ;
+                    app.Comb_Param1Label.Tooltip = 'Active volume fraction (0 < alpha <= 1).' ;
                     app.Comb_Param1Field.Value = 0.8 ;
                     app.Comb_Param1Field.Limits = [0.01 1] ;
-                    app.Comb_Param2Label.Text = 'beta (frac. bypass):' ;
-                    app.Comb_Param2Label.Tooltip = 'Fraccion de caudal en bypass (0 <= beta < 1).' ;
+                    app.Comb_Param2Label.Text = 'beta (bypass frac.):' ;
+                    app.Comb_Param2Label.Tooltip = 'Bypass flow fraction (0 <= beta < 1).' ;
                     app.Comb_Param2Label.Visible = 'on' ;
                     app.Comb_Param2Field.Visible = 'on' ;
                     app.Comb_Param2Field.Value = 0.1 ;
                     app.Comb_Param2Field.Limits = [0 0.99] ;
-                    app.Comb_ModelDescLabel.Text = 'Combina bypass (beta) y volumen muerto (alpha).' ;
+                    app.Comb_ModelDescLabel.Text = 'Combines bypass (beta) and dead volume (alpha).' ;
 
-                case 'CSTR + PFR en serie'
-                    app.Comb_Param1Label.Text = 'tau_CSTR [s]:' ;
-                    app.Comb_Param1Label.Tooltip = 'Tiempo de residencia en el CSTR.' ;
+                case 'CSTR + PFR in Series'
+                    app.Comb_Param1Label.Text = '&tau;<sub>CSTR</sub> [s]:' ;
+                    app.Comb_Param1Label.Tooltip = 'Residence time in the CSTR.' ;
                     app.Comb_Param1Field.Value = 5 ;
                     app.Comb_Param1Field.Limits = [0.001 Inf] ;
-                    app.Comb_Param2Label.Text = 'tau_PFR [s]:' ;
-                    app.Comb_Param2Label.Tooltip = 'Tiempo de residencia en el PFR.' ;
+                    app.Comb_Param2Label.Text = '&tau;<sub>PFR</sub> [s]:' ;
+                    app.Comb_Param2Label.Tooltip = 'Residence time in the PFR.' ;
                     app.Comb_Param2Label.Visible = 'on' ;
                     app.Comb_Param2Field.Visible = 'on' ;
                     app.Comb_Param2Field.Value = 5 ;
                     app.Comb_Param2Field.Limits = [0.001 Inf] ;
-                    app.Comb_ModelDescLabel.Text = 'PFR seguido de CSTR en serie. E(t) = exponencial desplazada.' ;
+                    app.Comb_ModelDescLabel.Text = 'PFR followed by CSTR in series. E(t) = shifted exponential.' ;
             end
         end
 
         function Comb_kineticsChanged(app)
             kinetics = app.Comb_KineticsDropdown.Value ;
-            if contains(kinetics, '2do')
+            if contains(kinetics, '2nd')
                 app.Comb_CA0Label.Visible = 'on' ;
                 app.Comb_CA0Field.Visible = 'on' ;
-                app.Comb_kLabel.Text = 'k [m^3/(mol*s)]:' ;
+                app.Comb_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             else
                 app.Comb_CA0Label.Visible = 'off' ;
                 app.Comb_CA0Field.Visible = 'off' ;
-                app.Comb_kLabel.Text = 'k [1/s]:' ;
+                app.Comb_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
             end
         end
 
         function Comb_compute(app)
 
             try
+                app.updateStatus('Computing combined model...') ;
                 model = app.Comb_ModelDropdown.Value ;
                 tau_val = app.Comb_tauField.Value ;
                 p1 = app.Comb_Param1Field.Value ;
                 p2 = app.Comb_Param2Field.Value ;
                 k_val = app.Comb_kField.Value ;
                 kinetics = app.Comb_KineticsDropdown.Value ;
-                is2nd = contains(kinetics, '2do') ;
+                is2nd = contains(kinetics, '2nd') ;
                 if is2nd
                     CA0_val = app.Comb_CA0Field.Value ;
                 end
@@ -2641,7 +3024,7 @@ classdef NonIdealReactorApp < handle
 
                 % Generate RTD and compute conversion
                 switch model
-                    case 'CSTR + Vol. muerto'
+                    case 'CSTR + Dead Vol.'
                         alpha = p1 ;
                         rtd_comb = RTD.cstr_with_dead_volume(tau_val, alpha) ;
                         tau_eff = alpha * tau_val ;
@@ -2666,7 +3049,7 @@ classdef NonIdealReactorApp < handle
                         X_model = (1 - beta) * X_reactor ;
                         paramStr = sprintf('beta=%.3f', beta) ;
 
-                    case 'CSTR + Bypass + Vol. muerto'
+                    case 'CSTR + Bypass + Dead Vol.'
                         alpha = p1 ;
                         beta = p2 ;
                         rtd_comb = RTD.cstr_with_bypass_and_dead(tau_val, alpha, beta) ;
@@ -2680,7 +3063,7 @@ classdef NonIdealReactorApp < handle
                         X_model = (1 - beta) * X_reactor ;
                         paramStr = sprintf('alpha=%.3f, beta=%.3f', alpha, beta) ;
 
-                    case 'CSTR + PFR en serie'
+                    case 'CSTR + PFR in Series'
                         tau_cstr = p1 ;
                         tau_pfr = p2 ;
                         rtd_comb = RTD.from_cstr_series_with_pfr(tau_cstr, tau_pfr) ;
@@ -2722,10 +3105,13 @@ classdef NonIdealReactorApp < handle
                 % Update plots
                 app.Comb_updatePlots(rtd_comb, model, X_model, X_cstr, X_pfr, paramStr) ;
 
+                app.updateStatus('Ready') ;
+
             catch ME
+                app.updateStatus('Error') ;
                 uialert(app.UIFigure, ...
-                    sprintf('Error en el modelo combinado: %s', ME.message), ...
-                    'Error de calculo') ;
+                    sprintf('Combined model error: %s', ME.message), ...
+                    'Computation Error') ;
             end
         end
 
@@ -2767,7 +3153,7 @@ classdef NonIdealReactorApp < handle
             set(app.Comb_AxesComparison, 'XTickLabel', ...
                 {'PFR ideal', modelShort, 'CSTR ideal'}) ;
             ylabel(app.Comb_AxesComparison, 'Conversion X') ;
-            title(app.Comb_AxesComparison, 'Comparacion de conversion') ;
+            title(app.Comb_AxesComparison, 'Conversion Comparison') ;
             ylim(app.Comb_AxesComparison, [0 1.12]) ;
 
             % Value labels
@@ -2793,13 +3179,13 @@ classdef NonIdealReactorApp < handle
             cla(app.Comb_AxesSensitivity) ;
             k_val = app.Comb_kField.Value ;
             kinetics = app.Comb_KineticsDropdown.Value ;
-            is2nd = contains(kinetics, '2do') ;
+            is2nd = contains(kinetics, '2nd') ;
             if is2nd
                 CA0_val = app.Comb_CA0Field.Value ;
             end
 
             switch model
-                case 'CSTR + Vol. muerto'
+                case 'CSTR + Dead Vol.'
                     pVec = linspace(0.1, 1.0, 30) ;
                     X_vec = zeros(size(pVec)) ;
                     for jj = 1:length(pVec)
@@ -2830,7 +3216,7 @@ classdef NonIdealReactorApp < handle
                     plot(app.Comb_AxesSensitivity, pVec, X_vec, 'b-', 'LineWidth', 1.5) ;
                     xlabel(app.Comb_AxesSensitivity, 'beta') ;
 
-                case 'CSTR + Bypass + Vol. muerto'
+                case 'CSTR + Bypass + Dead Vol.'
                     % Sweep alpha at fixed beta
                     beta_fixed = app.Comb_Param2Field.Value ;
                     pVec = linspace(0.1, 1.0, 30) ;
@@ -2848,7 +3234,7 @@ classdef NonIdealReactorApp < handle
                     plot(app.Comb_AxesSensitivity, pVec, X_vec, 'b-', 'LineWidth', 1.5) ;
                     xlabel(app.Comb_AxesSensitivity, sprintf('alpha (beta=%.2f)', beta_fixed)) ;
 
-                case 'CSTR + PFR en serie'
+                case 'CSTR + PFR in Series'
                     % Sweep tau_CSTR fraction
                     tau_total_s = app.Comb_Param1Field.Value + app.Comb_Param2Field.Value ;
                     pVec = linspace(0.05, 0.95, 30) ;
@@ -2870,11 +3256,11 @@ classdef NonIdealReactorApp < handle
                         end
                     end
                     plot(app.Comb_AxesSensitivity, pVec, X_vec, 'b-', 'LineWidth', 1.5) ;
-                    xlabel(app.Comb_AxesSensitivity, 'fraccion tau_{CSTR} / tau_{total}') ;
+                    xlabel(app.Comb_AxesSensitivity, 'fraction tau_{CSTR} / tau_{total}') ;
             end
 
             ylabel(app.Comb_AxesSensitivity, 'Conversion X') ;
-            title(app.Comb_AxesSensitivity, 'Sensibilidad al parametro') ;
+            title(app.Comb_AxesSensitivity, 'Parameter Sensitivity') ;
         end
 
         %% ============== TAB 7: OPTIMIZATION ==============
@@ -2886,7 +3272,7 @@ classdef NonIdealReactorApp < handle
             mainGrid.ColumnWidth = {320, '1x'} ;
 
             % ---- LEFT PANEL ----
-            leftPanel = uipanel(mainGrid, 'Title', 'Ajuste de modelos RTD') ;
+            leftPanel = uipanel(mainGrid, 'Title', 'RTD Model Fitting') ;
             leftGrid = uigridlayout(leftPanel, [22 2]) ;
             leftGrid.RowHeight = repmat({28}, 1, 22) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
@@ -2894,16 +3280,16 @@ classdef NonIdealReactorApp < handle
             leftGrid.RowSpacing = 5 ;
 
             % Row 1: Section header - Data
-            lbl = uilabel(leftGrid, 'Text', 'Datos experimentales', ...
+            lbl = uilabel(leftGrid, 'Text', 'Experimental Data', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = [1 2] ;
 
             % Row 2: Data source
-            lbl = uilabel(leftGrid, 'Text', 'Fuente:', 'FontWeight', 'bold') ;
+            lbl = uilabel(leftGrid, 'Text', 'Source:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
             app.Opt_DataSourceDropdown = uidropdown(leftGrid, ...
-                'Items', {'Desde workspace', 'Desde archivo', 'Desde RTD (Tab 1)'}, ...
-                'Value', 'Desde workspace', ...
+                'Items', {'From Workspace', 'From File', 'From RTD (Tab 1)'}, ...
+                'Value', 'From Workspace', ...
                 'ValueChangedFcn', @(~,~) app.Opt_sourceChanged()) ;
             app.Opt_DataSourceDropdown.Layout.Row = 2 ;
             app.Opt_DataSourceDropdown.Layout.Column = 2 ;
@@ -2922,7 +3308,7 @@ classdef NonIdealReactorApp < handle
 
             % Row 5: Import button
             app.Opt_ImportButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Cargar datos', ...
+                'Text', 'Load Data', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [1 1 1], ...
                 'FontColor', [0.8 0 0], ...
@@ -2938,7 +3324,7 @@ classdef NonIdealReactorApp < handle
             app.Opt_ImportLabel.WordWrap = 'on' ;
 
             % Row 7: tau display
-            lbl = uilabel(leftGrid, 'Text', 'tau experimental:') ;
+            lbl = uilabel(leftGrid, 'Text', 'Experimental tau:') ;
             lbl.Layout.Row = 7 ; lbl.Layout.Column = 1 ;
             app.Opt_tauLabel = uilabel(leftGrid, 'Text', '-- s') ;
             app.Opt_tauLabel.Layout.Row = 7 ;
@@ -2946,25 +3332,25 @@ classdef NonIdealReactorApp < handle
             app.Opt_tauLabel.FontWeight = 'bold' ;
 
             % Row 8: Section header - Models
-            lbl = uilabel(leftGrid, 'Text', 'Modelos a ajustar', ...
+            lbl = uilabel(leftGrid, 'Text', 'Models to Fit', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 8 ; lbl.Layout.Column = [1 2] ;
 
             % Row 9-14: Model checkboxes
             app.Opt_CheckTIS = uicheckbox(leftGrid, ...
-                'Text', 'Tanques en serie (N)', 'Value', true) ;
+                'Text', 'Tanks-in-Series (N)', 'Value', true) ;
             app.Opt_CheckTIS.Layout.Row = 9 ; app.Opt_CheckTIS.Layout.Column = [1 2] ;
 
             app.Opt_CheckDispOpen = uicheckbox(leftGrid, ...
-                'Text', 'Dispersion abierto-abierto (Bo)', 'Value', true) ;
+                'Text', 'Dispersion open-open (Bo)', 'Value', true) ;
             app.Opt_CheckDispOpen.Layout.Row = 10 ; app.Opt_CheckDispOpen.Layout.Column = [1 2] ;
 
             app.Opt_CheckDispClosed = uicheckbox(leftGrid, ...
-                'Text', 'Dispersion cerrado-cerrado (Bo)', 'Value', true) ;
+                'Text', 'Dispersion closed-closed (Bo)', 'Value', true) ;
             app.Opt_CheckDispClosed.Layout.Row = 11 ; app.Opt_CheckDispClosed.Layout.Column = [1 2] ;
 
             app.Opt_CheckDeadVol = uicheckbox(leftGrid, ...
-                'Text', 'CSTR + Volumen muerto (alpha)', 'Value', false) ;
+                'Text', 'CSTR + Dead Volume (alpha)', 'Value', false) ;
             app.Opt_CheckDeadVol.Layout.Row = 12 ; app.Opt_CheckDeadVol.Layout.Column = [1 2] ;
 
             app.Opt_CheckBypass = uicheckbox(leftGrid, ...
@@ -2972,12 +3358,12 @@ classdef NonIdealReactorApp < handle
             app.Opt_CheckBypass.Layout.Row = 13 ; app.Opt_CheckBypass.Layout.Column = [1 2] ;
 
             app.Opt_CheckBypassDead = uicheckbox(leftGrid, ...
-                'Text', 'CSTR + Bypass + Vol. muerto (alpha, beta)', 'Value', false) ;
+                'Text', 'CSTR + Bypass + Dead Vol. (alpha, beta)', 'Value', false) ;
             app.Opt_CheckBypassDead.Layout.Row = 14 ; app.Opt_CheckBypassDead.Layout.Column = [1 2] ;
 
             % Row 15: Fit button
             app.Opt_FitButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Ajustar modelos', ...
+                'Text', 'Fit Models', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
@@ -2987,7 +3373,7 @@ classdef NonIdealReactorApp < handle
             app.Opt_FitButton.Layout.Column = [1 2] ;
 
             % Row 16: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Resultados:', ...
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 16 ; lbl.Layout.Column = [1 2] ;
 
@@ -3001,7 +3387,7 @@ classdef NonIdealReactorApp < handle
 
             % Row 18-22: Results table
             app.Opt_ResultTable = uitable(leftGrid, ...
-                'ColumnName', {'Modelo', 'Params', 'SSE', 'R^2', 'AIC'}, ...
+                'ColumnName', {'Model', 'Params', 'SSE', 'R^2', 'AIC'}, ...
                 'ColumnWidth', {95, 80, 55, 50, 50}, ...
                 'RowName', {}, ...
                 'ColumnEditable', false) ;
@@ -3009,7 +3395,7 @@ classdef NonIdealReactorApp < handle
             app.Opt_ResultTable.Layout.Column = [1 2] ;
 
             % ---- RIGHT PANEL (PLOTS) ----
-            rightPanel = uipanel(mainGrid, 'Title', 'Resultados del ajuste') ;
+            rightPanel = uipanel(mainGrid, 'Title', 'Fitting Results') ;
             plotGrid = uigridlayout(rightPanel, [2 2]) ;
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
@@ -3018,7 +3404,7 @@ classdef NonIdealReactorApp < handle
             app.Opt_AxesDataFit = uiaxes(plotGrid) ;
             app.Opt_AxesDataFit.Layout.Row = 1 ;
             app.Opt_AxesDataFit.Layout.Column = [1 2] ;
-            title(app.Opt_AxesDataFit, 'Datos experimentales vs modelos ajustados') ;
+            title(app.Opt_AxesDataFit, 'Experimental Data vs Fitted Models') ;
             xlabel(app.Opt_AxesDataFit, 't [s]') ;
             ylabel(app.Opt_AxesDataFit, 'E(t) [1/s]') ;
 
@@ -3026,7 +3412,7 @@ classdef NonIdealReactorApp < handle
             app.Opt_AxesResiduals = uiaxes(plotGrid) ;
             app.Opt_AxesResiduals.Layout.Row = 2 ;
             app.Opt_AxesResiduals.Layout.Column = 1 ;
-            title(app.Opt_AxesResiduals, 'Residuos') ;
+            title(app.Opt_AxesResiduals, 'Residuals') ;
             xlabel(app.Opt_AxesResiduals, 't [s]') ;
             ylabel(app.Opt_AxesResiduals, 'E_{exp} - E_{mod} [1/s]') ;
 
@@ -3034,7 +3420,7 @@ classdef NonIdealReactorApp < handle
             app.Opt_AxesComparison = uiaxes(plotGrid) ;
             app.Opt_AxesComparison.Layout.Row = 2 ;
             app.Opt_AxesComparison.Layout.Column = 2 ;
-            title(app.Opt_AxesComparison, 'Comparacion R^2') ;
+            title(app.Opt_AxesComparison, 'R² Comparison') ;
             ylabel(app.Opt_AxesComparison, 'R^2') ;
         end
 
@@ -3042,21 +3428,21 @@ classdef NonIdealReactorApp < handle
 
         function Opt_sourceChanged(app)
             source = app.Opt_DataSourceDropdown.Value ;
-            if strcmp(source, 'Desde RTD (Tab 1)')
+            if strcmp(source, 'From RTD (Tab 1)')
                 app.Opt_tVarLabel.Visible = 'off' ;
                 app.Opt_tVarField.Visible = 'off' ;
                 app.Opt_EtVarLabel.Visible = 'off' ;
                 app.Opt_EtVarField.Visible = 'off' ;
-                app.Opt_ImportButton.Text = 'Cargar desde RTD (Tab 1)' ;
+                app.Opt_ImportButton.Text = 'Load from RTD (Tab 1)' ;
             else
                 app.Opt_tVarLabel.Visible = 'on' ;
                 app.Opt_tVarField.Visible = 'on' ;
                 app.Opt_EtVarLabel.Visible = 'on' ;
                 app.Opt_EtVarField.Visible = 'on' ;
-                if strcmp(source, 'Desde archivo')
-                    app.Opt_ImportButton.Text = 'Importar archivo' ;
+                if strcmp(source, 'From File')
+                    app.Opt_ImportButton.Text = 'Import File' ;
                 else
-                    app.Opt_ImportButton.Text = 'Cargar datos' ;
+                    app.Opt_ImportButton.Text = 'Load Data' ;
                 end
             end
         end
@@ -3065,26 +3451,26 @@ classdef NonIdealReactorApp < handle
             try
                 source = app.Opt_DataSourceDropdown.Value ;
 
-                if strcmp(source, 'Desde RTD (Tab 1)')
+                if strcmp(source, 'From RTD (Tab 1)')
                     % Load from current RTD object in Tab 1
                     if isempty(app.rtd) || isempty(app.rtd.t)
                         uialert(app.UIFigure, ...
-                            'No hay RTD generada en Tab 1. Genera una RTD primero.', ...
-                            'Sin datos RTD') ;
+                            'No RTD generated in Tab 1. Generate an RTD first.', ...
+                            'No RTD Data') ;
                         return
                     end
                     app.opt_exp_t = app.rtd.t ;
                     app.opt_exp_Et = app.rtd.Et ;
                     app.Opt_ImportLabel.Text = sprintf( ...
-                        'Cargado desde Tab 1: %d puntos, fuente: %s', ...
+                        'Loaded from Tab 1: %d points, source: %s', ...
                         length(app.opt_exp_t), app.rtd.source) ;
 
-                elseif strcmp(source, 'Desde archivo')
+                elseif strcmp(source, 'From File')
                     % Import from file
                     [file, filepath] = uigetfile( ...
-                        {'*.xlsx;*.xls;*.csv;*.tsv', 'Archivos de datos' ; ...
-                         '*.*', 'Todos los archivos'}, ...
-                        'Seleccionar archivo de datos experimentales') ;
+                        {'*.xlsx;*.xls;*.csv;*.tsv', 'Data Files' ; ...
+                         '*.*', 'All Files'}, ...
+                        'Select Experimental Data File') ;
                     if isequal(file, 0), return ; end
 
                     fullPath = fullfile(filepath, file) ;
@@ -3102,8 +3488,8 @@ classdef NonIdealReactorApp < handle
 
                     if size(data, 2) < 2
                         uialert(app.UIFigure, ...
-                            'El archivo debe tener al menos 2 columnas (t y E(t)).', ...
-                            'Error de importacion') ;
+                            'The file must have at least 2 columns (t and E(t)).', ...
+                            'Import Error') ;
                         return
                     end
 
@@ -3111,7 +3497,7 @@ classdef NonIdealReactorApp < handle
                     app.opt_exp_t = data(:, 1)' ;
                     app.opt_exp_Et = data(:, 2)' ;
                     app.Opt_ImportLabel.Text = sprintf( ...
-                        'Cargado: %s (%d puntos)', file, length(app.opt_exp_t)) ;
+                        'Loaded: %s (%d points)', file, length(app.opt_exp_t)) ;
 
                 else
                     % From workspace
@@ -3120,7 +3506,7 @@ classdef NonIdealReactorApp < handle
                     app.opt_exp_t = evalin('base', t_var) ;
                     app.opt_exp_Et = evalin('base', Et_var) ;
                     app.Opt_ImportLabel.Text = sprintf( ...
-                        'Cargado desde workspace: %d puntos', length(app.opt_exp_t)) ;
+                        'Loaded from workspace: %d points', length(app.opt_exp_t)) ;
                 end
 
                 % Ensure row vectors
@@ -3147,17 +3533,17 @@ classdef NonIdealReactorApp < handle
                 cla(app.Opt_AxesDataFit) ;
                 plot(app.Opt_AxesDataFit, app.opt_exp_t, app.opt_exp_Et, ...
                     'ko', 'MarkerSize', 5, 'MarkerFaceColor', [0.3 0.3 0.3]) ;
-                title(app.Opt_AxesDataFit, 'Datos experimentales cargados') ;
+                title(app.Opt_AxesDataFit, 'Loaded Experimental Data') ;
                 xlabel(app.Opt_AxesDataFit, 't [s]') ;
                 ylabel(app.Opt_AxesDataFit, 'E(t) [1/s]') ;
-                legend(app.Opt_AxesDataFit, 'Datos exp.', 'Location', 'best') ;
+                legend(app.Opt_AxesDataFit, 'Exp. Data', 'Location', 'best') ;
 
             catch ME
                 app.Opt_ImportLabel.Text = ME.message ;
                 app.Opt_ImportLabel.FontColor = [0.8 0 0] ;
                 uialert(app.UIFigure, ...
-                    sprintf('Error al cargar datos: %s\nSugerencia: comprueba que las variables existen en el workspace.', ME.message), ...
-                    'Error de carga') ;
+                    sprintf('Load error: %s\nHint: check that the variables exist in the workspace.', ME.message), ...
+                    'Load Error') ;
             end
         end
 
@@ -3176,6 +3562,7 @@ classdef NonIdealReactorApp < handle
             %   Plots: data vs fits, residuals, R^2 comparison
 
             try
+                app.updateStatus('Fitting models...') ;
                 t_exp = app.opt_exp_t ;
                 Et_exp = app.opt_exp_Et ;
                 tau_exp = app.opt_exp_tau ;
@@ -3232,7 +3619,7 @@ classdef NonIdealReactorApp < handle
                     SSE = sum((Et_exp - Et_fit).^2) ;
                     R2 = 1 - SSE / SST ;
                     AIC = n_pts * log(SSE/n_pts) + 2*1 ;
-                    r = struct('name', 'Disp. abierto', 'params', Bo_opt, ...
+                    r = struct('name', 'Disp. Open', 'params', Bo_opt, ...
                                'paramStr', sprintf('Bo=%.4f', Bo_opt), ...
                                'SSE', SSE, 'R2', R2, 'AIC', AIC, ...
                                'Et_fit', Et_fit, 'nParams', 1) ;
@@ -3249,7 +3636,7 @@ classdef NonIdealReactorApp < handle
                     SSE = sum((Et_exp - Et_fit).^2) ;
                     R2 = 1 - SSE / SST ;
                     AIC = n_pts * log(SSE/n_pts) + 2*1 ;
-                    r = struct('name', 'Disp. cerrado', 'params', Bo_opt, ...
+                    r = struct('name', 'Disp. Closed', 'params', Bo_opt, ...
                                'paramStr', sprintf('Bo=%.4f', Bo_opt), ...
                                'SSE', SSE, 'R2', R2, 'AIC', AIC, ...
                                'Et_fit', Et_fit, 'nParams', 1) ;
@@ -3313,18 +3700,21 @@ classdef NonIdealReactorApp < handle
 
                 if isempty(results)
                     uialert(app.UIFigure, ...
-                        'Selecciona al menos un modelo para ajustar.', ...
-                        'Sin modelos') ;
+                        'Select at least one model to fit.', ...
+                        'No Models') ;
                     return
                 end
 
                 % Display results
                 app.Opt_displayResults(results) ;
 
+                app.updateStatus('Ready') ;
+
             catch ME
+                app.updateStatus('Error') ;
                 uialert(app.UIFigure, ...
-                    sprintf('Error en el ajuste: %s', ME.message), ...
-                    'Error de optimizacion') ;
+                    sprintf('Fitting error: %s', ME.message), ...
+                    'Optimization Error') ;
             end
         end
 
@@ -3359,15 +3749,15 @@ classdef NonIdealReactorApp < handle
             R2_vals = [results.R2] ;
             [~, bestIdx] = max(R2_vals) ;
             app.Opt_ResultBestLabel.Text = sprintf( ...
-                'Mejor modelo: %s (R^2 = %.4f)', ...
+                'Best model: %s (R^2 = %.4f)', ...
                 results(bestIdx).name, results(bestIdx).R2) ;
 
             % ---- Colors for models ----
-            colors = [0.0 0.45 0.74 ;   % azul
-                      0.85 0.33 0.10 ;   % naranja
-                      0.47 0.67 0.19 ;   % verde
-                      0.49 0.18 0.56 ;   % morado
-                      0.93 0.69 0.13 ;   % amarillo
+            colors = [0.0 0.45 0.74 ;   % blue
+                      0.85 0.33 0.10 ;   % orange
+                      0.47 0.67 0.19 ;   % green
+                      0.49 0.18 0.56 ;   % purple
+                      0.93 0.69 0.13 ;   % yellow
                       0.30 0.75 0.93] ;  % cyan
 
             % ---- Plot 1: Data vs fitted curves ----
@@ -3375,7 +3765,7 @@ classdef NonIdealReactorApp < handle
             plot(app.Opt_AxesDataFit, t_exp, Et_exp_norm, ...
                 'ko', 'MarkerSize', 5, 'MarkerFaceColor', [0.3 0.3 0.3]) ;
             hold(app.Opt_AxesDataFit, 'on') ;
-            legendEntries = {'Datos exp.'} ;
+            legendEntries = {'Exp. Data'} ;
             for i = 1:nModels
                 cidx = mod(i-1, size(colors,1)) + 1 ;
                 plot(app.Opt_AxesDataFit, t_exp, results(i).Et_fit, ...
@@ -3383,7 +3773,7 @@ classdef NonIdealReactorApp < handle
                 legendEntries{end+1} = results(i).name ; %#ok<AGROW>
             end
             hold(app.Opt_AxesDataFit, 'off') ;
-            title(app.Opt_AxesDataFit, 'Datos experimentales vs modelos ajustados') ;
+            title(app.Opt_AxesDataFit, 'Experimental Data vs Fitted Models') ;
             xlabel(app.Opt_AxesDataFit, 't [s]') ;
             ylabel(app.Opt_AxesDataFit, 'E(t) [1/s]') ;
             legend(app.Opt_AxesDataFit, legendEntries, 'Location', 'best') ;
@@ -3399,7 +3789,7 @@ classdef NonIdealReactorApp < handle
             end
             yline(app.Opt_AxesResiduals, 0, 'k--') ;
             hold(app.Opt_AxesResiduals, 'off') ;
-            title(app.Opt_AxesResiduals, 'Residuos') ;
+            title(app.Opt_AxesResiduals, 'Residuals') ;
             xlabel(app.Opt_AxesResiduals, 't [s]') ;
             ylabel(app.Opt_AxesResiduals, 'E_{exp} - E_{mod} [1/s]') ;
 
@@ -3416,7 +3806,7 @@ classdef NonIdealReactorApp < handle
             set(app.Opt_AxesComparison, 'XTickLabel', modelNames, ...
                 'XTickLabelRotation', 30) ;
             ylabel(app.Opt_AxesComparison, 'R^2') ;
-            title(app.Opt_AxesComparison, 'Comparacion R^2') ;
+            title(app.Opt_AxesComparison, 'R² Comparison') ;
             ylim(app.Opt_AxesComparison, [0 1.1]) ;
 
             % Value labels on bars
@@ -3490,6 +3880,64 @@ classdef NonIdealReactorApp < handle
                 otherwise
                     Bo = sigma2_theta / 2 ;
             end
+        end
+
+        % -----------------------------------------------------------------
+        % Help dialog
+        % -----------------------------------------------------------------
+        function showHelp(~)
+            helpText = { ...
+                'NonIdealReactorApp — Quick Guide', ...
+                '==================================', ...
+                '', ...
+                'Tab 1: RTD Analysis', ...
+                '  Generate or import E(t) from analytical expression, experimental', ...
+                '  data (pulse/step), Excel file or manual table.', ...
+                '  Computes tau, variance, skewness, equivalent N and dead volume.', ...
+                '', ...
+                'Tab 2: Prediction Models', ...
+                '  Predicts conversion with Segregation and Maximum Mixedness.', ...
+                '  Requires RTD generated in Tab 1.', ...
+                '  Supports 6 kinetics: 1st/2nd Order, Michaelis-Menten,', ...
+                '  Reversible, Parallel and Custom Rate Law.', ...
+                '', ...
+                'Tab 3: Tanks-in-Series (TIS)', ...
+                '  Model of N equal CSTRs in series.', ...
+                '  Computes N from variance or accepts manual input.', ...
+                '', ...
+                'Tab 4: Dispersion Model', ...
+                '  Reactor with axial dispersion (Bo = u*L/De).', ...
+                '  Boundary conditions: open-open or closed-closed (Danckwerts).', ...
+                '  Bo->0 = CSTR, Bo->inf = PFR.', ...
+                '', ...
+                'Tab 5: Convolution / Deconvolution', ...
+                '  Given E(t) and C_in(t), computes C_out(t) (convolution).', ...
+                '  Given C_in(t) and C_out(t), recovers E(t) (deconvolution).', ...
+                '', ...
+                'Tab 6: Combined Models', ...
+                '  CSTR with dead volume, bypass, exchange,', ...
+                '  PFR+CSTR in series. Sensitivity analysis included.', ...
+                '', ...
+                'Tab 7: Optimization', ...
+                '  Fits experimental RTD data to 6 theoretical models.', ...
+                '  Compares R^2, parameters and automatic ranking.', ...
+                '', ...
+                '==================================', ...
+                'Internal units: SI (s, m^3, mol/m^3, m^3/s, Pa, K)', ...
+                'Use the Unit Converter to convert.', ...
+                '', ...
+                'Author: Javier Berenguer Sabater (TFG, March 2026)', ...
+                'Based on ReactorApp by Isabela Fons.'} ;
+
+            fig = uifigure('Name', 'Help — NonIdealReactorApp', ...
+                'Position', [200 100 520 560], ...
+                'Resize', 'off') ;
+            uitextarea(fig, ...
+                'Value', helpText, ...
+                'Position', [10 10 500 540], ...
+                'Editable', 'off', ...
+                'FontName', 'Consolas', ...
+                'FontSize', 12) ;
         end
 
     end

@@ -20,7 +20,7 @@ classdef SegregationModel
 %   - Plots X_batch(t), E(t), and the integrand X(t)*E(t)
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 21, 2026
+% Created: March 21, 2026. Last update: March 28, 2026
 % =========================================================================
 
 % Internal units (SI):
@@ -79,7 +79,7 @@ classdef SegregationModel
             % and then integrates the product X(t)*E(t).
 
             if isempty(obj.rtd) || isempty(obj.reactionSys) || isempty(obj.feed)
-                error('SegregationModel requiere que rtd, reactionSys y feed estén establecidos') ;
+                error('SegregationModel requires rtd, reactionSys and feed to be set') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -175,7 +175,7 @@ classdef SegregationModel
             %         con T de Hysys via Stream.defineStreamFromHysys().
 
             if isempty(obj.rtd)
-                error('RTD debe estar establecida antes de calcular') ;
+                error('RTD must be set before computing') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -205,7 +205,7 @@ classdef SegregationModel
             %         CA0 podria venir de composicion de corriente Hysys.
 
             if isempty(obj.rtd)
-                error('RTD debe estar establecida antes de calcular') ;
+                error('RTD must be set before computing') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -403,7 +403,7 @@ classdef SegregationModel
             %   Subplot 3: Integrand X(t)*E(t) vs t (shaded area = X_mean)
 
             if isempty(obj.X_batch) || isempty(obj.X_mean)
-                error('Debe ejecutar compute() o compute_firstOrder() primero') ;
+                error('Must run compute() or compute_firstOrder() first') ;
             end
 
             fig = figure('Name', 'Segregation Model Results', 'NumberTitle', 'off') ;
