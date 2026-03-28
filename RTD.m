@@ -14,6 +14,11 @@ classdef RTD
 % Precision update: increased resolution for numerical accuracy
 % =========================================================================
 
+% Internal units (SI):
+%   time: s | volume: m^3 | concentration: mol/m^3
+%   flow: m^3/s | pressure: Pa | temperature: K
+%   k(1st): 1/s | k(2nd): m^3/(mol*s) | energy: J/mol
+
     properties
         t               % [1 x N] time vector (s)
         Et              % [1 x N] E(t) values (1/s)
@@ -52,7 +57,7 @@ classdef RTD
             end
 
             if nargin ~= 2
-                error('RTD constructor requires 0 or 2 arguments: RTD(t, Et)') ;
+                error('El constructor RTD requiere 0 o 2 argumentos: RTD(t, Et)') ;
             end
 
             % Ensure row vectors
@@ -60,15 +65,15 @@ classdef RTD
             if iscolumn(Et), Et = Et' ; end
 
             if length(t) ~= length(Et)
-                error('Vectors t and Et must have the same length') ;
+                error('Los vectores t y Et deben tener la misma longitud') ;
             end
 
             if any(t < 0)
-                error('Time vector t must contain non-negative values') ;
+                error('El vector de tiempo t debe contener valores no negativos') ;
             end
 
             if any(Et < 0)
-                warning('RTD:negativeValues', 'E(t) contains negative values. These may indicate experimental noise.') ;
+                warning('RTD:negativeValues', 'E(t) contiene valores negativos. Esto puede indicar ruido experimental.') ;
             end
 
             obj.t  = t ;
@@ -128,7 +133,7 @@ classdef RTD
             area = trapz(obj.t, obj.Et) ;
 
             if area <= 0
-                warning('RTD:zeroArea', 'Area under E(t) is zero or negative. Cannot normalize.') ;
+                warning('RTD:zeroArea', 'El área bajo E(t) es cero o negativa. No se puede normalizar.') ;
                 return
             end
 
@@ -175,7 +180,7 @@ classdef RTD
             %   plot_Et(obj, ax) - plot on specified axes
 
             if isempty(obj.t) || isempty(obj.Et)
-                error('RTD object is empty. Cannot plot.') ;
+                error('El objeto RTD está vacío. No se puede graficar.') ;
             end
 
             if nargin < 2
@@ -206,7 +211,7 @@ classdef RTD
             %   plot_Ft(obj, ax) - plot on specified axes
 
             if isempty(obj.t) || isempty(obj.Et)
-                error('RTD object is empty. Cannot plot.') ;
+                error('El objeto RTD está vacío. No se puede graficar.') ;
             end
 
             if nargin < 2
@@ -230,7 +235,7 @@ classdef RTD
             %   plot_Etheta(obj, ax) - plot on specified axes
 
             if isempty(obj.t) || isempty(obj.Et) || isempty(obj.tau)
-                error('RTD object is empty or tau not computed. Cannot plot.') ;
+                error('El objeto RTD está vacío o tau no calculado. No se puede graficar.') ;
             end
 
             if nargin < 2
@@ -464,13 +469,13 @@ classdef RTD
             if iscolumn(Cpulse), Cpulse = Cpulse' ; end
 
             if length(t) ~= length(Cpulse)
-                error('Vectors t and Cpulse must have the same length') ;
+                error('Los vectores t y Cpulse deben tener la misma longitud') ;
             end
 
             % Normalize: E(t) = C(t) / integral(C(t)dt)
             area = trapz(t, Cpulse) ;
             if area <= 0
-                error('Area under pulse response is zero or negative. Check data.') ;
+                error('El área bajo la respuesta al pulso es cero o negativa. Verifica los datos.') ;
             end
 
             Et = Cpulse / area ;
@@ -497,7 +502,7 @@ classdef RTD
             if iscolumn(Cstep), Cstep = Cstep' ; end
 
             if length(t) ~= length(Cstep)
-                error('Vectors t and Cstep must have the same length') ;
+                error('Los vectores t y Cstep deben tener la misma longitud') ;
             end
 
             if nargin < 3
@@ -656,6 +661,35 @@ classdef RTD
 
             obj.tau    = beta * 0 + (1-beta) * tau_s ;  % = alpha*tau_total
             obj.sigma2 = (1-beta) * tau_s^2 ;
+        end
+
+        function obj = laminar_flow(tau_val, tspan)
+            % RTD.laminar_flow - Laminar flow RTD for tubular reactor
+            %
+            % E(t) = tau^2 / (2*t^3)  for t >= tau/2,  0 otherwise
+            %
+            % Usage:
+            %   rtd = RTD.laminar_flow(tau_val)
+            %   rtd = RTD.laminar_flow(tau_val, tspan)
+            %
+            % Inputs:
+            %   tau_val - Mean residence time [s]
+            %   tspan   - (optional) Time vector [s]
+
+            if nargin < 2
+                % Extended span to capture the long tail
+                tspan = linspace(0, 10*tau_val, 5000) ;
+            end
+
+            Et = zeros(size(tspan)) ;
+            idx = tspan >= tau_val/2 ;
+            Et(idx) = tau_val^2 ./ (2 * tspan(idx).^3) ;
+
+            % Handle t=0 explicitly
+            Et(tspan == 0) = 0 ;
+
+            obj = RTD(tspan, Et) ;
+            obj.source = 'laminar_flow' ;
         end
 
     end

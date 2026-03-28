@@ -11,6 +11,14 @@ classdef TanksInSeries < Reactor
 % Created: March 21, 2026. Last update: March 21, 2026
 % =========================================================================
 
+% Internal units (SI):
+%   time: s | volume: m^3 | concentration: mol/m^3
+%   flow: m^3/s | pressure: Pa | temperature: K
+%   k(1st): 1/s | k(2nd): m^3/(mol*s) | energy: J/mol
+
+    % [HYSYS] N podria estimarse desde geometria del reactor +
+    %         propiedades de fluido (Re, viscosidad) via correlaciones.
+    %         Tambien puede calcularse desde RTD experimental (N = tau^2/sigma^2).
     properties
         nTanks = 1          % Number of tanks in series (can be non-integer for RTD)
         nTanks_method = 'manual'  % 'manual' or 'from_rtd'
@@ -26,7 +34,7 @@ classdef TanksInSeries < Reactor
 
         function R = set.nTanks(R, n)
             if n <= 0
-                error('Number of tanks must be positive') ;
+                error('El número de tanques debe ser positivo') ;
             end
             R.nTanks = n ;
         end
@@ -34,7 +42,7 @@ classdef TanksInSeries < Reactor
         function R = set.nTanks_method(R, method)
             valid = {'manual', 'from_rtd'} ;
             if ~ismember(method, valid)
-                error('nTanks_method must be ''manual'' or ''from_rtd''') ;
+                error('nTanks_method debe ser ''manual'' o ''from_rtd''') ;
             end
             R.nTanks_method = method ;
         end
@@ -49,11 +57,11 @@ classdef TanksInSeries < Reactor
             %   rtd_obj - RTD object with computed moments
 
             if isempty(rtd_obj.tau) || isempty(rtd_obj.sigma2)
-                error('RTD object must have computed moments (tau and sigma2)') ;
+                error('El objeto RTD debe tener momentos calculados (tau y sigma2)') ;
             end
 
             if rtd_obj.sigma2 <= 0
-                error('RTD variance must be positive') ;
+                error('La varianza de la RTD debe ser positiva') ;
             end
 
             R.nTanks = rtd_obj.tau^2 / rtd_obj.sigma2 ;
@@ -72,7 +80,7 @@ classdef TanksInSeries < Reactor
             %   tspan     - (optional) time vector
 
             if nargin < 2 || isempty(tau_total)
-                error('Must provide tau_total (mean residence time)') ;
+                error('Debe proporcionar tau_total (tiempo medio de residencia)') ;
             end
 
             if nargin < 3
@@ -157,6 +165,9 @@ classdef TanksInSeries < Reactor
             % Inputs:
             %   k         - rate constant (1/s)
             %   tau_total - total mean residence time (s)
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT)
+            %         con T de Hysys. tau = V/Q donde Q vendria de Hysys.
 
             N = R.nTanks ;
             tau_i = tau_total / N ;
@@ -165,6 +176,36 @@ classdef TanksInSeries < Reactor
 
             fprintf('Tanks-in-Series (N=%.1f): X_A = %.4f for k=%.3g, tau=%.3g\n', ...
                     N, XA, k, tau_total) ;
+        end
+
+        function XA = compute_conversion_secondOrder(R, k, CA0, tau_total)
+            % compute_conversion_secondOrder - Sequential CSTR solution for 2nd order
+            %
+            % Solves N sequential CSTRs using the quadratic formula for
+            % second-order kinetics: -rA = k * CA^2
+            %
+            % Inputs:
+            %   k         - Rate constant [m^3/(mol*s)]
+            %   CA0       - Inlet concentration [mol/m^3]
+            %   tau_total - Total mean residence time [s]
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT).
+            %         CA0 y tau podrian venir de corriente Hysys.
+            %
+            % Output:
+            %   XA - Overall conversion (dimensionless)
+
+            N = round(R.nTanks) ;
+            tau_i = tau_total / N ;
+            CA_in = CA0 ;
+
+            for j = 1:N
+                % Quadratic formula for CSTR: CA^2 * k * tau_i + CA - CA_in = 0
+                CA_out = (-1 + sqrt(1 + 4*k*tau_i*CA_in)) / (2*k*tau_i) ;
+                CA_in = CA_out ;
+            end
+
+            XA = 1 - CA_out / CA0 ;
         end
 
     end

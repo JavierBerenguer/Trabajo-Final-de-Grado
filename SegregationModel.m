@@ -23,6 +23,11 @@ classdef SegregationModel
 % Created: March 21, 2026. Last update: March 21, 2026
 % =========================================================================
 
+% Internal units (SI):
+%   time: s | volume: m^3 | concentration: mol/m^3
+%   flow: m^3/s | pressure: Pa | temperature: K
+%   k(1st): 1/s | k(2nd): m^3/(mol*s) | energy: J/mol
+
     properties
         rtd                 % RTD object
         reactionSys         % ReactionSys object
@@ -36,6 +41,8 @@ classdef SegregationModel
         X_batch             % [1 x N] Batch conversion profile X(t)
         integrand           % [1 x N] X(t)*E(t) - the integrand
         C_batch             % [N x nComp] Concentration profiles from batch
+        selectivity_B    % Overall selectivity S_B = CB/(CB+CC) for parallel reactions
+        yield_B          % Overall yield Y_B = CB/(CA0-CA) for parallel reactions
     end
 
     methods
@@ -72,7 +79,7 @@ classdef SegregationModel
             % and then integrates the product X(t)*E(t).
 
             if isempty(obj.rtd) || isempty(obj.reactionSys) || isempty(obj.feed)
-                error('SegregationModel requires rtd, reactionSys, and feed to be set') ;
+                error('SegregationModel requiere que rtd, reactionSys y feed estén establecidos') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -163,9 +170,12 @@ classdef SegregationModel
             %
             % Input:
             %   k - rate constant (1/s)
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT)
+            %         con T de Hysys via Stream.defineStreamFromHysys().
 
             if isempty(obj.rtd)
-                error('RTD must be set before computing') ;
+                error('RTD debe estar establecida antes de calcular') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -190,9 +200,12 @@ classdef SegregationModel
             % Inputs:
             %   k   - rate constant (m^3/(mol*s))
             %   CA0 - initial concentration of A (mol/m^3)
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT).
+            %         CA0 podria venir de composicion de corriente Hysys.
 
             if isempty(obj.rtd)
-                error('RTD must be set before computing') ;
+                error('RTD debe estar establecida antes de calcular') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -204,6 +217,149 @@ classdef SegregationModel
 
             fprintf('Segregation Model (2nd order, k=%.3g, CA0=%.3g): X_mean = %.4f\n', ...
                     k, CA0, obj.X_mean) ;
+        end
+
+        %% ============== MICHAELIS-MENTEN KINETICS ==============
+
+        function obj = compute_MichaelisMenten(obj, a, b, CA0)
+            % compute_MichaelisMenten - Segregation model for Michaelis-Menten kinetics
+            %
+            % Rate law: -rA = a * CA / (1 + b * CA)
+            %
+            % Inputs:
+            %   a   - Maximum rate parameter [1/s]
+            %   b   - Saturation parameter [m^3/mol]
+            %   CA0 - Initial concentration [mol/m^3]
+            %
+            % [HYSYS] Parametros enzimaticos (a, b) podrian depender de T
+            %         via propiedades termodinamicas de Hysys.
+
+            t_span = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+
+            % Solve batch ODE: dCA/dt = -a*CA/(1+b*CA)
+            [~, CA_sol] = ode45(@(t, CA) -a*CA/(1+b*CA), t_span, CA0) ;
+
+            obj.X_batch = 1 - CA_sol(:)' / CA0 ;
+            obj.integrand = obj.X_batch .* Et ;
+            obj.X_mean = trapz(t_span, obj.integrand) ;
+        end
+
+        %% ============== REVERSIBLE FIRST-ORDER ==============
+
+        function obj = compute_reversible(obj, k_fwd, k_rev, CA0)
+            % compute_reversible - Segregation model for reversible 1st order
+            %
+            % Reaction: A <-> B
+            % Rate law: -rA = k_fwd * CA - k_rev * CB
+            %         = k_fwd * CA - k_rev * (CA0 - CA)
+            %
+            % Inputs:
+            %   k_fwd - Forward rate constant [1/s]
+            %   k_rev - Reverse rate constant [1/s]
+            %   CA0   - Initial concentration of A [mol/m^3]
+            %
+            % [HYSYS] k_fwd y k_rev dependen de T via Arrhenius.
+            %         T y CA0 podrian venir de corriente Hysys.
+            %
+            % Analytical solution:
+            %   CA(t) = CA0 * (k_rev + k_fwd * exp(-(k_fwd+k_rev)*t)) / (k_fwd + k_rev)
+
+            t_span = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+
+            % Analytical batch solution
+            K = k_fwd + k_rev ;
+            CA_t = CA0 * (k_rev + k_fwd * exp(-K * t_span)) / K ;
+
+            obj.X_batch = 1 - CA_t / CA0 ;
+            obj.integrand = obj.X_batch .* Et ;
+            obj.X_mean = trapz(t_span, obj.integrand) ;
+        end
+
+        %% ============== PARALLEL REACTIONS ==============
+
+        function obj = compute_parallel(obj, k1, n1, k2, n2, CA0)
+            % compute_parallel - Segregation model for parallel reactions
+            %
+            % Reactions: A -> B  with -r1 = k1 * CA^n1
+            %            A -> C  with -r2 = k2 * CA^n2
+            % Overall:   dCA/dt = -(k1*CA^n1 + k2*CA^n2)
+            %
+            % Inputs:
+            %   k1, k2 - Rate constants [units depend on order]
+            %   n1, n2 - Reaction orders (dimensionless)
+            %   CA0    - Initial concentration [mol/m^3]
+            %
+            % [HYSYS] k1, k2 dependen de T via Arrhenius.
+            %         CA0 podria venir de composicion de corriente Hysys.
+            %
+            % Additional outputs stored:
+            %   obj.CB_batch, obj.CC_batch - Product concentration profiles
+            %   obj.selectivity_B - Instantaneous selectivity S_B = r1/(r1+r2)
+
+            t_span = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+
+            % Solve batch ODE system: [CA, CB, CC]
+            % dCA/dt = -(k1*CA^n1 + k2*CA^n2)
+            % dCB/dt = k1*CA^n1
+            % dCC/dt = k2*CA^n2
+            y0 = [CA0 ; 0 ; 0] ;
+            [~, Y] = ode45(@(t, y) [...
+                -(k1*max(y(1),0)^n1 + k2*max(y(1),0)^n2) ; ...
+                k1*max(y(1),0)^n1 ; ...
+                k2*max(y(1),0)^n2], t_span, y0) ;
+
+            CA_sol = Y(:,1)' ;
+            CB_sol = Y(:,2)' ;
+            CC_sol = Y(:,3)' ;
+
+            obj.X_batch = 1 - CA_sol / CA0 ;
+            obj.integrand = obj.X_batch .* Et ;
+            obj.X_mean = trapz(t_span, obj.integrand) ;
+
+            % Store product profiles and selectivity for later use
+            obj.C_batch = [CA_sol ; CB_sol ; CC_sol]' ;
+
+            % Mean product concentrations via segregation integral
+            CB_mean = trapz(t_span, CB_sol .* Et) ;
+            CC_mean = trapz(t_span, CC_sol .* Et) ;
+
+            % Overall selectivity: S_B = CB / (CB + CC)
+            if (CB_mean + CC_mean) > 0
+                obj.selectivity_B = CB_mean / (CB_mean + CC_mean) ;
+            else
+                obj.selectivity_B = NaN ;
+            end
+            % Yield: Y_B = CB / CA0_consumed
+            CA_mean = trapz(t_span, CA_sol .* Et) ;
+            if (CA0 - CA_mean) > 0
+                obj.yield_B = CB_mean / (CA0 - CA_mean) ;
+            else
+                obj.yield_B = NaN ;
+            end
+        end
+
+        %% ============== CUSTOM RATE LAW ==============
+
+        function obj = compute_custom(obj, rate_func, CA0)
+            % compute_custom - Segregation model with user-defined rate law
+            %
+            % Inputs:
+            %   rate_func - Function handle @(CA) returning -rA value
+            %               Example: @(CA) 0.5*CA/(1+0.5*CA)
+            %   CA0       - Initial concentration [mol/m^3]
+
+            t_span = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+
+            % Solve batch ODE: dCA/dt = -rate_func(CA)
+            [~, CA_sol] = ode45(@(t, CA) -rate_func(max(CA, 0)), t_span, CA0) ;
+
+            obj.X_batch = 1 - CA_sol(:)' / CA0 ;
+            obj.integrand = obj.X_batch .* Et ;
+            obj.X_mean = trapz(t_span, obj.integrand) ;
         end
 
         %% ============== PLOT ON AXES (for App integration) ==============
@@ -247,7 +403,7 @@ classdef SegregationModel
             %   Subplot 3: Integrand X(t)*E(t) vs t (shaded area = X_mean)
 
             if isempty(obj.X_batch) || isempty(obj.X_mean)
-                error('Must run compute() or compute_firstOrder() first') ;
+                error('Debe ejecutar compute() o compute_firstOrder() primero') ;
             end
 
             fig = figure('Name', 'Segregation Model Results', 'NumberTitle', 'off') ;

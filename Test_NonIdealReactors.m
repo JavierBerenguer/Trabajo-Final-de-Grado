@@ -263,4 +263,235 @@ seg_tis3.plot_results() ;
 % Plot max mixedness results
 mm_tis3.plot_results() ;
 
+fprintf('\n') ;
+
+%% ============================
+%  8. PHYSICAL LIMIT TESTS (Phase 3)
+%  ============================
+fprintf('============================================================\n') ;
+fprintf('  TEST: Physical Limits — Phase 3\n') ;
+fprintf('============================================================\n\n') ;
+
+tol = 1e-3 ;  % tolerance for PASS/FAIL
+nPass = 0 ;
+nFail = 0 ;
+
+% ---- 8a. TIS: N = 1 must equal CSTR ----
+fprintf('--- 8a. TIS N=1 = CSTR ---\n') ;
+tis_lim = TanksInSeries ;
+tis_lim.V = V ;
+tis_lim.heatMode = 'Isothermal' ;
+tis_lim.nTanks = 1 ;
+X_tis1_lim = tis_lim.compute_conversion_firstOrder(k, tau) ;
+err = abs(X_tis1_lim - X_cstr) ;
+if err < tol
+    fprintf('  PASS: X_TIS(N=1) = %.4f, X_CSTR = %.4f  (err=%.2e)\n', X_tis1_lim, X_cstr, err) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_TIS(N=1) = %.4f, X_CSTR = %.4f  (err=%.2e)\n', X_tis1_lim, X_cstr, err) ;
+    nFail = nFail + 1 ;
+end
+
+% Also check RTD: TIS N=1 E(t) should match CSTR E(t)
+rtd_tis1 = RTD.tanks_in_series(1, tau) ;
+err_tau = abs(rtd_tis1.tau - rtd_cstr.tau) / rtd_cstr.tau ;
+err_sig = abs(rtd_tis1.sigma2 - rtd_cstr.sigma2) / rtd_cstr.sigma2 ;
+if err_tau < tol && err_sig < tol
+    fprintf('  PASS: RTD moments match (tau err=%.2e, sigma2 err=%.2e)\n', err_tau, err_sig) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: RTD moments differ (tau err=%.2e, sigma2 err=%.2e)\n', err_tau, err_sig) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8b. TIS: N -> inf must approach PFR ----
+fprintf('\n--- 8b. TIS N->inf ~ PFR ---\n') ;
+tis_lim.nTanks = 500 ;
+X_tis_large = tis_lim.compute_conversion_firstOrder(k, tau) ;
+err = abs(X_tis_large - X_pfr) ;
+if err < tol
+    fprintf('  PASS: X_TIS(N=500) = %.6f, X_PFR = %.6f  (err=%.2e)\n', X_tis_large, X_pfr, err) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_TIS(N=500) = %.6f, X_PFR = %.6f  (err=%.2e)\n', X_tis_large, X_pfr, err) ;
+    nFail = nFail + 1 ;
+end
+
+% Check RTD variance -> 0
+rtd_tis500 = RTD.tanks_in_series(500, tau) ;
+expected_sig2 = tau^2 / 500 ;
+err_sig = abs(rtd_tis500.sigma2 - expected_sig2) / expected_sig2 ;
+if err_sig < tol
+    fprintf('  PASS: sigma2(N=500) = %.4f, expected = %.4f  (err=%.2e)\n', ...
+        rtd_tis500.sigma2, expected_sig2, err_sig) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: sigma2(N=500) = %.4f, expected = %.4f  (err=%.2e)\n', ...
+        rtd_tis500.sigma2, expected_sig2, err_sig) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8c. Dispersion: Bo -> 0 (Pe -> inf) must approach PFR ----
+fprintf('\n--- 8c. Dispersion Bo->0 ~ PFR ---\n') ;
+
+% Closed-closed
+dr_pfr = DispersionReactor(1e-4, 'closed-closed') ;
+X_dr_pfr_cc = dr_pfr.compute_conversion_firstOrder(k, tau) ;
+err = abs(X_dr_pfr_cc - X_pfr) ;
+if err < tol
+    fprintf('  PASS: X_disp(Bo=1e-4, closed) = %.6f, X_PFR = %.6f  (err=%.2e)\n', ...
+        X_dr_pfr_cc, X_pfr, err) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_disp(Bo=1e-4, closed) = %.6f, X_PFR = %.6f  (err=%.2e)\n', ...
+        X_dr_pfr_cc, X_pfr, err) ;
+    nFail = nFail + 1 ;
+end
+
+% Open-open
+dr_pfr_oo = DispersionReactor(1e-4, 'open-open') ;
+X_dr_pfr_oo = dr_pfr_oo.compute_conversion_firstOrder(k, tau) ;
+err = abs(X_dr_pfr_oo - X_pfr) ;
+if err < tol
+    fprintf('  PASS: X_disp(Bo=1e-4, open)   = %.6f, X_PFR = %.6f  (err=%.2e)\n', ...
+        X_dr_pfr_oo, X_pfr, err) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_disp(Bo=1e-4, open)   = %.6f, X_PFR = %.6f  (err=%.2e)\n', ...
+        X_dr_pfr_oo, X_pfr, err) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8d. Dispersion: Bo -> inf (Pe -> 0) must approach CSTR ----
+fprintf('\n--- 8d. Dispersion Bo->inf ~ CSTR ---\n') ;
+
+% Closed-closed with large Bo
+dr_cstr = DispersionReactor(100, 'closed-closed') ;
+X_dr_cstr_cc = dr_cstr.compute_conversion_firstOrder(k, tau) ;
+err = abs(X_dr_cstr_cc - X_cstr) ;
+if err < 0.01  % relax tolerance: large Bo converges slowly
+    fprintf('  PASS: X_disp(Bo=100, closed) = %.4f, X_CSTR = %.4f  (err=%.2e)\n', ...
+        X_dr_cstr_cc, X_cstr, err) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_disp(Bo=100, closed) = %.4f, X_CSTR = %.4f  (err=%.2e)\n', ...
+        X_dr_cstr_cc, X_cstr, err) ;
+    nFail = nFail + 1 ;
+end
+
+% Open-open with large Bo
+dr_cstr_oo = DispersionReactor(100, 'open-open') ;
+X_dr_cstr_oo = dr_cstr_oo.compute_conversion_firstOrder(k, tau) ;
+err = abs(X_dr_cstr_oo - X_cstr) ;
+if err < 0.01
+    fprintf('  PASS: X_disp(Bo=100, open)   = %.4f, X_CSTR = %.4f  (err=%.2e)\n', ...
+        X_dr_cstr_oo, X_cstr, err) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_disp(Bo=100, open)   = %.4f, X_CSTR = %.4f  (err=%.2e)\n', ...
+        X_dr_cstr_oo, X_cstr, err) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8e. Combined: Dead vol with alpha=1 (no dead) = pure CSTR ----
+fprintf('\n--- 8e. CSTR + Dead Vol (alpha=1, no dead) = CSTR puro ---\n') ;
+rtd_dead1 = RTD.cstr_with_dead_volume(tau, 1.0) ;
+err_tau = abs(rtd_dead1.tau - rtd_cstr.tau) / rtd_cstr.tau ;
+if err_tau < tol
+    fprintf('  PASS: tau(alpha=1) = %.4f, tau_CSTR = %.4f  (err=%.2e)\n', ...
+        rtd_dead1.tau, rtd_cstr.tau, err_tau) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: tau(alpha=1) = %.4f, tau_CSTR = %.4f  (err=%.2e)\n', ...
+        rtd_dead1.tau, rtd_cstr.tau, err_tau) ;
+    nFail = nFail + 1 ;
+end
+
+% Check E(t) shape: should be exponential CSTR
+seg_dead1 = SegregationModel ;
+seg_dead1.rtd = rtd_dead1 ;
+seg_dead1 = seg_dead1.compute_firstOrder(k) ;
+err = abs(seg_dead1.X_mean - X_cstr) ;
+if err < tol
+    fprintf('  PASS: X_seg(alpha=1) = %.4f, X_CSTR = %.4f  (err=%.2e)\n', ...
+        seg_dead1.X_mean, X_cstr, err) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_seg(alpha=1) = %.4f, X_CSTR = %.4f  (err=%.2e)\n', ...
+        seg_dead1.X_mean, X_cstr, err) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8f. Combined: Bypass with beta=0 (no bypass) = pure CSTR ----
+fprintf('\n--- 8f. CSTR + Bypass (beta=0, no bypass) = CSTR puro ---\n') ;
+rtd_byp0 = RTD.cstr_with_bypass(tau, 0.0) ;
+err_tau = abs(rtd_byp0.tau - rtd_cstr.tau) / rtd_cstr.tau ;
+if err_tau < tol
+    fprintf('  PASS: tau(beta=0) = %.4f, tau_CSTR = %.4f  (err=%.2e)\n', ...
+        rtd_byp0.tau, rtd_cstr.tau, err_tau) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: tau(beta=0) = %.4f, tau_CSTR = %.4f  (err=%.2e)\n', ...
+        rtd_byp0.tau, rtd_cstr.tau, err_tau) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8g. Combined: Bypass+Dead with alpha=1, beta=0 = pure CSTR ----
+fprintf('\n--- 8g. CSTR + Bypass+Dead (alpha=1, beta=0) = CSTR puro ---\n') ;
+rtd_comb_pure = RTD.cstr_with_bypass_and_dead(tau, 1.0, 0.0) ;
+err_tau = abs(rtd_comb_pure.tau - rtd_cstr.tau) / rtd_cstr.tau ;
+if err_tau < tol
+    fprintf('  PASS: tau(a=1,b=0) = %.4f, tau_CSTR = %.4f  (err=%.2e)\n', ...
+        rtd_comb_pure.tau, rtd_cstr.tau, err_tau) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: tau(a=1,b=0) = %.4f, tau_CSTR = %.4f  (err=%.2e)\n', ...
+        rtd_comb_pure.tau, rtd_cstr.tau, err_tau) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8h. Convolution: E(t)=delta(t-tau) convolved with C_in = shifted C_in ----
+fprintf('\n--- 8h. Convolucion con delta(t-tau) = señal desplazada ---\n') ;
+t_conv = linspace(0, 50, 500) ;
+dt = t_conv(2) - t_conv(1) ;
+% Approximate delta at t = tau
+delta_Et = zeros(size(t_conv)) ;
+[~, idx_tau] = min(abs(t_conv - tau)) ;
+delta_Et(idx_tau) = 1 / dt ;  % delta approx with unit area
+
+% Input signal: step at t=5
+C_in = double(t_conv >= 5) ;
+
+% Convolve
+C_out_conv = ConvolutionTool.convolve(C_in, delta_Et, dt) ;
+% Expected: C_in shifted by tau
+C_expected = double(t_conv >= (5 + tau)) ;
+
+% Trim to same length and compare in the region well after the shift
+idx_check = t_conv > (5 + tau + 2) & t_conv < 45 ;
+err_conv = max(abs(C_out_conv(idx_check) - C_expected(idx_check))) ;
+if err_conv < 0.15  % discrete delta approx limits precision
+    fprintf('  PASS: max error in shifted region = %.4f\n', err_conv) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: max error in shifted region = %.4f (tol=0.15)\n', err_conv) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- 8i. Segregation ordering: for 2nd order, X_seg >= X_mm ----
+fprintf('\n--- 8i. Ordering: X_seg >= X_mm (2do orden, n>1) ---\n') ;
+% Already computed in section 5: seg_2nd.X_mean and mm_2nd.X_exit
+if seg_2nd.X_mean >= mm_2nd.X_exit - tol
+    fprintf('  PASS: X_seg(%.4f) >= X_mm(%.4f)\n', seg_2nd.X_mean, mm_2nd.X_exit) ;
+    nPass = nPass + 1 ;
+else
+    fprintf('  FAIL: X_seg(%.4f) < X_mm(%.4f) — violates bounds\n', seg_2nd.X_mean, mm_2nd.X_exit) ;
+    nFail = nFail + 1 ;
+end
+
+% ---- SUMMARY ----
+fprintf('\n============================================================\n') ;
+fprintf('  PHYSICAL LIMITS — RESULTS: %d PASS, %d FAIL\n', nPass, nFail) ;
+fprintf('============================================================\n') ;
+
 fprintf('\nAll tests completed.\n') ;

@@ -29,6 +29,14 @@ classdef DispersionReactor < Reactor
 % Created: March 25, 2026. Last update: March 25, 2026
 % =========================================================================
 
+% Internal units (SI):
+%   time: s | volume: m^3 | concentration: mol/m^3
+%   flow: m^3/s | pressure: Pa | temperature: K
+%   k(1st): 1/s | k(2nd): m^3/(mol*s) | energy: J/mol
+
+    % [HYSYS] Bo podria calcularse desde propiedades de fluido:
+    %         Bo = De/(u*L), donde De depende de Re y Sc via correlaciones
+    %         (e.g., Taylor-Aris). Re y Sc vendrian de Hysys.
     properties
         Bo = 0.01           % Dispersion number De/(u*L)
         boundaryType = 'closed-closed'  % 'open-open' or 'closed-closed'
@@ -70,7 +78,7 @@ classdef DispersionReactor < Reactor
                 case 'closed-closed'
                     rtd_obj = RTD.dispersion_closed(obj.Bo, tau) ;
                 otherwise
-                    error('Unknown boundary type: %s', obj.boundaryType) ;
+                    error('Tipo de condición de frontera desconocido: %s', obj.boundaryType) ;
             end
 
             obj.rtd = rtd_obj ;
@@ -92,6 +100,9 @@ classdef DispersionReactor < Reactor
             % Inputs:
             %   k   - rate constant (1/s)
             %   tau - mean residence time (s)
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT)
+            %         con T de Hysys. tau = V/Q donde Q vendria de Hysys.
 
             Da = k * tau ;
             Pe = 1 / obj.Bo ;
@@ -123,6 +134,9 @@ classdef DispersionReactor < Reactor
             %   k   - rate constant (m^3/(mol*s))
             %   CA0 - initial concentration (mol/m^3)
             %   tau - mean residence time (s)
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT).
+            %         CA0 y tau podrian venir de corriente Hysys.
 
             rtd_obj = obj.generate_RTD(tau) ;
 

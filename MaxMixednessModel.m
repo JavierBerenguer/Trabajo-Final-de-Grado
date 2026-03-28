@@ -25,6 +25,11 @@ classdef MaxMixednessModel
 % Created: March 21, 2026. Last update: March 22, 2026
 % =========================================================================
 
+% Internal units (SI):
+%   time: s | volume: m^3 | concentration: mol/m^3
+%   flow: m^3/s | pressure: Pa | temperature: K
+%   k(1st): 1/s | k(2nd): m^3/(mol*s) | energy: J/mol
+
     properties
         rtd                 % RTD object
         reactionSys         % ReactionSys object
@@ -74,7 +79,7 @@ classdef MaxMixednessModel
             % Result: X_exit = X(lambda=0)
 
             if isempty(obj.rtd) || isempty(obj.reactionSys) || isempty(obj.feed)
-                error('MaxMixednessModel requires rtd, reactionSys, and feed to be set') ;
+                error('MaxMixednessModel requiere que rtd, reactionSys y feed estén establecidos') ;
             end
 
             % Prepare E(lambda) and F(lambda) as interpolation functions
@@ -165,9 +170,12 @@ classdef MaxMixednessModel
             %
             % Input:
             %   k - rate constant (1/s)
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT)
+            %         con T de Hysys via Stream.defineStreamFromHysys().
 
             if isempty(obj.rtd)
-                error('RTD must be set before computing') ;
+                error('RTD debe estar establecida antes de calcular') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -217,9 +225,12 @@ classdef MaxMixednessModel
             % Inputs:
             %   k   - rate constant (m^3/(mol*s))
             %   CA0 - initial concentration (mol/m^3)
+            %
+            % [HYSYS] k podria obtenerse de Arrhenius k=k0*exp(-Ea/RT).
+            %         CA0 podria venir de composicion de corriente Hysys.
 
             if isempty(obj.rtd)
-                error('RTD must be set before computing') ;
+                error('RTD debe estar establecida antes de calcular') ;
             end
 
             t_rtd = obj.rtd.t ;
@@ -258,6 +269,187 @@ classdef MaxMixednessModel
             end
         end
 
+        %% ============== MICHAELIS-MENTEN KINETICS ==============
+
+        function obj = compute_MichaelisMenten(obj, a, b, CA0)
+            % compute_MichaelisMenten - Max mixedness for Michaelis-Menten kinetics
+            %
+            % Rate law: -rA = a * CA / (1 + b * CA)
+            % where CA = CA0 * (1 - X)
+            %
+            % ODE: dX/dlambda = a*(1-X)/(1 + b*CA0*(1-X)) / CA0 * CA0
+            %                 + E(lambda)/(1-F(lambda)) * X
+            %    = a*(1-X)/(1 + b*CA0*(1-X)) + E(lambda)/(1-F(lambda)) * X
+            %
+            % [HYSYS] Parametros enzimaticos (a, b) podrian depender de T
+            %         via propiedades termodinamicas de Hysys.
+
+            t = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+            Ft = obj.rtd.Ft ;
+
+            % Valid lambda range: where (1-F) is significant
+            valid = (1 - Ft) > 1e-6 ;
+            lambda = t(valid) ;
+            E_valid = Et(valid) ;
+            F_valid = Ft(valid) ;
+
+            E_interp = griddedInterpolant(lambda, E_valid, 'linear', 'nearest') ;
+            F_interp = griddedInterpolant(lambda, F_valid, 'linear', 'nearest') ;
+
+            lambda_max = lambda(end) ;
+
+            ode_fun = @(lam, X) mm_ode(lam, X) ;
+            opts = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
+            [lam_sol, X_sol] = ode45(ode_fun, [lambda_max, 0], 0, opts) ;
+
+            obj.lambda_profile = flip(lam_sol)' ;
+            obj.X_profile = flip(X_sol)' ;
+            obj.X_exit = X_sol(end) ;
+
+            function dXdl = mm_ode(lam, X)
+                E_val = E_interp(lam) ;
+                F_val = F_interp(lam) ;
+                denom = max(1 - F_val, 1e-12) ;
+                CA = CA0 * (1 - X) ;
+                rA_over_CA0 = a * (1 - X) / (1 + b * CA) ;
+                dXdl = rA_over_CA0 + (E_val / denom) * X ;
+            end
+        end
+
+        %% ============== REVERSIBLE 1ST ORDER KINETICS ==============
+
+        function obj = compute_reversible(obj, k_fwd, k_rev, CA0)
+            % compute_reversible - Max mixedness for reversible 1st order A <-> B
+            %
+            % -rA = k_fwd * CA - k_rev * CB = k_fwd*CA0*(1-X) - k_rev*CA0*X
+            % rA/CA0 = -(k_fwd*(1-X) - k_rev*X)
+            %
+            % ODE: dX/dlambda = (k_fwd*(1-X) - k_rev*X) + E/(1-F) * X
+            %
+            % [HYSYS] k_fwd y k_rev dependen de T via Arrhenius.
+            %         T y CA0 podrian venir de corriente Hysys.
+
+            t = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+            Ft = obj.rtd.Ft ;
+
+            valid = (1 - Ft) > 1e-6 ;
+            lambda = t(valid) ;
+            E_valid = Et(valid) ;
+            F_valid = Ft(valid) ;
+
+            E_interp = griddedInterpolant(lambda, E_valid, 'linear', 'nearest') ;
+            F_interp = griddedInterpolant(lambda, F_valid, 'linear', 'nearest') ;
+
+            lambda_max = lambda(end) ;
+
+            opts = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
+            [lam_sol, X_sol] = ode45(@(lam, X) rev_ode(lam, X), [lambda_max, 0], 0, opts) ;
+
+            obj.lambda_profile = flip(lam_sol)' ;
+            obj.X_profile = flip(X_sol)' ;
+            obj.X_exit = X_sol(end) ;
+
+            function dXdl = rev_ode(lam, X)
+                E_val = E_interp(lam) ;
+                F_val = F_interp(lam) ;
+                denom = max(1 - F_val, 1e-12) ;
+                dXdl = (k_fwd*(1-X) - k_rev*X) + (E_val / denom) * X ;
+            end
+        end
+
+        %% ============== PARALLEL REACTIONS ==============
+
+        function obj = compute_parallel(obj, k1, n1, k2, n2, CA0)
+            % compute_parallel - Max mixedness for parallel reactions
+            %
+            % A -> B: -r1 = k1 * CA^n1
+            % A -> C: -r2 = k2 * CA^n2
+            % -rA = k1*CA^n1 + k2*CA^n2
+            % rA/CA0 = -(k1*(CA0*(1-X))^n1 + k2*(CA0*(1-X))^n2) / CA0
+            %
+            % ODE: dX/dlambda = (k1*(CA0*(1-X))^n1 + k2*(CA0*(1-X))^n2)/CA0
+            %                 + E/(1-F) * X
+            %
+            % [HYSYS] k1, k2 dependen de T via Arrhenius.
+            %         CA0 podria venir de composicion de corriente Hysys.
+
+            t = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+            Ft = obj.rtd.Ft ;
+
+            valid = (1 - Ft) > 1e-6 ;
+            lambda = t(valid) ;
+            E_valid = Et(valid) ;
+            F_valid = Ft(valid) ;
+
+            E_interp = griddedInterpolant(lambda, E_valid, 'linear', 'nearest') ;
+            F_interp = griddedInterpolant(lambda, F_valid, 'linear', 'nearest') ;
+
+            lambda_max = lambda(end) ;
+
+            opts = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
+            [lam_sol, X_sol] = ode45(@(lam, X) par_ode(lam, X), [lambda_max, 0], 0, opts) ;
+
+            obj.lambda_profile = flip(lam_sol)' ;
+            obj.X_profile = flip(X_sol)' ;
+            obj.X_exit = X_sol(end) ;
+
+            function dXdl = par_ode(lam, X)
+                E_val = E_interp(lam) ;
+                F_val = F_interp(lam) ;
+                denom = max(1 - F_val, 1e-12) ;
+                CA = CA0 * max(1 - X, 0) ;
+                rA_total = k1 * CA^n1 + k2 * CA^n2 ;
+                dXdl = rA_total / CA0 + (E_val / denom) * X ;
+            end
+        end
+
+        %% ============== CUSTOM RATE LAW ==============
+
+        function obj = compute_custom(obj, rate_func, CA0)
+            % compute_custom - Max mixedness with user-defined rate law
+            %
+            % Inputs:
+            %   rate_func - Function handle @(CA) returning -rA
+            %   CA0       - Initial concentration [mol/m^3]
+            %
+            % [HYSYS] CA0 podria venir de composicion de corriente Hysys.
+            %         rate_func podria incluir T de Hysys como parametro.
+            %
+            % ODE: dX/dlambda = rate_func(CA0*(1-X))/CA0 + E/(1-F) * X
+
+            t = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+            Ft = obj.rtd.Ft ;
+
+            valid = (1 - Ft) > 1e-6 ;
+            lambda = t(valid) ;
+            E_valid = Et(valid) ;
+            F_valid = Ft(valid) ;
+
+            E_interp = griddedInterpolant(lambda, E_valid, 'linear', 'nearest') ;
+            F_interp = griddedInterpolant(lambda, F_valid, 'linear', 'nearest') ;
+
+            lambda_max = lambda(end) ;
+
+            opts = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
+            [lam_sol, X_sol] = ode45(@(lam, X) custom_ode(lam, X), [lambda_max, 0], 0, opts) ;
+
+            obj.lambda_profile = flip(lam_sol)' ;
+            obj.X_profile = flip(X_sol)' ;
+            obj.X_exit = X_sol(end) ;
+
+            function dXdl = custom_ode(lam, X)
+                E_val = E_interp(lam) ;
+                F_val = F_interp(lam) ;
+                denom = max(1 - F_val, 1e-12) ;
+                CA = CA0 * max(1 - X, 0) ;
+                dXdl = rate_func(CA) / CA0 + (E_val / denom) * X ;
+            end
+        end
+
         %% ============== PLOT ON AXES (for App integration) ==============
 
         function plot_on_axes(obj, ax_Xlambda)
@@ -292,7 +484,7 @@ classdef MaxMixednessModel
             %   from lambda_max to lambda=0
 
             if isempty(obj.X_profile) || isempty(obj.X_exit)
-                error('Must run compute() or compute_firstOrder() first') ;
+                error('Debe ejecutar compute() o compute_firstOrder() primero') ;
             end
 
             fig = figure('Name', 'Maximum Mixedness Model Results', 'NumberTitle', 'off') ;
