@@ -255,8 +255,7 @@ classdef NonIdealReactorApp < handle
             app.UIFigure = uifigure('Name', 'Non-Ideal Reactor Analysis', ...
                 'Position', [100 100 1200 750], ...
                 'Resize', 'on', ...
-                'AutoResizeChildren', 'off', ...
-                'SizeChangedFcn', @(~,~) app.onFigureResize()) ;
+                'AutoResizeChildren', 'off') ;
 
             % Menu bar
             mFile = uimenu(app.UIFigure, 'Text', 'File') ;
@@ -291,6 +290,9 @@ classdef NonIdealReactorApp < handle
             app.createConvolutionTab() ;
             app.createCombinedTab() ;
             app.createOptimizationTab() ;
+
+            % Assign resize callback AFTER all UI components exist
+            app.UIFigure.SizeChangedFcn = @(~,~) app.onFigureResize() ;
 
             % Show figure
             app.UIFigure.Visible = 'on' ;
@@ -336,7 +338,7 @@ classdef NonIdealReactorApp < handle
             field.Layout.Row = 1 ; field.Layout.Column = 1 ;
 
             btn = uibutton(subGrid, 'push', ...
-                'Text', 'U', ...
+                'Text', char(8635), ...
                 'FontSize', 9, 'FontWeight', 'bold', ...
                 'Tooltip', ['Unit converter (' unitCat ')'], ...
                 'BackgroundColor', [0.85 0.90 1.0]) ;
@@ -1075,7 +1077,7 @@ classdef NonIdealReactorApp < handle
                 'Value', 0.1, 'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
             app.Pred_kField.Layout.Row = 1 ; app.Pred_kField.Layout.Column = 1 ;
-            btnK = uibutton(kSubGrid, 'push', 'Text', 'U', 'FontSize', 9, 'FontWeight', 'bold', ...
+            btnK = uibutton(kSubGrid, 'push', 'Text', char(8635), 'FontSize', 9, 'FontWeight', 'bold', ...
                 'Tooltip', 'Unit converter (k_1stOrder)', 'BackgroundColor', [0.85 0.90 1.0]) ;
             btnK.Layout.Row = 1 ; btnK.Layout.Column = 2 ;
             btnK.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Pred_kField, 'k_1stOrder') ;
@@ -1088,7 +1090,7 @@ classdef NonIdealReactorApp < handle
                 'Value', 1000, 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
             app.Pred_CA0Field.Layout.Row = 1 ; app.Pred_CA0Field.Layout.Column = 1 ;
-            btnCA0 = uibutton(ca0SubGrid, 'push', 'Text', 'U', 'FontSize', 9, 'FontWeight', 'bold', ...
+            btnCA0 = uibutton(ca0SubGrid, 'push', 'Text', char(8635), 'FontSize', 9, 'FontWeight', 'bold', ...
                 'Tooltip', 'Unit converter (Concentration)', 'BackgroundColor', [0.85 0.90 1.0]) ;
             btnCA0.Layout.Row = 1 ; btnCA0.Layout.Column = 2 ;
             btnCA0.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Pred_CA0Field, 'Concentration') ;
@@ -1569,7 +1571,12 @@ classdef NonIdealReactorApp < handle
                 % Import kinetics from Prediction Models tab
                 if ~isempty(app.Pred_kField) && app.Pred_kField.Value > 0
                     app.TIS_kField.Value = app.Pred_kField.Value ;
-                    app.TIS_KineticsDropdown.Value = app.Pred_KineticsDropdown.Value ;
+                    % Map Pred kinetics (6 items) to TIS kinetics (2 items)
+                    if contains(app.Pred_KineticsDropdown.Value, '2nd')
+                        app.TIS_KineticsDropdown.Value = '2nd Order (-rA = k*CA^2)' ;
+                    else
+                        app.TIS_KineticsDropdown.Value = '1st Order (-rA = k*CA)' ;
+                    end
                     app.TIS_kineticsChanged() ;  % update CA0 visibility
                     if ~isempty(app.Pred_CA0Field)
                         app.TIS_CA0Field.Value = app.Pred_CA0Field.Value ;
@@ -1965,6 +1972,17 @@ classdef NonIdealReactorApp < handle
 
                     % Compute Bo from sigma2_theta
                     Bo_calc = app.compute_Bo_from_variance(sigma2_theta, bcType) ;
+                    if isnan(Bo_calc) || isinf(Bo_calc) || Bo_calc < 1e-6 || Bo_calc > 100
+                        msg = sprintf(['Calculated Bo = %g is outside the valid range [1e-6, 100].\n\n' ...
+                            'Possible causes:\n' ...
+                            '  - Near-ideal RTD (PFR-like): variance is too small, leading to Bo ≈ 0.\n' ...
+                            '  - Invalid RTD data: sigma² or tau contain NaN/Inf values.\n' ...
+                            '  - Very large dispersion: variance is too high, producing Bo > 100.\n\n' ...
+                            'Current RTD values: sigma² = %.4g, tau = %.4g'], ...
+                            Bo_calc, app.rtd.sigma2, app.rtd.tau) ;
+                        uialert(app.UIFigure, msg, 'Bo Out of Range', 'Icon', 'warning') ;
+                        return
+                    end
                     app.Disp_BoField.Value = Bo_calc ;
                     app.Disp_updatePe() ;
 
