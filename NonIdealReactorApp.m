@@ -15,8 +15,6 @@ classdef NonIdealReactorApp < handle
         % Main UI
         UIFigure
         TabGroup
-        UnitConvButton
-        HelpButton
         StatusBar               % Status bar label at bottom of figure
 
         % Shared state
@@ -257,19 +255,23 @@ classdef NonIdealReactorApp < handle
             app.UIFigure = uifigure('Name', 'Non-Ideal Reactor Analysis', ...
                 'Position', [100 100 1200 750], ...
                 'Resize', 'on', ...
+                'AutoResizeChildren', 'off', ...
                 'SizeChangedFcn', @(~,~) app.onFigureResize()) ;
 
-            % Menu bar (T7)
+            % Menu bar
             mFile = uimenu(app.UIFigure, 'Text', 'File') ;
             uimenu(mFile, 'Text', 'Exit', ...
                 'MenuSelectedFcn', @(~,~) delete(app.UIFigure)) ;
+            mTools = uimenu(app.UIFigure, 'Text', 'Tools') ;
+            uimenu(mTools, 'Text', 'Unit Converter', ...
+                'MenuSelectedFcn', @(~,~) UnitConverterHelper.launch()) ;
             mHelp = uimenu(app.UIFigure, 'Text', 'Help') ;
             uimenu(mHelp, 'Text', 'User Guide', ...
                 'MenuSelectedFcn', @(~,~) app.showHelp()) ;
             uimenu(mHelp, 'Text', 'About', ...
                 'MenuSelectedFcn', @(~,~) app.showAbout()) ;
 
-            % Status bar at bottom (T8)
+            % Status bar at bottom
             app.StatusBar = uilabel(app.UIFigure, ...
                 'Text', '  Ready', ...
                 'Position', [0 0 1200 22], ...
@@ -280,24 +282,6 @@ classdef NonIdealReactorApp < handle
             % Create tab group (above status bar)
             app.TabGroup = uitabgroup(app.UIFigure, ...
                 'Position', [0 22 1200 728]) ;
-
-            % Unit Converter button (accessible from any tab)
-            app.UnitConvButton = uibutton(app.UIFigure, 'push', ...
-                'Text', 'Unit Converter', ...
-                'Position', [1070 718 120 28], ...
-                'FontWeight', 'bold', ...
-                'BackgroundColor', [0.3 0.6 0.9], ...
-                'FontColor', [1 1 1], ...
-                'ButtonPushedFcn', @(~,~) UnitConverterHelper.launch()) ;
-
-            % Help button (accessible from any tab)
-            app.HelpButton = uibutton(app.UIFigure, 'push', ...
-                'Text', '? Help', ...
-                'Position', [940 718 120 28], ...
-                'FontWeight', 'bold', ...
-                'BackgroundColor', [0.2 0.7 0.3], ...
-                'FontColor', [1 1 1], ...
-                'ButtonPushedFcn', @(~,~) app.showHelp()) ;
 
             % Build tabs
             app.createRTDTab() ;
@@ -327,10 +311,37 @@ classdef NonIdealReactorApp < handle
 
             % Status bar stretches full width at bottom
             app.StatusBar.Position = [0 0 w 22] ;
+        end
 
-            % Buttons in top-right corner
-            app.UnitConvButton.Position = [w - 130, h - 32, 120, 28] ;
-            app.HelpButton.Position = [w - 260, h - 32, 120, 28] ;
+        %% ============== HELPER: NUMERIC FIELD + UNIT CONVERTER BUTTON ==============
+
+        function [field, subGrid] = createNumericWithConv(~, parentGrid, row, col, defaultVal, unitCat, varargin)
+            % createNumericWithConv  Create a numeric editfield with a tiny
+            %   "U" button that opens the contextual unit converter.
+            %
+            %   [field, subGrid] = app.createNumericWithConv(parentGrid, row, col, defaultVal, unitCat, ...)
+            %
+            %   Extra name-value pairs (e.g. 'Limits', [0 Inf]) are forwarded
+            %   to the uieditfield constructor.
+
+            subGrid = uigridlayout(parentGrid, [1 2], ...
+                'ColumnWidth', {'1x', 24}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 2) ;
+            subGrid.Layout.Row    = row ;
+            subGrid.Layout.Column = col ;
+
+            field = uieditfield(subGrid, 'numeric', ...
+                'Value', defaultVal, varargin{:}) ;
+            field.Layout.Row = 1 ; field.Layout.Column = 1 ;
+
+            btn = uibutton(subGrid, 'push', ...
+                'Text', 'U', ...
+                'FontSize', 9, 'FontWeight', 'bold', ...
+                'Tooltip', ['Unit converter (' unitCat ')'], ...
+                'BackgroundColor', [0.85 0.90 1.0]) ;
+            btn.Layout.Row = 1 ; btn.Layout.Column = 2 ;
+            btn.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(field, unitCat) ;
         end
 
         %% ============== ABOUT DIALOG (T7) ==============
@@ -401,17 +412,14 @@ classdef NonIdealReactorApp < handle
             % Row 2: Tau field
             lbl = uilabel(leftGrid, 'Text', '&tau; [s]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
-            app.RTD_TauField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 10, 'Limits', [0.001 Inf]) ;
-            app.RTD_TauField.Layout.Row = 2 ;
-            app.RTD_TauField.Layout.Column = 2 ;
+            [app.RTD_TauField, ~] = app.createNumericWithConv( ...
+                leftGrid, 2, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
 
             % Row 3: Qv (volumetric flow rate) — always visible
             app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Q<sub>v</sub> [m&sup3;/s]:', 'Interpreter', 'html') ;
             app.RTD_QvLabel.Layout.Row = 3 ; app.RTD_QvLabel.Layout.Column = 1 ;
-            app.RTD_QvField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.001, 'Limits', [1e-12 Inf]) ;
-            app.RTD_QvField.Layout.Row = 3 ; app.RTD_QvField.Layout.Column = 2 ;
+            [app.RTD_QvField, ~] = app.createNumericWithConv( ...
+                leftGrid, 3, 2, 0.001, 'VolumetricFlow', 'Limits', [1e-12 Inf]) ;
 
             % Row 4: N field (for Tanks-in-Series) — shares row with Bo
             app.RTD_NLabel = uilabel(leftGrid, 'Text', 'N [tanks]:') ;
@@ -453,11 +461,10 @@ classdef NonIdealReactorApp < handle
             % Row 7: C0 (step only)
             app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', 'C<sub>0</sub> [mol/m&sup3;] (step):', 'Interpreter', 'html') ;
             app.RTD_ExpC0Label.Layout.Row = 7 ; app.RTD_ExpC0Label.Layout.Column = 1 ;
-            app.RTD_ExpC0Field = uieditfield(leftGrid, 'numeric', ...
-                'Value', 1, 'Limits', [0 Inf]) ;
-            app.RTD_ExpC0Field.Layout.Row = 7 ; app.RTD_ExpC0Field.Layout.Column = 2 ;
+            [app.RTD_ExpC0Field, tmpSG] = app.createNumericWithConv( ...
+                leftGrid, 7, 2, 1, 'Concentration', 'Limits', [0 Inf]) ;
             app.RTD_ExpC0Label.Visible = 'off' ;
-            app.RTD_ExpC0Field.Visible = 'off' ;
+            tmpSG.Visible = 'off' ;
 
             % Row 8: Import from file button (for experimental data)
             app.RTD_ImportButton = uibutton(leftGrid, 'push', ...
@@ -493,18 +500,16 @@ classdef NonIdealReactorApp < handle
             app.RTD_EqTStartLabel = uilabel(leftGrid, 'Text', 't start [s]:') ;
             app.RTD_EqTStartLabel.Layout.Row = 5 ; app.RTD_EqTStartLabel.Layout.Column = 1 ;
             app.RTD_EqTStartLabel.Visible = 'off' ;
-            app.RTD_EqTStartField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0, 'Limits', [0 Inf]) ;
-            app.RTD_EqTStartField.Layout.Row = 5 ; app.RTD_EqTStartField.Layout.Column = 2 ;
-            app.RTD_EqTStartField.Visible = 'off' ;
+            [app.RTD_EqTStartField, tmpSG2] = app.createNumericWithConv( ...
+                leftGrid, 5, 2, 0, 'Time', 'Limits', [0 Inf]) ;
+            tmpSG2.Visible = 'off' ;
 
             app.RTD_EqTEndLabel = uilabel(leftGrid, 'Text', 't end [s]:') ;
             app.RTD_EqTEndLabel.Layout.Row = 6 ; app.RTD_EqTEndLabel.Layout.Column = 1 ;
             app.RTD_EqTEndLabel.Visible = 'off' ;
-            app.RTD_EqTEndField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 10, 'Limits', [0.001 Inf]) ;
-            app.RTD_EqTEndField.Layout.Row = 6 ; app.RTD_EqTEndField.Layout.Column = 2 ;
-            app.RTD_EqTEndField.Visible = 'off' ;
+            [app.RTD_EqTEndField, tmpSG3] = app.createNumericWithConv( ...
+                leftGrid, 6, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
+            tmpSG3.Visible = 'off' ;
 
             app.RTD_EqNptsLabel = uilabel(leftGrid, 'Text', 'N points:') ;
             app.RTD_EqNptsLabel.Layout.Row = 7 ; app.RTD_EqNptsLabel.Layout.Column = 1 ;
@@ -632,15 +637,15 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpCVarLabel.Visible = 'off' ;
             app.RTD_ExpCVarField.Visible = 'off' ;
             app.RTD_ExpC0Label.Visible = 'off' ;
-            app.RTD_ExpC0Field.Visible = 'off' ;
+            app.RTD_ExpC0Field.Parent.Visible = 'off' ;
             app.RTD_ImportButton.Visible = 'off' ;
             app.RTD_ImportLabel.Visible = 'off' ;
             app.RTD_EqLabel.Visible = 'off' ;
             app.RTD_EqField.Visible = 'off' ;
             app.RTD_EqTStartLabel.Visible = 'off' ;
-            app.RTD_EqTStartField.Visible = 'off' ;
+            app.RTD_EqTStartField.Parent.Visible = 'off' ;
             app.RTD_EqTEndLabel.Visible = 'off' ;
-            app.RTD_EqTEndField.Visible = 'off' ;
+            app.RTD_EqTEndField.Parent.Visible = 'off' ;
             app.RTD_EqNptsLabel.Visible = 'off' ;
             app.RTD_EqNptsField.Visible = 'off' ;
 
@@ -674,7 +679,7 @@ classdef NonIdealReactorApp < handle
                     app.RTD_ExpCVarLabel.Visible = 'on' ;
                     app.RTD_ExpCVarField.Visible = 'on' ;
                     app.RTD_ExpC0Label.Visible = 'on' ;
-                    app.RTD_ExpC0Field.Visible = 'on' ;
+                    app.RTD_ExpC0Field.Parent.Visible = 'on' ;
                     app.RTD_ImportButton.Visible = 'on' ;
                     app.RTD_ImportLabel.Visible = 'on' ;
                     tauVisible = 'off' ;
@@ -683,15 +688,15 @@ classdef NonIdealReactorApp < handle
                     app.RTD_EqLabel.Visible = 'on' ;
                     app.RTD_EqField.Visible = 'on' ;
                     app.RTD_EqTStartLabel.Visible = 'on' ;
-                    app.RTD_EqTStartField.Visible = 'on' ;
+                    app.RTD_EqTStartField.Parent.Visible = 'on' ;
                     app.RTD_EqTEndLabel.Visible = 'on' ;
-                    app.RTD_EqTEndField.Visible = 'on' ;
+                    app.RTD_EqTEndField.Parent.Visible = 'on' ;
                     app.RTD_EqNptsLabel.Visible = 'on' ;
                     app.RTD_EqNptsField.Visible = 'on' ;
                     tauVisible = 'off' ;
             end
 
-            app.RTD_TauField.Visible = tauVisible ;
+            app.RTD_TauField.Parent.Visible = tauVisible ;
         end
 
         function RTD_generate(app)
@@ -1064,36 +1069,53 @@ classdef NonIdealReactorApp < handle
 
             % k field
             app.Pred_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
-            app.Pred_kField = uieditfield(leftGrid, 'numeric', ...
+            kSubGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {'1x', 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 2) ;
+            app.Pred_kField = uieditfield(kSubGrid, 'numeric', ...
                 'Value', 0.1, 'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
+            app.Pred_kField.Layout.Row = 1 ; app.Pred_kField.Layout.Column = 1 ;
+            btnK = uibutton(kSubGrid, 'push', 'Text', 'U', 'FontSize', 9, 'FontWeight', 'bold', ...
+                'Tooltip', 'Unit converter (k_1stOrder)', 'BackgroundColor', [0.85 0.90 1.0]) ;
+            btnK.Layout.Row = 1 ; btnK.Layout.Column = 2 ;
+            btnK.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Pred_kField, 'k_1stOrder') ;
 
             % CA0 field (only for 2nd order)
             app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
-            app.Pred_CA0Field = uieditfield(leftGrid, 'numeric', ...
+            ca0SubGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {'1x', 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 2) ;
+            app.Pred_CA0Field = uieditfield(ca0SubGrid, 'numeric', ...
                 'Value', 1000, 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
+            app.Pred_CA0Field.Layout.Row = 1 ; app.Pred_CA0Field.Layout.Column = 1 ;
+            btnCA0 = uibutton(ca0SubGrid, 'push', 'Text', 'U', 'FontSize', 9, 'FontWeight', 'bold', ...
+                'Tooltip', 'Unit converter (Concentration)', 'BackgroundColor', [0.85 0.90 1.0]) ;
+            btnCA0.Layout.Row = 1 ; btnCA0.Layout.Column = 2 ;
+            btnCA0.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Pred_CA0Field, 'Concentration') ;
             app.Pred_CA0Label.Visible = 'off' ;
-            app.Pred_CA0Field.Visible = 'off' ;
+            ca0SubGrid.Visible = 'off' ;
 
             % --- Michaelis-Menten / Reversible parameters ---
             app.Pred_aLabel = uilabel(leftGrid, 'Text', 'a [s<sup>-1</sup>]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_aLabel.Layout.Row = 5 ; app.Pred_aLabel.Layout.Column = 1 ;
-            app.Pred_aField = uieditfield(leftGrid, 'numeric', 'Value', 1, 'Visible', 'off', ...
+            [app.Pred_aField, tmpSGa] = app.createNumericWithConv( ...
+                leftGrid, 5, 2, 1, 'k_1stOrder', ...
                 'Tooltip', 'Maximum reaction rate (Vmax/Km for Michaelis-Menten, k_forward for reversible).') ;
-            app.Pred_aField.Layout.Row = 5 ; app.Pred_aField.Layout.Column = 2 ;
+            tmpSGa.Visible = 'off' ;
 
             app.Pred_bLabel = uilabel(leftGrid, 'Text', 'b [m&sup3;/mol]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_bLabel.Layout.Row = 6 ; app.Pred_bLabel.Layout.Column = 1 ;
-            app.Pred_bField = uieditfield(leftGrid, 'numeric', 'Value', 0.5, 'Visible', 'off', ...
+            [app.Pred_bField, tmpSGb] = app.createNumericWithConv( ...
+                leftGrid, 6, 2, 0.5, 'Concentration', ...
                 'Tooltip', 'Saturation parameter (1/Km for Michaelis-Menten, k_reverse for reversible).') ;
-            app.Pred_bField.Layout.Row = 6 ; app.Pred_bField.Layout.Column = 2 ;
+            tmpSGb.Visible = 'off' ;
 
             % --- Parallel reaction parameters ---
             app.Pred_k2Label = uilabel(leftGrid, 'Text', 'k<sub>2</sub> [s<sup>-1</sup>]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_k2Label.Layout.Row = 7 ; app.Pred_k2Label.Layout.Column = 1 ;
-            app.Pred_k2Field = uieditfield(leftGrid, 'numeric', 'Value', 0.1, 'Visible', 'off') ;
-            app.Pred_k2Field.Layout.Row = 7 ; app.Pred_k2Field.Layout.Column = 2 ;
+            [app.Pred_k2Field, tmpSGk2] = app.createNumericWithConv( ...
+                leftGrid, 7, 2, 0.1, 'k_1stOrder') ;
+            tmpSGk2.Visible = 'off' ;
 
             app.Pred_n1Label = uilabel(leftGrid, 'Text', 'n<sub>1</sub> [order]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_n1Label.Layout.Row = 8 ; app.Pred_n1Label.Layout.Column = 1 ;
@@ -1202,11 +1224,11 @@ classdef NonIdealReactorApp < handle
             kinetics = app.Pred_KineticsDropdown.Value ;
 
             % Hide all optional fields first
-            app.Pred_kLabel.Visible = 'on' ; app.Pred_kField.Visible = 'on' ;
-            app.Pred_CA0Label.Visible = 'off' ; app.Pred_CA0Field.Visible = 'off' ;
-            app.Pred_aLabel.Visible = 'off' ; app.Pred_aField.Visible = 'off' ;
-            app.Pred_bLabel.Visible = 'off' ; app.Pred_bField.Visible = 'off' ;
-            app.Pred_k2Label.Visible = 'off' ; app.Pred_k2Field.Visible = 'off' ;
+            app.Pred_kLabel.Visible = 'on' ; app.Pred_kField.Parent.Visible = 'on' ;
+            app.Pred_CA0Label.Visible = 'off' ; app.Pred_CA0Field.Parent.Visible = 'off' ;
+            app.Pred_aLabel.Visible = 'off' ; app.Pred_aField.Parent.Visible = 'off' ;
+            app.Pred_bLabel.Visible = 'off' ; app.Pred_bField.Parent.Visible = 'off' ;
+            app.Pred_k2Label.Visible = 'off' ; app.Pred_k2Field.Parent.Visible = 'off' ;
             app.Pred_n1Label.Visible = 'off' ; app.Pred_n1Field.Visible = 'off' ;
             app.Pred_n2Label.Visible = 'off' ; app.Pred_n2Field.Visible = 'off' ;
             app.Pred_CustomRateLabel.Visible = 'off' ; app.Pred_CustomRateField.Visible = 'off' ;
@@ -1215,33 +1237,33 @@ classdef NonIdealReactorApp < handle
 
             if contains(kinetics, '2nd Order')
                 app.Pred_CA0Label.Visible = 'on' ;
-                app.Pred_CA0Field.Visible = 'on' ;
+                app.Pred_CA0Field.Parent.Visible = 'on' ;
                 app.Pred_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             elseif contains(kinetics, 'Michaelis')
-                app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Visible = 'off' ;
-                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
-                app.Pred_aLabel.Visible = 'on' ; app.Pred_aField.Visible = 'on' ;
-                app.Pred_bLabel.Visible = 'on' ; app.Pred_bField.Visible = 'on' ;
+                app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Parent.Visible = 'off' ;
+                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Parent.Visible = 'on' ;
+                app.Pred_aLabel.Visible = 'on' ; app.Pred_aField.Parent.Visible = 'on' ;
+                app.Pred_bLabel.Visible = 'on' ; app.Pred_bField.Parent.Visible = 'on' ;
                 app.Pred_aLabel.Text = 'a [s<sup>-1</sup>]:' ;
                 app.Pred_bLabel.Text = 'b [m&sup3;/mol]:' ;
             elseif contains(kinetics, 'Reversible')
-                app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Visible = 'off' ;
-                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
-                app.Pred_aLabel.Visible = 'on' ; app.Pred_aField.Visible = 'on' ;
-                app.Pred_bLabel.Visible = 'on' ; app.Pred_bField.Visible = 'on' ;
+                app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Parent.Visible = 'off' ;
+                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Parent.Visible = 'on' ;
+                app.Pred_aLabel.Visible = 'on' ; app.Pred_aField.Parent.Visible = 'on' ;
+                app.Pred_bLabel.Visible = 'on' ; app.Pred_bField.Parent.Visible = 'on' ;
                 app.Pred_aLabel.Text = 'k<sub>fwd</sub> [s<sup>-1</sup>]:' ;
                 app.Pred_bLabel.Text = 'k<sub>rev</sub> [s<sup>-1</sup>]:' ;
             elseif contains(kinetics, 'Parallel')
-                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
-                app.Pred_k2Label.Visible = 'on' ; app.Pred_k2Field.Visible = 'on' ;
+                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Parent.Visible = 'on' ;
+                app.Pred_k2Label.Visible = 'on' ; app.Pred_k2Field.Parent.Visible = 'on' ;
                 app.Pred_n1Label.Visible = 'on' ; app.Pred_n1Field.Visible = 'on' ;
                 app.Pred_n2Label.Visible = 'on' ; app.Pred_n2Field.Visible = 'on' ;
                 app.Pred_ResultSelectLabel.Visible = 'on' ;
                 app.Pred_ResultYieldLabel.Visible = 'on' ;
                 app.Pred_kLabel.Text = 'k1 [1/s]:' ;
             elseif contains(kinetics, 'Custom')
-                app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Visible = 'off' ;
-                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Visible = 'on' ;
+                app.Pred_kLabel.Visible = 'off' ; app.Pred_kField.Parent.Visible = 'off' ;
+                app.Pred_CA0Label.Visible = 'on' ; app.Pred_CA0Field.Parent.Visible = 'on' ;
                 app.Pred_CustomRateLabel.Visible = 'on' ; app.Pred_CustomRateField.Visible = 'on' ;
             else
                 % 1st Order - only k visible (default)
@@ -1412,10 +1434,10 @@ classdef NonIdealReactorApp < handle
             % Row 4: tau
             app.TIS_tauLabel = uilabel(leftGrid, 'Text', 'tau total [s]:') ;
             app.TIS_tauLabel.Layout.Row = 4 ; app.TIS_tauLabel.Layout.Column = 1 ;
-            app.TIS_tauField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 10, 'Limits', [0.001 Inf], ...
+            [app.TIS_tauField, ~] = app.createNumericWithConv( ...
+                leftGrid, 4, 2, 10, 'Time', ...
+                'Limits', [0.001 Inf], ...
                 'Tooltip', 'Total mean residence time: tau = V_total / Q.') ;
-            app.TIS_tauField.Layout.Row = 4 ; app.TIS_tauField.Layout.Column = 2 ;
 
             % Row 5: Kinetics dropdown
             lbl = uilabel(leftGrid, 'Text', 'Kinetics:', 'FontWeight', 'bold') ;
@@ -1431,20 +1453,20 @@ classdef NonIdealReactorApp < handle
             % Row 6: k
             app.TIS_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.TIS_kLabel.Layout.Row = 6 ; app.TIS_kLabel.Layout.Column = 1 ;
-            app.TIS_kField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.1, 'Limits', [0 Inf], ...
+            [app.TIS_kField, ~] = app.createNumericWithConv( ...
+                leftGrid, 6, 2, 0.1, 'k_1stOrder', ...
+                'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
-            app.TIS_kField.Layout.Row = 6 ; app.TIS_kField.Layout.Column = 2 ;
 
             % Row 7: CA0 (only for 2nd order)
             app.TIS_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             app.TIS_CA0Label.Layout.Row = 7 ; app.TIS_CA0Label.Layout.Column = 1 ;
             app.TIS_CA0Label.Visible = 'off' ;
-            app.TIS_CA0Field = uieditfield(leftGrid, 'numeric', ...
-                'Value', 1000, 'Limits', [0.001 Inf], ...
+            [app.TIS_CA0Field, tmpSGtis] = app.createNumericWithConv( ...
+                leftGrid, 7, 2, 1000, 'Concentration', ...
+                'Limits', [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
-            app.TIS_CA0Field.Layout.Row = 7 ; app.TIS_CA0Field.Layout.Column = 2 ;
-            app.TIS_CA0Field.Visible = 'off' ;
+            tmpSGtis.Visible = 'off' ;
 
             % Row 8: Compute button
             app.TIS_ComputeButton = uibutton(leftGrid, 'push', ...
@@ -1575,11 +1597,11 @@ classdef NonIdealReactorApp < handle
             kinetics = app.TIS_KineticsDropdown.Value ;
             if contains(kinetics, '2nd')
                 app.TIS_CA0Label.Visible = 'on' ;
-                app.TIS_CA0Field.Visible = 'on' ;
+                app.TIS_CA0Field.Parent.Visible = 'on' ;
                 app.TIS_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             else
                 app.TIS_CA0Label.Visible = 'off' ;
-                app.TIS_CA0Field.Visible = 'off' ;
+                app.TIS_CA0Field.Parent.Visible = 'off' ;
                 app.TIS_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
             end
         end
@@ -1800,10 +1822,10 @@ classdef NonIdealReactorApp < handle
             % Row 6: tau
             app.Disp_tauLabel = uilabel(leftGrid, 'Text', '&tau; [s]:', 'Interpreter', 'html') ;
             app.Disp_tauLabel.Layout.Row = 6 ; app.Disp_tauLabel.Layout.Column = 1 ;
-            app.Disp_tauField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 10, 'Limits', [0.001 Inf], ...
+            [app.Disp_tauField, ~] = app.createNumericWithConv( ...
+                leftGrid, 6, 2, 10, 'Time', ...
+                'Limits', [0.001 Inf], ...
                 'Tooltip', 'Mean residence time: tau = V/Q = L/u.') ;
-            app.Disp_tauField.Layout.Row = 6 ; app.Disp_tauField.Layout.Column = 2 ;
 
             % Row 7: Kinetics
             app.Disp_KineticsLabel = uilabel(leftGrid, 'Text', 'Kinetics:') ;
@@ -1820,20 +1842,20 @@ classdef NonIdealReactorApp < handle
             % Row 8: k
             app.Disp_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.Disp_kLabel.Layout.Row = 8 ; app.Disp_kLabel.Layout.Column = 1 ;
-            app.Disp_kField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.1, 'Limits', [0 Inf], ...
+            [app.Disp_kField, ~] = app.createNumericWithConv( ...
+                leftGrid, 8, 2, 0.1, 'k_1stOrder', ...
+                'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
-            app.Disp_kField.Layout.Row = 8 ; app.Disp_kField.Layout.Column = 2 ;
 
             % Row 9: CA0 (2nd order only)
             app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             app.Disp_CA0Label.Layout.Row = 9 ; app.Disp_CA0Label.Layout.Column = 1 ;
             app.Disp_CA0Label.Visible = 'off' ;
-            app.Disp_CA0Field = uieditfield(leftGrid, 'numeric', ...
-                'Value', 1000, 'Limits', [0.001 Inf], ...
+            [app.Disp_CA0Field, tmpSGdisp] = app.createNumericWithConv( ...
+                leftGrid, 9, 2, 1000, 'Concentration', ...
+                'Limits', [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
-            app.Disp_CA0Field.Layout.Row = 9 ; app.Disp_CA0Field.Layout.Column = 2 ;
-            app.Disp_CA0Field.Visible = 'off' ;
+            tmpSGdisp.Visible = 'off' ;
 
             % Row 10: Compute button
             app.Disp_ComputeButton = uibutton(leftGrid, 'push', ...
@@ -1912,11 +1934,11 @@ classdef NonIdealReactorApp < handle
             kinetics = app.Disp_KineticsDropdown.Value ;
             if contains(kinetics, '2nd')
                 app.Disp_CA0Label.Visible = 'on' ;
-                app.Disp_CA0Field.Visible = 'on' ;
+                app.Disp_CA0Field.Parent.Visible = 'on' ;
                 app.Disp_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             else
                 app.Disp_CA0Label.Visible = 'off' ;
-                app.Disp_CA0Field.Visible = 'off' ;
+                app.Disp_CA0Field.Parent.Visible = 'off' ;
                 app.Disp_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
             end
         end
@@ -2202,16 +2224,16 @@ classdef NonIdealReactorApp < handle
             app.Conv_TstartLabel = uilabel(leftGrid, ...
                 'Text', 't start [s]:', 'Visible', 'off') ;
             app.Conv_TstartLabel.Layout.Row = 5 ; app.Conv_TstartLabel.Layout.Column = 1 ;
-            app.Conv_TstartField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0, 'Visible', 'off') ;
-            app.Conv_TstartField.Layout.Row = 5 ; app.Conv_TstartField.Layout.Column = 2 ;
+            [app.Conv_TstartField, tmpSGcs] = app.createNumericWithConv( ...
+                leftGrid, 5, 2, 0, 'Time') ;
+            tmpSGcs.Visible = 'off' ;
 
             app.Conv_TendLabel = uilabel(leftGrid, ...
                 'Text', 't end [s]:', 'Visible', 'off') ;
             app.Conv_TendLabel.Layout.Row = 6 ; app.Conv_TendLabel.Layout.Column = 1 ;
-            app.Conv_TendField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 50, 'Limits', [0.001 Inf], 'Visible', 'off') ;
-            app.Conv_TendField.Layout.Row = 6 ; app.Conv_TendField.Layout.Column = 2 ;
+            [app.Conv_TendField, tmpSGce] = app.createNumericWithConv( ...
+                leftGrid, 6, 2, 50, 'Time', 'Limits', [0.001 Inf]) ;
+            tmpSGce.Visible = 'off' ;
 
             app.Conv_NptsLabel = uilabel(leftGrid, ...
                 'Text', 'N points:', 'Visible', 'off') ;
@@ -2420,16 +2442,16 @@ classdef NonIdealReactorApp < handle
             % ---- Equation time params (rows 5-7, overlapping WS) ----
             if isEq
                 app.Conv_TstartLabel.Visible = 'on' ;
-                app.Conv_TstartField.Visible = 'on' ;
+                app.Conv_TstartField.Parent.Visible = 'on' ;
                 app.Conv_TendLabel.Visible = 'on' ;
-                app.Conv_TendField.Visible = 'on' ;
+                app.Conv_TendField.Parent.Visible = 'on' ;
                 app.Conv_NptsLabel.Visible = 'on' ;
                 app.Conv_NptsField.Visible = 'on' ;
             else
                 app.Conv_TstartLabel.Visible = 'off' ;
-                app.Conv_TstartField.Visible = 'off' ;
+                app.Conv_TstartField.Parent.Visible = 'off' ;
                 app.Conv_TendLabel.Visible = 'off' ;
-                app.Conv_TendField.Visible = 'off' ;
+                app.Conv_TendField.Parent.Visible = 'off' ;
                 app.Conv_NptsLabel.Visible = 'off' ;
                 app.Conv_NptsField.Visible = 'off' ;
             end
@@ -2815,9 +2837,8 @@ classdef NonIdealReactorApp < handle
             % Row 3: tau (with "From RTD" option)
             lbl = uilabel(leftGrid, 'Text', 'tau total [s]:') ;
             lbl.Layout.Row = 3 ; lbl.Layout.Column = 1 ;
-            app.Comb_tauField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 10, 'Limits', [0.001 Inf]) ;
-            app.Comb_tauField.Layout.Row = 3 ; app.Comb_tauField.Layout.Column = 2 ;
+            [app.Comb_tauField, ~] = app.createNumericWithConv( ...
+                leftGrid, 3, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
 
             % Row 4: Parameter 1
             app.Comb_Param1Label = uilabel(leftGrid, ...
@@ -2855,20 +2876,20 @@ classdef NonIdealReactorApp < handle
             % Row 7: k
             app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.Comb_kLabel.Layout.Row = 7 ; app.Comb_kLabel.Layout.Column = 1 ;
-            app.Comb_kField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.1, 'Limits', [0 Inf], ...
+            [app.Comb_kField, ~] = app.createNumericWithConv( ...
+                leftGrid, 7, 2, 0.1, 'k_1stOrder', ...
+                'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
-            app.Comb_kField.Layout.Row = 7 ; app.Comb_kField.Layout.Column = 2 ;
 
             % Row 8: CA0 (2nd order only)
             app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             app.Comb_CA0Label.Layout.Row = 8 ; app.Comb_CA0Label.Layout.Column = 1 ;
             app.Comb_CA0Label.Visible = 'off' ;
-            app.Comb_CA0Field = uieditfield(leftGrid, 'numeric', ...
-                'Value', 1000, 'Limits', [0.001 Inf], ...
+            [app.Comb_CA0Field, tmpSGcomb] = app.createNumericWithConv( ...
+                leftGrid, 8, 2, 1000, 'Concentration', ...
+                'Limits', [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
-            app.Comb_CA0Field.Layout.Row = 8 ; app.Comb_CA0Field.Layout.Column = 2 ;
-            app.Comb_CA0Field.Visible = 'off' ;
+            tmpSGcomb.Visible = 'off' ;
 
             % Row 9: Compute button
             app.Comb_ComputeButton = uibutton(leftGrid, 'push', ...
@@ -2996,11 +3017,11 @@ classdef NonIdealReactorApp < handle
             kinetics = app.Comb_KineticsDropdown.Value ;
             if contains(kinetics, '2nd')
                 app.Comb_CA0Label.Visible = 'on' ;
-                app.Comb_CA0Field.Visible = 'on' ;
+                app.Comb_CA0Field.Parent.Visible = 'on' ;
                 app.Comb_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
             else
                 app.Comb_CA0Label.Visible = 'off' ;
-                app.Comb_CA0Field.Visible = 'off' ;
+                app.Comb_CA0Field.Parent.Visible = 'off' ;
                 app.Comb_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
             end
         end

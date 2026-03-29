@@ -155,6 +155,144 @@ classdef UnitConverterHelper < handle
             updateDropdowns() ;
         end
 
+        function launchForField(targetField, categoryName)
+            % launchForField  Open a contextual unit converter for a specific field.
+            %   UnitConverterHelper.launchForField(field, 'Time')
+            %
+            %   Pre-selects the category, pre-fills the current field value,
+            %   and provides an "Apply to Field" button that writes the
+            %   SI-equivalent result directly into the target field.
+
+            cats = UnitConverterHelper.buildCatalog() ;
+            if ~isfield(cats, categoryName)
+                warning('UnitConverterHelper:unknownCategory', ...
+                    'Unknown category "%s". Opening general converter.', categoryName) ;
+                UnitConverterHelper.launch() ;
+                return
+            end
+            entry = cats.(categoryName) ;
+            units = entry.factors.keys ;
+
+            % === Create figure ===
+            fig = uifigure('Name', ['Unit Converter — ' categoryName], ...
+                'Position', [300 250 400 380], 'Resize', 'off') ;
+
+            mainGrid = uigridlayout(fig, [6 1], ...
+                'RowHeight', {30, 30, 35, 28, 40, '1x'}, ...
+                'Padding', [15 15 15 15], 'RowSpacing', 8) ;
+
+            % --- Row 1: From unit + input (pre-filled) ---
+            fromPanel = uigridlayout(mainGrid, [1 3], ...
+                'ColumnWidth', {60, '1x', '1x'}, 'Padding', [0 0 0 0]) ;
+            fromPanel.Layout.Row = 1 ;
+            uilabel(fromPanel, 'Text', 'From:', 'FontWeight', 'bold') ;
+            efInput = uieditfield(fromPanel, 'numeric', 'Value', targetField.Value) ;
+            ddFrom = uidropdown(fromPanel, 'Items', units, 'Value', units{1}) ;
+
+            % --- Row 2: To unit + result ---
+            toPanel = uigridlayout(mainGrid, [1 3], ...
+                'ColumnWidth', {60, '1x', '1x'}, 'Padding', [0 0 0 0]) ;
+            toPanel.Layout.Row = 2 ;
+            uilabel(toPanel, 'Text', 'To:', 'FontWeight', 'bold') ;
+            efResult = uieditfield(toPanel, 'numeric', ...
+                'Value', 0, 'Editable', 'off') ;
+            ddTo = uidropdown(toPanel, 'Items', units) ;
+            if numel(units) > 1
+                ddTo.Value = units{2} ;
+            end
+
+            % --- Row 3: Convert + Apply buttons side by side ---
+            btnPanel = uigridlayout(mainGrid, [1 4], ...
+                'ColumnWidth', {'1x', 110, 140, '1x'}, 'Padding', [0 0 0 0]) ;
+            btnPanel.Layout.Row = 3 ;
+            uilabel(btnPanel, 'Text', '') ;   % spacer
+            btnConvert = uibutton(btnPanel, 'Text', 'Convert', ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [0.30 0.60 0.88]) ;
+            btnApply = uibutton(btnPanel, 'Text', 'Apply to Field', ...
+                'FontWeight', 'bold', ...
+                'BackgroundColor', [0.20 0.72 0.35], ...
+                'FontColor', 'white') ;
+            uilabel(btnPanel, 'Text', '') ;   % spacer
+
+            % --- Row 4: Formula display ---
+            lblFormula = uilabel(mainGrid, 'Text', '', ...
+                'HorizontalAlignment', 'center', ...
+                'FontAngle', 'italic') ;
+            lblFormula.Layout.Row = 4 ;
+
+            % --- Row 5: Reference-table header ---
+            lblRef = uilabel(mainGrid, 'Text', 'Reference (to SI base):', ...
+                'FontWeight', 'bold', 'FontSize', 11) ;
+            lblRef.Layout.Row = 5 ;
+
+            % --- Row 6: Reference table ---
+            tblRef = uitable(mainGrid, ...
+                'ColumnName', {'Unit', 'Factor (to SI)'}, ...
+                'ColumnWidth', {160, 180}, ...
+                'RowName', {}) ;
+            tblRef.Layout.Row = 6 ;
+
+            % Populate reference table
+            if strcmp(categoryName, 'Temperature')
+                tblRef.Data = {'K', '(base)' ; ...
+                               [char(176) 'C'], 'K - 273.15' ; ...
+                               [char(176) 'F'], 'K*9/5 - 459.67'} ;
+            else
+                uList = units ;
+                nU = numel(uList) ;
+                tData = cell(nU, 2) ;
+                for kk = 1:nU
+                    tData{kk,1} = uList{kk} ;
+                    tData{kk,2} = sprintf('%g', entry.factors(uList{kk})) ;
+                end
+                tblRef.Data = tData ;
+            end
+
+            % === Conversion callback ===
+            function doConvert(~, ~)
+                fromU = ddFrom.Value ;
+                toU   = ddTo.Value ;
+                val   = efInput.Value ;
+
+                if strcmp(categoryName, 'Temperature')
+                    res = UnitConverterHelper.convertTemperature(val, fromU, toU) ;
+                else
+                    fFrom = entry.factors(fromU) ;
+                    fTo   = entry.factors(toU) ;
+                    res   = val * fFrom / fTo ;
+                end
+
+                efResult.Value = res ;
+                lblFormula.Text = sprintf('%g %s = %g %s', val, fromU, res, toU) ;
+            end
+
+            % === Apply callback: write SI value to target field, close ===
+            function applyToField(~, ~)
+                val   = efInput.Value ;
+                fromU = ddFrom.Value ;
+
+                if strcmp(categoryName, 'Temperature')
+                    siVal = UnitConverterHelper.convertTemperature(val, fromU, 'K') ;
+                else
+                    siVal = val * entry.factors(fromU) ;
+                end
+
+                targetField.Value = siVal ;
+                delete(fig) ;
+            end
+
+            % === Wire callbacks ===
+            ddFrom.ValueChangedFcn     = @doConvert ;
+            ddTo.ValueChangedFcn       = @doConvert ;
+            efInput.ValueChangedFcn    = @doConvert ;
+            btnConvert.ButtonPushedFcn = @doConvert ;
+            btnApply.ButtonPushedFcn   = @applyToField ;
+
+            % === Initial conversion ===
+            doConvert() ;
+        end
+
     end
 
     methods (Static, Access = private)
