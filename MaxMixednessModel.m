@@ -467,12 +467,12 @@ classdef MaxMixednessModel
             hold(ax_Xlambda, 'on') ;
             plot(ax_Xlambda, 0, obj.X_exit, 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r') ;
             hold(ax_Xlambda, 'off') ;
-            xlabel(ax_Xlambda, 'lambda (life expectancy)') ;
-            ylabel(ax_Xlambda, 'X(lambda)') ;
-            title(ax_Xlambda, sprintf('Max Mixedness | X_{exit} = %.4f', obj.X_exit)) ;
+            xlabel(ax_Xlambda, '\lambda (life expectancy)') ;
+            ylabel(ax_Xlambda, 'X(\lambda)') ;
+            title(ax_Xlambda, sprintf('Maximum Mixedness Conversion | X_{MM} = %.4f', obj.X_exit)) ;
             grid(ax_Xlambda, 'on') ;
             ylim(ax_Xlambda, [0 1]) ;
-            legend(ax_Xlambda, 'X(lambda)', sprintf('X_{exit} = %.4f', obj.X_exit), ...
+            legend(ax_Xlambda, 'X(\lambda)', sprintf('X_{MM} = %.4f', obj.X_exit), ...
                    'Location', 'best') ;
         end
 

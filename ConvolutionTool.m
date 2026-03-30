@@ -1,7 +1,7 @@
 classdef ConvolutionTool
 % ConvolutionTool - Convolution and deconvolution for RTD analysis
 %
-% Implements the matrix formulation from Tema 4:
+% Implements the matrix formulation:
 %
 %   Convolution:   C_out = A * C_in
 %     where A is the lower-triangular convolution matrix built from E(t)

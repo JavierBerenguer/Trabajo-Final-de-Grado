@@ -380,7 +380,7 @@ classdef SegregationModel
             plot(ax_Xbatch, obj.rtd.t, obj.X_batch, 'b-', 'LineWidth', 1.5) ;
             xlabel(ax_Xbatch, 't') ;
             ylabel(ax_Xbatch, 'X_{batch}(t)') ;
-            title(ax_Xbatch, 'Segregation: Batch Conversion') ;
+            title(ax_Xbatch, 'Intrinsic Conversion X(t)') ;
             grid(ax_Xbatch, 'on') ;
             ylim(ax_Xbatch, [0 1]) ;
 
@@ -390,7 +390,7 @@ classdef SegregationModel
                 'FaceColor', [0.3 0.6 0.9], 'FaceAlpha', 0.5, 'EdgeColor', 'b') ;
             xlabel(ax_integrand, 't') ;
             ylabel(ax_integrand, 'X(t) * E(t)') ;
-            title(ax_integrand, sprintf('Integrand | X_{mean} = %.4f', obj.X_mean)) ;
+            title(ax_integrand, sprintf('Segregation Integrand | X_{seg} = %.4f', obj.X_mean)) ;
             grid(ax_integrand, 'on') ;
         end
 

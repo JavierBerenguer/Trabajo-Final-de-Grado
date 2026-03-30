@@ -1092,10 +1092,10 @@ classdef NonIdealReactorApp < handle
                 'FontWeight', 'bold', 'FontSize', 13) ;
             uilabel(leftGrid, 'Text', '') ;
 
-            uilabel(leftGrid, 'Text', 'Segregation X<sub>mean</sub>:', 'Interpreter', 'html') ;
+            uilabel(leftGrid, 'Text', 'Segregation X<sub>seg</sub>:', 'Interpreter', 'html') ;
             app.Pred_ResultSegLabel = uilabel(leftGrid, 'Text', '--') ;
 
-            uilabel(leftGrid, 'Text', 'Max Mixedness X<sub>exit</sub>:', 'Interpreter', 'html') ;
+            uilabel(leftGrid, 'Text', 'Max Mixedness X<sub>MM</sub>:', 'Interpreter', 'html') ;
             app.Pred_ResultMMLabel = uilabel(leftGrid, 'Text', '--') ;
 
             % Spacer
@@ -1127,23 +1127,23 @@ classdef NonIdealReactorApp < handle
 
             % X_batch(t) plot (Segregation)
             app.Pred_AxesXbatch = uiaxes(plotGrid) ;
-            title(app.Pred_AxesXbatch, 'Batch Conversion X(t)') ;
+            title(app.Pred_AxesXbatch, 'Intrinsic Conversion X(t)') ;
             xlabel(app.Pred_AxesXbatch, 't [s]') ;
             ylabel(app.Pred_AxesXbatch, 'X_{batch}(t)') ;
             grid(app.Pred_AxesXbatch, 'off') ;
 
             % Integrand plot (Segregation)
             app.Pred_AxesIntegrand = uiaxes(plotGrid) ;
-            title(app.Pred_AxesIntegrand, 'Integrand X(t)*E(t)') ;
+            title(app.Pred_AxesIntegrand, 'Segregation Integrand') ;
             xlabel(app.Pred_AxesIntegrand, 't [s]') ;
             ylabel(app.Pred_AxesIntegrand, 'X(t)*E(t)') ;
             grid(app.Pred_AxesIntegrand, 'off') ;
 
             % X(lambda) plot (Max Mixedness)
             app.Pred_AxesXlambda = uiaxes(plotGrid) ;
-            title(app.Pred_AxesXlambda, 'X(lambda) - Max Mixedness') ;
-            xlabel(app.Pred_AxesXlambda, 'lambda') ;
-            ylabel(app.Pred_AxesXlambda, 'X(lambda)') ;
+            title(app.Pred_AxesXlambda, 'Maximum Mixedness Conversion') ;
+            xlabel(app.Pred_AxesXlambda, '\lambda (life expectancy)') ;
+            ylabel(app.Pred_AxesXlambda, 'X(\lambda)') ;
             grid(app.Pred_AxesXlambda, 'off') ;
 
             % Comparison bar chart
