@@ -123,6 +123,7 @@ classdef NonIdealReactorApp < handle
         TIS_ResultXcstr
         TIS_ResultXpfr
         TIS_ResultNused
+        TIS_RefreshButton
         TIS_AxesEt
         TIS_AxesXvsN
         TIS_AxesComparison
@@ -149,6 +150,7 @@ classdef NonIdealReactorApp < handle
         Disp_ResultXcstr
         Disp_ResultXpfr
         Disp_ResultBo
+        Disp_RefreshButton
         Disp_AxesEt
         Disp_AxesXvsBo
         Disp_AxesComparison
@@ -317,14 +319,16 @@ classdef NonIdealReactorApp < handle
 
         %% ============== HELPER: NUMERIC FIELD + UNIT CONVERTER BUTTON ==============
 
-        function [field, subGrid] = createNumericWithConv(~, parentGrid, row, col, defaultVal, unitCat, varargin)
+        function [field, subGrid, btn] = createNumericWithConv(~, parentGrid, row, col, defaultVal, unitCat, varargin)
             % createNumericWithConv  Create a numeric editfield with a tiny
-            %   "U" button that opens the contextual unit converter.
+            %   button that opens the contextual unit converter.
             %
-            %   [field, subGrid] = app.createNumericWithConv(parentGrid, row, col, defaultVal, unitCat, ...)
+            %   [field, subGrid, btn] = app.createNumericWithConv(parentGrid, row, col, defaultVal, unitCat, ...)
             %
             %   Extra name-value pairs (e.g. 'Limits', [0 Inf]) are forwarded
-            %   to the uieditfield constructor.
+            %   to the uieditfield constructor.  The third output (btn) allows
+            %   the caller to override the ButtonPushedFcn (e.g. for dynamic
+            %   unit categories).
 
             subGrid = uigridlayout(parentGrid, [1 2], ...
                 'ColumnWidth', {'1x', 24}, ...
@@ -338,12 +342,22 @@ classdef NonIdealReactorApp < handle
             field.Layout.Row = 1 ; field.Layout.Column = 1 ;
 
             btn = uibutton(subGrid, 'push', ...
-                'Text', char(8635), ...
-                'FontSize', 9, 'FontWeight', 'bold', ...
+                'Text', '', ...
+                'Icon', 'UnitsLogo.png', ...
                 'Tooltip', ['Unit converter (' unitCat ')'], ...
                 'BackgroundColor', [0.85 0.90 1.0]) ;
             btn.Layout.Row = 1 ; btn.Layout.Column = 2 ;
             btn.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(field, unitCat) ;
+        end
+
+        function cat = getKCategory(~, dropdown)
+            % getKCategory  Return the correct unit converter category for k
+            %   based on the current kinetics selection in the given dropdown.
+            if contains(dropdown.Value, '2nd')
+                cat = 'k_2ndOrder' ;
+            else
+                cat = 'k_1stOrder' ;
+            end
         end
 
         %% ============== ABOUT DIALOG (T7) ==============
@@ -607,18 +621,21 @@ classdef NonIdealReactorApp < handle
             title(app.RTD_AxesEt, 'E(t)') ;
             xlabel(app.RTD_AxesEt, 't [s]') ;
             ylabel(app.RTD_AxesEt, 'E(t) [1/s]') ;
+            grid(app.RTD_AxesEt, 'off') ;
 
             % F(t) plot
             app.RTD_AxesFt = uiaxes(plotGrid) ;
             title(app.RTD_AxesFt, 'F(t)') ;
             xlabel(app.RTD_AxesFt, 't [s]') ;
             ylabel(app.RTD_AxesFt, 'F(t)') ;
+            grid(app.RTD_AxesFt, 'off') ;
 
             % E(theta) plot
             app.RTD_AxesEtheta = uiaxes(plotGrid) ;
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
             xlabel(app.RTD_AxesEtheta, '\Theta = t/\tau') ;
             ylabel(app.RTD_AxesEtheta, 'E(\Theta)') ;
+            grid(app.RTD_AxesEtheta, 'off') ;
 
         end
 
@@ -834,22 +851,12 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
-            % Build equation strings based on RTD source
-            [eq_Et, eq_Ft, eq_Etheta] = app.RTD_getEquationStrings() ;
-
             % E(t) plot
             cla(app.RTD_AxesEt) ;
             plot(app.RTD_AxesEt, app.rtd.t, app.rtd.Et, 'b-', 'LineWidth', 1.5) ;
             title(app.RTD_AxesEt, 'E(t)') ;
             xlabel(app.RTD_AxesEt, 't [s]') ;
             ylabel(app.RTD_AxesEt, 'E(t) [1/s]') ;
-            if ~isempty(eq_Et)
-                text(app.RTD_AxesEt, 0.95, 0.90, eq_Et, ...
-                    'Units', 'normalized', 'HorizontalAlignment', 'right', ...
-                    'VerticalAlignment', 'top', 'FontSize', 9, ...
-                    'Interpreter', 'tex', ...
-                    'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
-            end
 
             % F(t) plot
             cla(app.RTD_AxesFt) ;
@@ -858,13 +865,6 @@ classdef NonIdealReactorApp < handle
             xlabel(app.RTD_AxesFt, 't [s]') ;
             ylabel(app.RTD_AxesFt, 'F(t)') ;
             ylim(app.RTD_AxesFt, [0 1.05]) ;
-            if ~isempty(eq_Ft)
-                text(app.RTD_AxesFt, 0.95, 0.50, eq_Ft, ...
-                    'Units', 'normalized', 'HorizontalAlignment', 'right', ...
-                    'VerticalAlignment', 'top', 'FontSize', 9, ...
-                    'Interpreter', 'tex', ...
-                    'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
-            end
 
             % E(theta) plot
             cla(app.RTD_AxesEtheta) ;
@@ -875,73 +875,8 @@ classdef NonIdealReactorApp < handle
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
             xlabel(app.RTD_AxesEtheta, '\Theta = t/\tau') ;
             ylabel(app.RTD_AxesEtheta, 'E(\Theta)') ;
-            if ~isempty(eq_Etheta)
-                text(app.RTD_AxesEtheta, 0.95, 0.90, eq_Etheta, ...
-                    'Units', 'normalized', 'HorizontalAlignment', 'right', ...
-                    'VerticalAlignment', 'top', 'FontSize', 9, ...
-                    'Interpreter', 'tex', ...
-                    'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
-            end
         end
 
-        function [eq_Et, eq_Ft, eq_Etheta] = RTD_getEquationStrings(app)
-            % Return LaTeX-like equation strings for each RTD plot
-            % based on the current RTD source type
-
-            eq_Et = '' ;
-            eq_Ft = '' ;
-            eq_Etheta = '' ;
-
-            source = app.RTD_SourceDropdown.Value ;
-            tau = app.rtd.tau ;
-
-            switch source
-                case 'Ideal CSTR'
-                    eq_Et = sprintf('E(t) = (1/\\tau) e^{-t/\\tau},  \\tau = %.4g', tau) ;
-                    eq_Ft = sprintf('F(t) = 1 - e^{-t/\\tau}') ;
-                    eq_Etheta = 'E(\Theta) = e^{-\Theta}' ;
-
-                case 'Ideal PFR'
-                    eq_Et = sprintf('E(t) = \\delta(t - \\tau),  \\tau = %.4g', tau) ;
-                    eq_Ft = sprintf('F(t) = H(t - \\tau)') ;
-                    eq_Etheta = 'E(\Theta) = \delta(\Theta - 1)' ;
-
-                case 'Tanks-in-Series'
-                    N = app.RTD_NField.Value ;
-                    eq_Et = sprintf('E(t) = \\frac{t^{N-1}}{(N-1)! \\tau_i^N} e^{-t/\\tau_i},  N=%.4g', N) ;
-                    eq_Ft = 'F(t) = 1 - e^{-t/\tau_i} \Sigma' ;
-                    eq_Etheta = sprintf('E(\\Theta) = \\frac{N(N\\Theta)^{N-1}}{(N-1)!} e^{-N\\Theta},  N=%.4g', N) ;
-
-                case 'Dispersion (open)'
-                    Bo = app.RTD_BoField.Value ;
-                    eq_Et = sprintf('E(t) = \\frac{1}{\\tau\\sqrt{4\\pi Bo}} e^{-(1-t/\\tau)^2/4Bo},  Bo=%.4g', Bo) ;
-                    eq_Ft = 'F(t) = \int_0^t E(t'') dt''' ;
-                    eq_Etheta = sprintf('\\sigma^2_\\Theta = 2Bo + 8Bo^2,  Bo=%.4g', Bo) ;
-
-                case 'Dispersion (closed)'
-                    Bo = app.RTD_BoField.Value ;
-                    eq_Et = sprintf('Danckwerts closed-closed,  Bo=%.4g', Bo) ;
-                    eq_Ft = 'F(t) = \int_0^t E(t'') dt''' ;
-                    eq_Etheta = sprintf('\\sigma^2_\\Theta = 2Bo - 2Bo^2(1-e^{-1/Bo}),  Bo=%.4g', Bo) ;
-
-                case 'Laminar Flow'
-                    tau = app.rtd.tau ;
-                    eq_Et = sprintf('E(t) = \\tau^2/(2t^3), t >= \\tau/2, \\tau = %.4g s', tau) ;
-                    eq_Ft = 'F(t) = 1 - (\\tau/2t)^2' ;
-                    eq_Etheta = 'E(\\theta) = 1/(2\\theta^3), \\theta >= 0.5' ;
-
-                case 'C(t) Equation'
-                    eq_str = app.RTD_EqField.Value ;
-                    eq_Et = sprintf('C(t) = %s', eq_str) ;
-                    eq_Ft = sprintf('\\tau_m = %.4g s', tau) ;
-                    eq_Etheta = sprintf('\\sigma^2_\\Theta = %.4g', app.rtd.sigma2_theta) ;
-
-                case {'Experimental Pulse', 'Experimental Step'}
-                    eq_Et = sprintf('Experimental data,  \\tau_m = %.4g s', tau) ;
-                    eq_Ft = sprintf('\\sigma^2 = %.4g s^2', app.rtd.sigma2) ;
-                    eq_Etheta = sprintf('\\sigma^2_\\Theta = %.4g', app.rtd.sigma2_theta) ;
-            end
-        end
 
         function RTD_export(app)
             % Export RTD object to base workspace with user-defined name
@@ -1077,10 +1012,10 @@ classdef NonIdealReactorApp < handle
                 'Value', 0.1, 'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
             app.Pred_kField.Layout.Row = 1 ; app.Pred_kField.Layout.Column = 1 ;
-            btnK = uibutton(kSubGrid, 'push', 'Text', char(8635), 'FontSize', 9, 'FontWeight', 'bold', ...
+            btnK = uibutton(kSubGrid, 'push', 'Text', '', 'Icon', 'UnitsLogo.png', ...
                 'Tooltip', 'Unit converter (k_1stOrder)', 'BackgroundColor', [0.85 0.90 1.0]) ;
             btnK.Layout.Row = 1 ; btnK.Layout.Column = 2 ;
-            btnK.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Pred_kField, 'k_1stOrder') ;
+            btnK.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Pred_kField, app.getKCategory(app.Pred_KineticsDropdown)) ;
 
             % CA0 field (only for 2nd order)
             app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
@@ -1090,7 +1025,7 @@ classdef NonIdealReactorApp < handle
                 'Value', 1000, 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
             app.Pred_CA0Field.Layout.Row = 1 ; app.Pred_CA0Field.Layout.Column = 1 ;
-            btnCA0 = uibutton(ca0SubGrid, 'push', 'Text', char(8635), 'FontSize', 9, 'FontWeight', 'bold', ...
+            btnCA0 = uibutton(ca0SubGrid, 'push', 'Text', '', 'Icon', 'UnitsLogo.png', ...
                 'Tooltip', 'Unit converter (Concentration)', 'BackgroundColor', [0.85 0.90 1.0]) ;
             btnCA0.Layout.Row = 1 ; btnCA0.Layout.Column = 2 ;
             btnCA0.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Pred_CA0Field, 'Concentration') ;
@@ -1195,27 +1130,27 @@ classdef NonIdealReactorApp < handle
             title(app.Pred_AxesXbatch, 'Batch Conversion X(t)') ;
             xlabel(app.Pred_AxesXbatch, 't [s]') ;
             ylabel(app.Pred_AxesXbatch, 'X_{batch}(t)') ;
-            grid(app.Pred_AxesXbatch, 'on') ;
+            grid(app.Pred_AxesXbatch, 'off') ;
 
             % Integrand plot (Segregation)
             app.Pred_AxesIntegrand = uiaxes(plotGrid) ;
             title(app.Pred_AxesIntegrand, 'Integrand X(t)*E(t)') ;
             xlabel(app.Pred_AxesIntegrand, 't [s]') ;
             ylabel(app.Pred_AxesIntegrand, 'X(t)*E(t)') ;
-            grid(app.Pred_AxesIntegrand, 'on') ;
+            grid(app.Pred_AxesIntegrand, 'off') ;
 
             % X(lambda) plot (Max Mixedness)
             app.Pred_AxesXlambda = uiaxes(plotGrid) ;
             title(app.Pred_AxesXlambda, 'X(lambda) - Max Mixedness') ;
             xlabel(app.Pred_AxesXlambda, 'lambda') ;
             ylabel(app.Pred_AxesXlambda, 'X(lambda)') ;
-            grid(app.Pred_AxesXlambda, 'on') ;
+            grid(app.Pred_AxesXlambda, 'off') ;
 
             % Comparison bar chart
             app.Pred_AxesComparison = uiaxes(plotGrid) ;
             title(app.Pred_AxesComparison, 'Conversion Bounds') ;
             ylabel(app.Pred_AxesComparison, 'Conversion X') ;
-            grid(app.Pred_AxesComparison, 'on') ;
+            grid(app.Pred_AxesComparison, 'off') ;
         end
 
         %% ============== PREDICTION CALLBACKS ==============
@@ -1369,7 +1304,6 @@ classdef NonIdealReactorApp < handle
             ylabel(app.Pred_AxesComparison, 'Conversion X') ;
             title(app.Pred_AxesComparison, 'Conversion Bounds') ;
             ylim(app.Pred_AxesComparison, [0 1.12]) ;
-            grid(app.Pred_AxesComparison, 'on') ;
 
             % Add value labels on bars - inside bar if value > 0.85
             hold(app.Pred_AxesComparison, 'on') ;
@@ -1411,12 +1345,18 @@ classdef NonIdealReactorApp < handle
             % Row 1: N method
             lbl = uilabel(leftGrid, 'Text', 'N Method:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
-            app.TIS_NMethodDropdown = uidropdown(leftGrid, ...
+            methodSubGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {'1x', 28}, 'Padding', [0 0 0 0], 'ColumnSpacing', 2) ;
+            methodSubGrid.Layout.Row = 1 ; methodSubGrid.Layout.Column = 2 ;
+            app.TIS_NMethodDropdown = uidropdown(methodSubGrid, ...
                 'Items', {'Manual', 'From Calculated Data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.TIS_NMethodChanged()) ;
-            app.TIS_NMethodDropdown.Layout.Row = 1 ;
-            app.TIS_NMethodDropdown.Layout.Column = 2 ;
+            app.TIS_RefreshButton = uibutton(methodSubGrid, 'push', ...
+                'Text', char(8635), 'FontSize', 12, ...
+                'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
+                'Visible', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.TIS_NMethodChanged()) ;
 
             % Row 2: N tanks
             app.TIS_NLabel = uilabel(leftGrid, 'Text', 'N [tanks]:') ;
@@ -1455,10 +1395,11 @@ classdef NonIdealReactorApp < handle
             % Row 6: k
             app.TIS_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.TIS_kLabel.Layout.Row = 6 ; app.TIS_kLabel.Layout.Column = 1 ;
-            [app.TIS_kField, ~] = app.createNumericWithConv( ...
+            [app.TIS_kField, ~, btnTk] = app.createNumericWithConv( ...
                 leftGrid, 6, 2, 0.1, 'k_1stOrder', ...
                 'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
+            btnTk.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.TIS_kField, app.getKCategory(app.TIS_KineticsDropdown)) ;
 
             % Row 7: CA0 (only for 2nd order)
             app.TIS_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
@@ -1525,21 +1466,21 @@ classdef NonIdealReactorApp < handle
             title(app.TIS_AxesEt, 'E(t) - TIS Model') ;
             xlabel(app.TIS_AxesEt, 't [s]') ;
             ylabel(app.TIS_AxesEt, 'E(t) [1/s]') ;
-            grid(app.TIS_AxesEt, 'on') ;
+            grid(app.TIS_AxesEt, 'off') ;
 
             % X vs N sweep plot
             app.TIS_AxesXvsN = uiaxes(plotGrid) ;
             title(app.TIS_AxesXvsN, 'Conversion vs N') ;
             xlabel(app.TIS_AxesXvsN, 'N [number of tanks]') ;
             ylabel(app.TIS_AxesXvsN, 'X_A') ;
-            grid(app.TIS_AxesXvsN, 'on') ;
+            grid(app.TIS_AxesXvsN, 'off') ;
 
             % Comparison bar chart
             app.TIS_AxesComparison = uiaxes(plotGrid) ;
             app.TIS_AxesComparison.Layout.Column = [1 2] ;
             title(app.TIS_AxesComparison, 'Comparison: CSTR vs TIS vs PFR') ;
             ylabel(app.TIS_AxesComparison, 'Conversion X') ;
-            grid(app.TIS_AxesComparison, 'on') ;
+            grid(app.TIS_AxesComparison, 'off') ;
         end
 
         %% ============== TIS CALLBACKS ==============
@@ -1554,6 +1495,7 @@ classdef NonIdealReactorApp < handle
                 app.TIS_KineticsDropdown.Enable = 'off' ;
                 app.TIS_CA0Field.Enable = 'off' ;
                 app.TIS_RTDStatusLabel.Visible = 'on' ;
+                app.TIS_RefreshButton.Visible = 'on' ;
 
                 infoLines = {} ;
 
@@ -1597,6 +1539,7 @@ classdef NonIdealReactorApp < handle
                 app.TIS_KineticsDropdown.Enable = 'on' ;
                 app.TIS_CA0Field.Enable = 'on' ;
                 app.TIS_RTDStatusLabel.Visible = 'off' ;
+                app.TIS_RefreshButton.Visible = 'off' ;
             end
         end
 
@@ -1686,7 +1629,6 @@ classdef NonIdealReactorApp < handle
             title(app.TIS_AxesEt, sprintf('E(t) - TIS  N=%.1f', N_val)) ;
             xlabel(app.TIS_AxesEt, 't [s]') ;
             ylabel(app.TIS_AxesEt, 'E(t) [1/s]') ;
-            grid(app.TIS_AxesEt, 'on') ;
 
             % ---- Plot 2: X vs N sweep ----
             cla(app.TIS_AxesXvsN) ;
@@ -1730,7 +1672,6 @@ classdef NonIdealReactorApp < handle
             xlabel(app.TIS_AxesXvsN, 'N [number of tanks]') ;
             ylabel(app.TIS_AxesXvsN, 'X_A') ;
             ylim(app.TIS_AxesXvsN, [0 1]) ;
-            grid(app.TIS_AxesXvsN, 'on') ;
             legend(app.TIS_AxesXvsN, 'TIS', sprintf('N=%.1f', N_val), ...
                    'Location', 'southeast') ;
 
@@ -1745,7 +1686,6 @@ classdef NonIdealReactorApp < handle
             ylabel(app.TIS_AxesComparison, 'Conversion X') ;
             title(app.TIS_AxesComparison, 'CSTR vs TIS vs PFR') ;
             ylim(app.TIS_AxesComparison, [0 1.12]) ;
-            grid(app.TIS_AxesComparison, 'on') ;
 
             % Value labels
             hold(app.TIS_AxesComparison, 'on') ;
@@ -1787,12 +1727,18 @@ classdef NonIdealReactorApp < handle
             % Row 1: Input method
             lbl = uilabel(leftGrid, 'Text', 'Input:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
-            app.Disp_InputMethodDropdown = uidropdown(leftGrid, ...
+            methodSubGridD = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {'1x', 28}, 'Padding', [0 0 0 0], 'ColumnSpacing', 2) ;
+            methodSubGridD.Layout.Row = 1 ; methodSubGridD.Layout.Column = 2 ;
+            app.Disp_InputMethodDropdown = uidropdown(methodSubGridD, ...
                 'Items', {'Manual', 'From Calculated Data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.Disp_inputMethodChanged()) ;
-            app.Disp_InputMethodDropdown.Layout.Row = 1 ;
-            app.Disp_InputMethodDropdown.Layout.Column = 2 ;
+            app.Disp_RefreshButton = uibutton(methodSubGridD, 'push', ...
+                'Text', char(8635), 'FontSize', 12, ...
+                'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
+                'Visible', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.Disp_inputMethodChanged()) ;
 
             % Row 2: Import status (hidden by default)
             app.Disp_RTDStatusLabel = uilabel(leftGrid, ...
@@ -1849,10 +1795,11 @@ classdef NonIdealReactorApp < handle
             % Row 8: k
             app.Disp_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.Disp_kLabel.Layout.Row = 8 ; app.Disp_kLabel.Layout.Column = 1 ;
-            [app.Disp_kField, ~] = app.createNumericWithConv( ...
+            [app.Disp_kField, ~, btnDk] = app.createNumericWithConv( ...
                 leftGrid, 8, 2, 0.1, 'k_1stOrder', ...
                 'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
+            btnDk.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Disp_kField, app.getKCategory(app.Disp_KineticsDropdown)) ;
 
             % Row 9: CA0 (2nd order only)
             app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
@@ -1915,18 +1862,21 @@ classdef NonIdealReactorApp < handle
             title(app.Disp_AxesEt, 'E(t) - Dispersion') ;
             xlabel(app.Disp_AxesEt, 't [s]') ;
             ylabel(app.Disp_AxesEt, 'E(t) [1/s]') ;
+            grid(app.Disp_AxesEt, 'off') ;
 
             % X vs Bo sweep
             app.Disp_AxesXvsBo = uiaxes(plotGrid) ;
             title(app.Disp_AxesXvsBo, 'X vs Bo') ;
             xlabel(app.Disp_AxesXvsBo, 'Bo [dispersion number]') ;
             ylabel(app.Disp_AxesXvsBo, 'X_A') ;
+            grid(app.Disp_AxesXvsBo, 'off') ;
 
             % Comparison bar chart (spans 2 columns)
             app.Disp_AxesComparison = uiaxes(plotGrid) ;
             app.Disp_AxesComparison.Layout.Column = [1 2] ;
             title(app.Disp_AxesComparison, 'PFR vs Dispersion vs CSTR') ;
             ylabel(app.Disp_AxesComparison, 'Conversion X') ;
+            grid(app.Disp_AxesComparison, 'off') ;
         end
 
         %% ============== DISPERSION CALLBACKS ==============
@@ -1961,6 +1911,7 @@ classdef NonIdealReactorApp < handle
                 app.Disp_KineticsDropdown.Enable = 'off' ;
                 app.Disp_CA0Field.Enable = 'off' ;
                 app.Disp_RTDStatusLabel.Visible = 'on' ;
+                app.Disp_RefreshButton.Visible = 'on' ;
 
                 infoLines = {} ;
 
@@ -2022,6 +1973,7 @@ classdef NonIdealReactorApp < handle
                 app.Disp_KineticsDropdown.Enable = 'on' ;
                 app.Disp_CA0Field.Enable = 'on' ;
                 app.Disp_RTDStatusLabel.Visible = 'off' ;
+                app.Disp_RefreshButton.Visible = 'off' ;
             end
         end
 
@@ -2131,21 +2083,21 @@ classdef NonIdealReactorApp < handle
             legend(app.Disp_AxesXvsBo, 'X(Bo)', sprintf('Bo=%.4g', Bo_val), ...
                    'Location', 'best') ;
 
-            % ---- Plot 3: Comparison bar chart ----
+            % ---- Plot 3: Comparison bar chart (CSTR → Disp → PFR) ----
             cla(app.Disp_AxesComparison) ;
-            bar_data = [X_pfr ; X_disp ; X_cstr] ;
+            bar_data = [X_cstr ; X_disp ; X_pfr] ;
             b = bar(app.Disp_AxesComparison, bar_data) ;
             b.FaceColor = 'flat' ;
-            b.CData = [0.3 0.8 0.3 ; 0.3 0.6 0.9 ; 0.9 0.3 0.3] ;
+            b.CData = [0.9 0.3 0.3 ; 0.3 0.6 0.9 ; 0.3 0.8 0.3] ;
             set(app.Disp_AxesComparison, 'XTickLabel', ...
-                {'PFR (Bo->0)', sprintf('Disp (Bo=%.3g)', Bo_val), 'CSTR (Bo->inf)'}) ;
+                {'CSTR (Bo->inf)', sprintf('Disp (Bo=%.3g)', Bo_val), 'PFR (Bo->0)'}) ;
             ylabel(app.Disp_AxesComparison, 'Conversion X') ;
-            title(app.Disp_AxesComparison, 'PFR vs Dispersion vs CSTR') ;
+            title(app.Disp_AxesComparison, 'CSTR vs Dispersion vs PFR') ;
             ylim(app.Disp_AxesComparison, [0 1.12]) ;
 
             % Value labels
             hold(app.Disp_AxesComparison, 'on') ;
-            vals = [X_pfr, X_disp, X_cstr] ;
+            vals = [X_cstr, X_disp, X_pfr] ;
             for idx = 1:3
                 if vals(idx) > 0.85
                     ypos = vals(idx) - 0.06 ;
@@ -2384,17 +2336,20 @@ classdef NonIdealReactorApp < handle
             title(app.Conv_AxesInput, 'Input Signals') ;
             xlabel(app.Conv_AxesInput, 't [s]') ;
             ylabel(app.Conv_AxesInput, 'Concentration / E(t)') ;
+            grid(app.Conv_AxesInput, 'off') ;
 
             app.Conv_AxesResult = uiaxes(plotGrid) ;
             title(app.Conv_AxesResult, 'Result') ;
             xlabel(app.Conv_AxesResult, 't [s]') ;
             ylabel(app.Conv_AxesResult, 'C_{out}(t)') ;
+            grid(app.Conv_AxesResult, 'off') ;
 
             app.Conv_AxesRecovered = uiaxes(plotGrid) ;
             app.Conv_AxesRecovered.Layout.Column = [1 2] ;
             title(app.Conv_AxesRecovered, 'Verification') ;
             xlabel(app.Conv_AxesRecovered, 't [s]') ;
             ylabel(app.Conv_AxesRecovered, 'Amplitude') ;
+            grid(app.Conv_AxesRecovered, 'off') ;
         end
 
         %% ============== CONVOLUTION CALLBACKS ==============
@@ -2894,10 +2849,11 @@ classdef NonIdealReactorApp < handle
             % Row 7: k
             app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             app.Comb_kLabel.Layout.Row = 7 ; app.Comb_kLabel.Layout.Column = 1 ;
-            [app.Comb_kField, ~] = app.createNumericWithConv( ...
+            [app.Comb_kField, ~, btnCk] = app.createNumericWithConv( ...
                 leftGrid, 7, 2, 0.1, 'k_1stOrder', ...
                 'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
+            btnCk.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Comb_kField, app.getKCategory(app.Comb_KineticsDropdown)) ;
 
             % Row 8: CA0 (2nd order only)
             app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
@@ -2965,18 +2921,21 @@ classdef NonIdealReactorApp < handle
             title(app.Comb_AxesEt, 'E(t) - Combined Model') ;
             xlabel(app.Comb_AxesEt, 't [s]') ;
             ylabel(app.Comb_AxesEt, 'E(t) [1/s]') ;
+            grid(app.Comb_AxesEt, 'off') ;
 
             % Comparison bar chart
             app.Comb_AxesComparison = uiaxes(plotGrid) ;
             app.Comb_AxesComparison.Layout.Row = 2 ; app.Comb_AxesComparison.Layout.Column = 1 ;
             title(app.Comb_AxesComparison, 'Conversion Comparison') ;
             ylabel(app.Comb_AxesComparison, 'Conversion X') ;
+            grid(app.Comb_AxesComparison, 'off') ;
 
             % Sensitivity plot (new)
             app.Comb_AxesSensitivity = uiaxes(plotGrid) ;
             app.Comb_AxesSensitivity.Layout.Row = 2 ; app.Comb_AxesSensitivity.Layout.Column = 2 ;
             title(app.Comb_AxesSensitivity, 'Parameter Sensitivity') ;
             ylabel(app.Comb_AxesSensitivity, 'Conversion X') ;
+            grid(app.Comb_AxesSensitivity, 'off') ;
         end
 
         %% ============== COMBINED CALLBACKS ==============
@@ -3446,6 +3405,7 @@ classdef NonIdealReactorApp < handle
             title(app.Opt_AxesDataFit, 'Experimental Data vs Fitted Models') ;
             xlabel(app.Opt_AxesDataFit, 't [s]') ;
             ylabel(app.Opt_AxesDataFit, 'E(t) [1/s]') ;
+            grid(app.Opt_AxesDataFit, 'off') ;
 
             % Residuals
             app.Opt_AxesResiduals = uiaxes(plotGrid) ;
@@ -3454,6 +3414,7 @@ classdef NonIdealReactorApp < handle
             title(app.Opt_AxesResiduals, 'Residuals') ;
             xlabel(app.Opt_AxesResiduals, 't [s]') ;
             ylabel(app.Opt_AxesResiduals, 'E_{exp} - E_{mod} [1/s]') ;
+            grid(app.Opt_AxesResiduals, 'off') ;
 
             % R^2 comparison bar chart
             app.Opt_AxesComparison = uiaxes(plotGrid) ;
@@ -3461,6 +3422,7 @@ classdef NonIdealReactorApp < handle
             app.Opt_AxesComparison.Layout.Column = 2 ;
             title(app.Opt_AxesComparison, 'R² Comparison') ;
             ylabel(app.Opt_AxesComparison, 'R^2') ;
+            grid(app.Opt_AxesComparison, 'off') ;
         end
 
         %% ============== OPTIMIZATION CALLBACKS ==============
