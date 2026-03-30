@@ -317,18 +317,108 @@ classdef NonIdealReactorApp < handle
             app.StatusBar.Position = [0 0 w 22] ;
         end
 
-        %% ============== HELPER: NUMERIC FIELD + UNIT CONVERTER BUTTON ==============
+        %% ============== EXPRESSION-ENABLED FIELD HELPERS ==============
 
-        function [field, subGrid, btn] = createNumericWithConv(~, parentGrid, row, col, defaultVal, unitCat, varargin)
-            % createNumericWithConv  Create a numeric editfield with a tiny
-            %   button that opens the contextual unit converter.
+        function onExprChanged(~, src)
+            % onExprChanged  Evaluate a mathematical expression typed into
+            %   a text editfield and replace the display with the numeric
+            %   result.  If the expression is invalid or out of range, the
+            %   field reverts to its previous value.
+            expr = strtrim(src.Value) ;
+            ud = src.UserData ;
+            try
+                val = str2double(expr) ;
+                if isnan(val)
+                    val = str2num(expr) ; %#ok<ST2NM>
+                end
+                if isempty(val) || ~isscalar(val) || ~isfinite(val)
+                    error('NonIdealReactorApp:invalidExpr', 'Invalid.') ;
+                end
+                lim = ud.limits ;
+                if val < lim(1) || val > lim(2)
+                    error('NonIdealReactorApp:outOfRange', 'Out of range.') ;
+                end
+                ud.value = val ;
+                src.UserData = ud ;
+                src.Value = sprintf('%.6g', val) ;
+            catch
+                src.Value = sprintf('%.6g', ud.value) ;
+            end
+        end
+
+        function v = nval(~, field)
+            % nval  Return the numeric value stored in an expression-
+            %   enabled text editfield (reads from UserData).
+            ud = field.UserData ;
+            if isstruct(ud) && isfield(ud, 'value')
+                v = ud.value ;
+            else
+                v = str2double(field.Value) ;
+            end
+        end
+
+        function setFieldVal(~, field, val)
+            % setFieldVal  Programmatically set the numeric value of an
+            %   expression-enabled text editfield.
+            ud = field.UserData ;
+            if isstruct(ud) && isfield(ud, 'limits')
+                lim = ud.limits ;
+                val = max(lim(1), min(lim(2), val)) ;
+            end
+            if isstruct(ud)
+                ud.value = val ;
+                field.UserData = ud ;
+            else
+                field.UserData = struct('value', val, 'limits', [-Inf Inf]) ;
+            end
+            field.Value = sprintf('%.6g', val) ;
+        end
+
+        function field = createExprField(app, parent, defaultVal, limits, varargin)
+            % createExprField  Create a text editfield that accepts
+            %   mathematical expressions (e.g. 90/60, sqrt(2), 2*pi).
+            %   After the user confirms the input the expression is
+            %   evaluated and replaced by the numeric result.
+            field = uieditfield(parent, 'text', ...
+                'Value', sprintf('%.6g', defaultVal), varargin{:}) ;
+            field.UserData = struct('value', defaultVal, 'limits', limits) ;
+            field.ValueChangedFcn = @(src,~) app.onExprChanged(src) ;
+        end
+
+        %% ============== HELPER: EXPRESSION FIELD + UNIT CONVERTER BUTTON ==============
+
+        function [field, subGrid, btn] = createNumericWithConv(app, parentGrid, row, col, defaultVal, unitCat, varargin)
+            % createNumericWithConv  Create an expression-enabled text
+            %   editfield with a tiny button that opens the contextual unit
+            %   converter.
             %
             %   [field, subGrid, btn] = app.createNumericWithConv(parentGrid, row, col, defaultVal, unitCat, ...)
             %
-            %   Extra name-value pairs (e.g. 'Limits', [0 Inf]) are forwarded
-            %   to the uieditfield constructor.  The third output (btn) allows
-            %   the caller to override the ButtonPushedFcn (e.g. for dynamic
-            %   unit categories).
+            %   Recognised name-value pairs: 'Limits', 'Tooltip'.
+            %   The third output (btn) allows the caller to override the
+            %   ButtonPushedFcn (e.g. for dynamic unit categories).
+
+            % --- Parse Limits and Tooltip from varargin ---
+            limits = [-Inf Inf] ;
+            tooltip = '' ;
+            keep = true(size(varargin)) ;
+            idx = 1 ;
+            while idx <= length(varargin)
+                if ischar(varargin{idx}) || isstring(varargin{idx})
+                    key = lower(char(varargin{idx})) ;
+                    if strcmp(key, 'limits') && idx < length(varargin)
+                        limits = varargin{idx+1} ;
+                        keep(idx:idx+1) = false ;
+                        idx = idx + 2 ; continue ;
+                    elseif strcmp(key, 'tooltip') && idx < length(varargin)
+                        tooltip = varargin{idx+1} ;
+                        keep(idx:idx+1) = false ;
+                        idx = idx + 2 ; continue ;
+                    end
+                end
+                idx = idx + 1 ;
+            end
+            extraArgs = varargin(keep) ;
 
             subGrid = uigridlayout(parentGrid, [1 2], ...
                 'ColumnWidth', {'1x', 24}, ...
@@ -337,9 +427,12 @@ classdef NonIdealReactorApp < handle
             subGrid.Layout.Row    = row ;
             subGrid.Layout.Column = col ;
 
-            field = uieditfield(subGrid, 'numeric', ...
-                'Value', defaultVal, varargin{:}) ;
+            field = uieditfield(subGrid, 'text', ...
+                'Value', sprintf('%.6g', defaultVal), ...
+                'Tooltip', tooltip, extraArgs{:}) ;
+            field.UserData = struct('value', defaultVal, 'limits', limits) ;
             field.Layout.Row = 1 ; field.Layout.Column = 1 ;
+            field.ValueChangedFcn = @(src,~) app.onExprChanged(src) ;
 
             btn = uibutton(subGrid, 'push', ...
                 'Text', '', ...
@@ -440,8 +533,7 @@ classdef NonIdealReactorApp < handle
             % Row 4: N field (for Tanks-in-Series) — shares row with Bo
             app.RTD_NLabel = uilabel(leftGrid, 'Text', 'N [tanks]:') ;
             app.RTD_NLabel.Layout.Row = 4 ; app.RTD_NLabel.Layout.Column = 1 ;
-            app.RTD_NField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 3, 'Limits', [0.1 Inf]) ;
+            app.RTD_NField = app.createExprField(leftGrid, 3, [0.1 Inf]) ;
             app.RTD_NField.Layout.Row = 4 ; app.RTD_NField.Layout.Column = 2 ;
             app.RTD_NLabel.Visible = 'off' ;
             app.RTD_NField.Visible = 'off' ;
@@ -449,8 +541,7 @@ classdef NonIdealReactorApp < handle
             % Row 4: Bo field (for Dispersion) — overlaps with N (only one visible)
             app.RTD_BoLabel = uilabel(leftGrid, 'Text', 'Bo [D<sub>e</sub>/uL]:', 'Interpreter', 'html') ;
             app.RTD_BoLabel.Layout.Row = 4 ; app.RTD_BoLabel.Layout.Column = 1 ;
-            app.RTD_BoField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.01, 'Limits', [1e-6 Inf], ...
+            app.RTD_BoField = app.createExprField(leftGrid, 0.01, [1e-6 Inf], ...
                 'Tooltip', 'Dispersion number Bo = De/(u·L). Bo→0: plug flow, Bo→∞: perfect mixing.') ;
             app.RTD_BoField.Layout.Row = 4 ; app.RTD_BoField.Layout.Column = 2 ;
             app.RTD_BoLabel.Visible = 'off' ;
@@ -530,8 +621,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_EqNptsLabel = uilabel(leftGrid, 'Text', 'N points:') ;
             app.RTD_EqNptsLabel.Layout.Row = 7 ; app.RTD_EqNptsLabel.Layout.Column = 1 ;
             app.RTD_EqNptsLabel.Visible = 'off' ;
-            app.RTD_EqNptsField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 500, 'Limits', [10 10000]) ;
+            app.RTD_EqNptsField = app.createExprField(leftGrid, 500, [10 10000]) ;
             app.RTD_EqNptsField.Layout.Row = 7 ; app.RTD_EqNptsField.Layout.Column = 2 ;
             app.RTD_EqNptsField.Visible = 'off' ;
 
@@ -724,7 +814,7 @@ classdef NonIdealReactorApp < handle
             try
                 app.updateStatus('Generating RTD...') ;
                 source = app.RTD_SourceDropdown.Value ;
-                tau_val = app.RTD_TauField.Value ;
+                tau_val = app.nval(app.RTD_TauField) ;
 
                 switch source
                     case 'Ideal CSTR'
@@ -734,19 +824,19 @@ classdef NonIdealReactorApp < handle
                         app.rtd = RTD.ideal_pfr(tau_val) ;
 
                     case 'Tanks-in-Series'
-                        n = app.RTD_NField.Value ;
+                        n = app.nval(app.RTD_NField) ;
                         app.rtd = RTD.tanks_in_series(n, tau_val) ;
 
                     case 'Dispersion (open)'
-                        Bo = app.RTD_BoField.Value ;
+                        Bo = app.nval(app.RTD_BoField) ;
                         app.rtd = RTD.dispersion_open(Bo, tau_val) ;
 
                     case 'Dispersion (closed)'
-                        Bo = app.RTD_BoField.Value ;
+                        Bo = app.nval(app.RTD_BoField) ;
                         app.rtd = RTD.dispersion_closed(Bo, tau_val) ;
 
                     case 'Laminar Flow'
-                        tau_val = app.RTD_TauField.Value ;
+                        tau_val = app.nval(app.RTD_TauField) ;
                         app.rtd = RTD.laminar_flow(tau_val) ;
 
                     case 'Experimental Pulse'
@@ -1008,8 +1098,7 @@ classdef NonIdealReactorApp < handle
             app.Pred_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
             kSubGrid = uigridlayout(leftGrid, [1 2], ...
                 'ColumnWidth', {'1x', 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 2) ;
-            app.Pred_kField = uieditfield(kSubGrid, 'numeric', ...
-                'Value', 0.1, 'Limits', [0 Inf], ...
+            app.Pred_kField = app.createExprField(kSubGrid, 0.1, [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
             app.Pred_kField.Layout.Row = 1 ; app.Pred_kField.Layout.Column = 1 ;
             btnK = uibutton(kSubGrid, 'push', 'Text', '', 'Icon', 'UnitsLogo.png', ...
@@ -1021,8 +1110,7 @@ classdef NonIdealReactorApp < handle
             app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
             ca0SubGrid = uigridlayout(leftGrid, [1 2], ...
                 'ColumnWidth', {'1x', 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 2) ;
-            app.Pred_CA0Field = uieditfield(ca0SubGrid, 'numeric', ...
-                'Value', 1000, 'Limits', [0.001 Inf], ...
+            app.Pred_CA0Field = app.createExprField(ca0SubGrid, 1000, [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
             app.Pred_CA0Field.Layout.Row = 1 ; app.Pred_CA0Field.Layout.Column = 1 ;
             btnCA0 = uibutton(ca0SubGrid, 'push', 'Text', '', 'Icon', 'UnitsLogo.png', ...
@@ -1056,12 +1144,14 @@ classdef NonIdealReactorApp < handle
 
             app.Pred_n1Label = uilabel(leftGrid, 'Text', 'n<sub>1</sub> [order]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_n1Label.Layout.Row = 8 ; app.Pred_n1Label.Layout.Column = 1 ;
-            app.Pred_n1Field = uieditfield(leftGrid, 'numeric', 'Value', 2, 'Visible', 'off') ;
+            app.Pred_n1Field = app.createExprField(leftGrid, 2, [0 Inf]) ;
+            app.Pred_n1Field.Visible = 'off' ;
             app.Pred_n1Field.Layout.Row = 8 ; app.Pred_n1Field.Layout.Column = 2 ;
 
             app.Pred_n2Label = uilabel(leftGrid, 'Text', 'n<sub>2</sub> [order]:', 'Interpreter', 'html', 'Visible', 'off') ;
             app.Pred_n2Label.Layout.Row = 9 ; app.Pred_n2Label.Layout.Column = 1 ;
-            app.Pred_n2Field = uieditfield(leftGrid, 'numeric', 'Value', 1, 'Visible', 'off') ;
+            app.Pred_n2Field = app.createExprField(leftGrid, 1, [0 Inf]) ;
+            app.Pred_n2Field.Visible = 'off' ;
             app.Pred_n2Field.Layout.Row = 9 ; app.Pred_n2Field.Layout.Column = 2 ;
 
             % --- Custom rate law ---
@@ -1361,8 +1451,7 @@ classdef NonIdealReactorApp < handle
             % Row 2: N tanks
             app.TIS_NLabel = uilabel(leftGrid, 'Text', 'N [tanks]:') ;
             app.TIS_NLabel.Layout.Row = 2 ; app.TIS_NLabel.Layout.Column = 1 ;
-            app.TIS_NField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 3, 'Limits', [0.1 Inf], ...
+            app.TIS_NField = app.createExprField(leftGrid, 3, [0.1 Inf], ...
                 'Tooltip', 'Number of tanks in series. N=1: CSTR, N→∞: PFR. Can be non-integer for RTD.') ;
             app.TIS_NField.Layout.Row = 2 ; app.TIS_NField.Layout.Column = 2 ;
 
@@ -1751,10 +1840,10 @@ classdef NonIdealReactorApp < handle
             app.Disp_BoLabel = uilabel(leftGrid, 'Text', 'Bo [= D<sub>e</sub>/uL]:', 'Interpreter', 'html') ;
             app.Disp_BoLabel.Layout.Row = 3 ; app.Disp_BoLabel.Layout.Column = 1 ;
             app.Disp_BoLabel.FontWeight = 'bold' ;
-            app.Disp_BoField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.025, 'Limits', [1e-6 100], ...
-                'ValueChangedFcn', @(~,~) app.Disp_updatePe(), ...
+            app.Disp_BoField = app.createExprField(leftGrid, 0.025, [1e-6 100], ...
                 'Tooltip', 'Dispersion number Bo = De/(u·L). Bo→0: plug flow (PFR), Bo→∞: perfect mixing (CSTR).') ;
+            app.Disp_BoField.ValueChangedFcn = @(src,~) cellfun(@(f)f(), ...
+                {@() app.onExprChanged(src), @() app.Disp_updatePe()}) ;
             app.Disp_BoField.Layout.Row = 3 ; app.Disp_BoField.Layout.Column = 2 ;
 
             % Row 4: Pe display (read-only)
@@ -2208,8 +2297,8 @@ classdef NonIdealReactorApp < handle
             app.Conv_NptsLabel = uilabel(leftGrid, ...
                 'Text', 'N points:', 'Visible', 'off') ;
             app.Conv_NptsLabel.Layout.Row = 7 ; app.Conv_NptsLabel.Layout.Column = 1 ;
-            app.Conv_NptsField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 200, 'Limits', [10 100000], 'Visible', 'off') ;
+            app.Conv_NptsField = app.createExprField(leftGrid, 200, [10 100000]) ;
+            app.Conv_NptsField.Visible = 'off' ;
             app.Conv_NptsField.Layout.Row = 7 ; app.Conv_NptsField.Layout.Column = 2 ;
 
             % ---- Equation fields (rows 8-11, hidden by default) ----
@@ -2251,10 +2340,9 @@ classdef NonIdealReactorApp < handle
                 'Tooltip', 'Number of points to reconstruct E(t). Typically 30-100.', ...
                 'Visible', 'off') ;
             app.Conv_nELabel.Layout.Row = 12 ; app.Conv_nELabel.Layout.Column = 1 ;
-            app.Conv_nEField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 50, 'Limits', [2 10000], ...
-                'Tooltip', 'More points = higher resolution but slower', ...
-                'Visible', 'off') ;
+            app.Conv_nEField = app.createExprField(leftGrid, 50, [2 10000], ...
+                'Tooltip', 'More points = higher resolution but slower') ;
+            app.Conv_nEField.Visible = 'off' ;
             app.Conv_nEField.Layout.Row = 12 ; app.Conv_nEField.Layout.Column = 2 ;
 
             % Row 13: Import from file button (File mode only)
@@ -2819,8 +2907,7 @@ classdef NonIdealReactorApp < handle
                 'Interpreter', 'html', ...
                 'Tooltip', 'Fraction of reactor volume that is well-mixed (0 < alpha <= 1). The rest is dead volume with no flow.') ;
             app.Comb_Param1Label.Layout.Row = 4 ; app.Comb_Param1Label.Layout.Column = 1 ;
-            app.Comb_Param1Field = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.8, 'Limits', [0.01 1]) ;
+            app.Comb_Param1Field = app.createExprField(leftGrid, 0.8, [0.01 1]) ;
             app.Comb_Param1Field.Layout.Row = 4 ; app.Comb_Param1Field.Layout.Column = 2 ;
 
             % Row 5: Parameter 2 (hidden for 1-param models)
@@ -2830,8 +2917,7 @@ classdef NonIdealReactorApp < handle
                 'Tooltip', 'Fraction of flow that bypasses directly without reacting (0 <= beta < 1).') ;
             app.Comb_Param2Label.Layout.Row = 5 ; app.Comb_Param2Label.Layout.Column = 1 ;
             app.Comb_Param2Label.Visible = 'off' ;
-            app.Comb_Param2Field = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.1, 'Limits', [0 0.99]) ;
+            app.Comb_Param2Field = app.createExprField(leftGrid, 0.1, [0 0.99]) ;
             app.Comb_Param2Field.Layout.Row = 5 ; app.Comb_Param2Field.Layout.Column = 2 ;
             app.Comb_Param2Field.Visible = 'off' ;
 
