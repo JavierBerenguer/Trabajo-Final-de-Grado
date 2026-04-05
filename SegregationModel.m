@@ -159,6 +159,76 @@ classdef SegregationModel
             end
         end
 
+        %% ============== GENERAL ISOTHERMAL (from ReactionSys) ==============
+
+        function obj = compute_isothermal(obj, RS, C0)
+            % Compute mean conversion using a general ReactionSys object
+            % under isothermal conditions.
+            %
+            %   X_bar = integral( X_batch(t) * E(t) dt )
+            %
+            % The batch ODE is:  dC/dt = r(C) * stoich
+            % No energy or pressure balance — pure isothermal.
+            %
+            % Inputs (set via properties or arguments):
+            %   RS  - ReactionSys object (any kinetics)
+            %   C0  - Initial concentration vector [1 x nComponents]
+            %
+            % The key component for conversion is obj.keyComponentIndex (default: 1).
+
+            if isempty(obj.rtd)
+                error('RTD must be set before computing') ;
+            end
+
+            t_rtd = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+            stoich = RS.stochiometricMatrix ;
+            nComp = length(C0) ;
+            T = 298.15 ;  % isothermal — Ea=0 so T value is irrelevant
+            idx_key = obj.keyComponentIndex ;
+
+            % Solve batch ODE
+            odeOpts = odeset('NonNegative', 1:nComp, 'RelTol', 1e-8) ;
+            [t_ode, C_ode] = ode45(@(t, C) batch_ode(C), ...
+                [0, max(t_rtd)], C0(:), odeOpts) ;
+
+            % Conversion of key component
+            C_key_vs_t = C_ode(:, idx_key) ;
+            X_vs_t = (C0(idx_key) - C_key_vs_t) / C0(idx_key) ;
+
+            % Interpolate at RTD time points (ensure row vector like Et)
+            obj.X_batch = interp1(t_ode, X_vs_t, t_rtd, 'pchip', 0) ;
+            obj.X_batch = obj.X_batch(:)' ;  % force row [1 x N]
+
+            % Store concentration profiles
+            obj.C_batch = interp1(t_ode, C_ode, t_rtd, 'pchip') ;
+
+            % Integrate
+            obj.integrand = obj.X_batch .* Et ;
+            obj.X_mean = trapz(t_rtd, obj.integrand) ;
+
+            % Selectivity and yield for multi-component systems
+            if nComp >= 3
+                CB_t = obj.C_batch(:, 2)' ;
+                CC_t = obj.C_batch(:, 3)' ;
+                CB_mean = trapz(t_rtd, CB_t .* Et) ;
+                CC_mean = trapz(t_rtd, CC_t .* Et) ;
+                if (CB_mean + CC_mean) > 0
+                    obj.selectivity_B = CB_mean / (CB_mean + CC_mean) ;
+                end
+                CA_mean = trapz(t_rtd, obj.C_batch(:, 1)' .* Et) ;
+                if (C0(1) - CA_mean) > 0
+                    obj.yield_B = CB_mean / (C0(1) - CA_mean) ;
+                end
+            end
+
+            function dCdt = batch_ode(C)
+                RS_temp = RS.computeRate(C(:)', T) ;
+                r = RS_temp.r_i ;
+                dCdt = (r * stoich)' ;
+            end
+        end
+
         %% ============== ANALYTICAL FIRST-ORDER ==============
 
         function obj = compute_firstOrder(obj, k)

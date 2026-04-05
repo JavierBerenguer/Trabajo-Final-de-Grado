@@ -110,12 +110,13 @@ classdef MaxMixednessModel
 
             % ODE: dX/d(lambda) = rA(X)/CA0 + E(lambda)/(1-F(lambda)) * X
             % Integrate from lambda_max to 0 (backwards)
-            options = odeset('RelTol', 1e-10, 'AbsTol', 1e-12, ...
-                            'NonNegative', 1) ;
+            % Note: do NOT use NonNegative — it blocks backward integration
+            options = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
 
             [lambda_sol, X_sol] = ode45(@ode_maxmix, ...
                                         [lambda_max, 0], 0, options) ;
 
+            X_sol = max(min(X_sol, 1), 0) ;
             obj.lambda_profile = flip(lambda_sol') ;
             obj.X_profile = flip(X_sol') ;
             obj.X_exit = X_sol(end) ;
@@ -157,6 +158,100 @@ classdef MaxMixednessModel
                 % which makes dX/dlambda negative, meaning X increases
                 % as we go from large lambda to 0
                 dXdlambda = rA / CA0 + (E_val / denominator) * X ;
+            end
+        end
+
+        %% ============== GENERAL ISOTHERMAL (from ReactionSys) ==============
+
+        function obj = compute_isothermal(obj, RS, C0)
+            % Compute exit conversion using a general ReactionSys object
+            % under isothermal conditions.
+            %
+            % ODE (in X space for key component):
+            %   dX/d(lambda) = rA(C)/CA0 + E(lambda)/(1-F(lambda)) * X
+            %
+            % For multi-component systems, all concentrations are tracked
+            % as functions of life expectancy lambda.
+            %
+            % Inputs:
+            %   RS  - ReactionSys object (any kinetics)
+            %   C0  - Initial concentration vector [1 x nComponents]
+
+            if isempty(obj.rtd)
+                error('RTD must be set before computing') ;
+            end
+
+            t_rtd = obj.rtd.t ;
+            Et = obj.rtd.Et ;
+            Ft = obj.rtd.Ft ;
+            stoich = RS.stochiometricMatrix ;
+            nComp = length(C0) ;
+            T = 298.15 ;
+            idx_key = obj.keyComponentIndex ;
+            CA0 = C0(idx_key) ;
+
+            E_interp = griddedInterpolant(t_rtd, Et, 'pchip', 'nearest') ;
+            F_interp = griddedInterpolant(t_rtd, Ft, 'pchip', 'nearest') ;
+
+            % Integration limits
+            valid_idx = find((1 - Ft) > 1e-6, 1, 'last') ;
+            if isempty(valid_idx)
+                lambda_max = max(t_rtd) * 0.95 ;
+            else
+                lambda_max = t_rtd(valid_idx) ;
+            end
+
+            % Note: do NOT use NonNegative here. The ODE is integrated
+            % backwards (lambda_max → 0), so dX/dλ < 0 is correct
+            % (X increases as λ decreases). NonNegative would clamp
+            % dX/dλ to 0 at X=0, preventing any conversion.
+            options = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
+
+            if nComp == 1
+                % Single component: standard X formulation
+                [lambda_sol, X_sol] = ode45(@ode_single, ...
+                    [lambda_max, 0], 0, options) ;
+            else
+                % Multi-component: solve in X space, reconstruct C from X
+                [lambda_sol, X_sol] = ode45(@ode_multi, ...
+                    [lambda_max, 0], 0, options) ;
+            end
+
+            % Clamp to physical range [0, 1]
+            X_sol = max(min(X_sol, 1), 0) ;
+
+            obj.lambda_profile = flip(lambda_sol') ;
+            obj.X_profile = flip(X_sol') ;
+            obj.X_exit = X_sol(end) ;
+
+            function dXdlambda = ode_single(lambda, X)
+                E_val = E_interp(lambda) ;
+                F_val = F_interp(lambda) ;
+                denom = max(1 - F_val, 1e-12) ;
+
+                CA = CA0 * (1 - X) ;
+                RS_local = RS.computeRate(CA, T) ;
+                nu_key = stoich(:, idx_key) ;
+                rA = RS_local.r_i * nu_key ;
+
+                dXdlambda = rA / CA0 + (E_val / denom) * X ;
+            end
+
+            function dXdlambda = ode_multi(lambda, X)
+                E_val = E_interp(lambda) ;
+                F_val = F_interp(lambda) ;
+                denom = max(1 - F_val, 1e-12) ;
+
+                % Reconstruct concentrations from X (key component)
+                % Approximate: track only key component conversion
+                C = C0 ;
+                C(idx_key) = CA0 * (1 - X) ;
+
+                RS_local = RS.computeRate(C, T) ;
+                nu_key = stoich(:, idx_key) ;
+                rA = RS_local.r_i * nu_key ;
+
+                dXdlambda = rA / CA0 + (E_val / denom) * X ;
             end
         end
 
@@ -446,7 +541,7 @@ classdef MaxMixednessModel
                 F_val = F_interp(lam) ;
                 denom = max(1 - F_val, 1e-12) ;
                 CA = CA0 * max(1 - X, 0) ;
-                dXdl = rate_func(CA) / CA0 + (E_val / denom) * X ;
+                dXdl = -rate_func(CA) / CA0 + (E_val / denom) * X ;
             end
         end
 

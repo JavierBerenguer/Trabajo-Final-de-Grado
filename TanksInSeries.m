@@ -214,4 +214,87 @@ classdef TanksInSeries < Reactor
         end
 
     end
+
+    methods (Static)
+
+        function [C_out, X] = solve_sequential(N, RS, C0, tau_total)
+            %% solve_sequential - General sequential CSTR solver
+            % Solves N equal-sized CSTRs in series for ANY kinetics
+            % defined in a ReactionSys object.
+            %
+            % Each tank balance (isothermal, constant density):
+            %   C_out - C_in - tau_i * r(C_out) * stoich = 0
+            %
+            % Inputs:
+            %   N         - Number of tanks (rounded to integer)
+            %   RS        - ReactionSys object (from fromSimpleKinetics or manual)
+            %   C0        - Initial concentration vector [1 x nComponents]
+            %   tau_total - Total mean residence time [s]
+            %
+            % Outputs:
+            %   C_out - Outlet concentration vector [1 x nComponents]
+            %   X     - Conversion of first component: X = 1 - C_out(1)/C0(1)
+
+            N_int = round(N) ;
+            if N_int < 1, N_int = 1 ; end
+            tau_i = tau_total / N_int ;
+            T = 298.15 ;  % isothermal — Ea=0 so T is irrelevant
+            stoich = RS.stochiometricMatrix ;
+            nComp = length(C0) ;
+
+            C_in = C0 ;
+            opts = optimoptions('fsolve', 'Display', 'off', ...
+                'FunctionTolerance', 1e-12, 'OptimalityTolerance', 1e-12) ;
+
+            for i = 1:N_int
+                residual = @(Cout) TanksInSeries.cstr_balance( ...
+                    Cout, C_in, tau_i, RS, T, stoich) ;
+                [C_out, ~, exitflag] = fsolve(residual, C_in, opts) ;
+                C_out = max(C_out, 0) ;
+                C_in = C_out ;
+            end
+
+            X = 1 - C_out(1) / C0(1) ;
+        end
+
+        function [C_out, X] = solve_PFR(RS, C0, tau_total)
+            %% solve_PFR - PFR reference via ODE integration
+            % Solves dC/dtau = r(C) * stoich for the plug flow reactor.
+            %
+            % Inputs:
+            %   RS        - ReactionSys object
+            %   C0        - Initial concentration vector [1 x nComponents]
+            %   tau_total - Total mean residence time [s]
+            %
+            % Outputs:
+            %   C_out - Outlet concentration vector [1 x nComponents]
+            %   X     - Conversion of first component
+
+            T = 298.15 ;
+            stoich = RS.stochiometricMatrix ;
+            nComp = length(C0) ;
+
+            odefun = @(t, C) TanksInSeries.pfr_ode(C, RS, T, stoich) ;
+            odeOpts = odeset('NonNegative', 1:nComp, 'RelTol', 1e-8) ;
+            [~, C] = ode45(odefun, [0 tau_total], C0(:), odeOpts) ;
+
+            C_out = C(end, :) ;
+            X = 1 - C_out(1) / C0(1) ;
+        end
+
+        function F = cstr_balance(C_out, C_in, tau_i, RS, T, stoich)
+            % Residual for CSTR mass balance: F = 0 at steady state
+            RS_temp = RS.computeRate(C_out, T) ;
+            r = RS_temp.r_i ;
+            F = C_out - C_in - tau_i * r * stoich ;
+        end
+
+        function dCdt = pfr_ode(C, RS, T, stoich)
+            % ODE right-hand side for PFR: dC/dtau = r * stoich
+            RS_temp = RS.computeRate(C(:)', T) ;
+            r = RS_temp.r_i ;
+            dCdt = (r * stoich)' ;
+        end
+
+    end
 end
