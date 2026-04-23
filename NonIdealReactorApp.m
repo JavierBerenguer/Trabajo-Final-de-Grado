@@ -76,7 +76,8 @@ classdef NonIdealReactorApp < handle
         Pred_CA0Field
         Pred_CA0Label
         Pred_RSNameField        % Name of ReactionSys in workspace
-        Pred_RSDefineButton     % Launches defineReactionSysApp
+        Pred_RSDefineButton     % Launches defineReactionSysApp (new)
+        Pred_RSEditButton       % Launches defineReactionSysApp with loaded RS
         Pred_RSLoadButton       % Loads RS from workspace
         Pred_RSStatusLabel      % Shows loaded RS info
         Pred_RS                 % Loaded ReactionSys object
@@ -104,7 +105,8 @@ classdef NonIdealReactorApp < handle
         TIS_CA0Field
         TIS_CA0Label
         TIS_RSNameField         % Name of ReactionSys in workspace
-        TIS_RSDefineButton      % Launches defineReactionSysApp
+        TIS_RSDefineButton      % Launches defineReactionSysApp (new)
+        TIS_RSEditButton        % Launches defineReactionSysApp with loaded RS
         TIS_RSLoadButton        % Loads RS from workspace
         TIS_RSStatusLabel       % Shows loaded RS info
         TIS_RS                  % Loaded ReactionSys object
@@ -129,10 +131,12 @@ classdef NonIdealReactorApp < handle
         Disp_BCLabel
         Disp_tauField
         Disp_tauLabel
-        Disp_KineticsDropdown
-        Disp_KineticsLabel
-        Disp_kField
-        Disp_kLabel
+        Disp_RSDefineButton     % Launches defineReactionSysApp (new)
+        Disp_RSEditButton       % Launches defineReactionSysApp with loaded RS
+        Disp_RSNameField        % Name of ReactionSys in workspace
+        Disp_RSLoadButton       % Loads RS from workspace
+        Disp_RSStatusLabel      % Shows loaded RS info
+        Disp_RS                 % Loaded ReactionSys object
         Disp_CA0Field
         Disp_CA0Label
         Disp_ComputeButton
@@ -1139,14 +1143,23 @@ classdef NonIdealReactorApp < handle
             lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 3: Define RS button
+            % Row 3: New RS + Edit RS buttons
             app.Pred_RSDefineButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Define Reaction System', ...
+                'Text', 'New RS', ...
                 'BackgroundColor', [0.85 0.90 1.0], ...
-                'Tooltip', 'Open the Reaction System definition window (stoichiometry, kinetics, thermodynamics)', ...
+                'Tooltip', 'Create a new Reaction System from scratch', ...
                 'ButtonPushedFcn', @(~,~) defineReactionSysApp()) ;
             app.Pred_RSDefineButton.Layout.Row = 3 ;
-            app.Pred_RSDefineButton.Layout.Column = [1 2] ;
+            app.Pred_RSDefineButton.Layout.Column = 1 ;
+
+            app.Pred_RSEditButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Edit RS', ...
+                'BackgroundColor', [1.0 0.95 0.80], ...
+                'Tooltip', 'Edit the currently loaded Reaction System', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.Pred_editRS()) ;
+            app.Pred_RSEditButton.Layout.Row = 3 ;
+            app.Pred_RSEditButton.Layout.Column = 2 ;
 
             % Row 4: RS name field + Load button
             app.Pred_RSNameField = uieditfield(leftGrid, 'text', ...
@@ -1258,10 +1271,22 @@ classdef NonIdealReactorApp < handle
                 nC = RS.nComponents ;
                 app.Pred_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', nR, nC) ;
                 app.Pred_RSStatusLabel.FontColor = [0 0.5 0] ;
+                app.Pred_RSEditButton.Enable = 'on' ;
             catch ME
                 app.Pred_RSStatusLabel.Text = ME.message ;
                 app.Pred_RSStatusLabel.FontColor = [0.8 0 0] ;
             end
+        end
+
+        function Pred_editRS(app)
+            % Open defineReactionSysApp pre-loaded with the current RS
+            if isempty(app.Pred_RS)
+                uialert(app.UIFigure, ...
+                    'No Reaction System loaded to edit.', 'Nothing to Edit') ;
+                return
+            end
+            rsName = app.Pred_RSNameField.Value ;
+            defineReactionSysApp(app.Pred_RS, rsName) ;
         end
 
         function Pred_compute(app)
@@ -1453,12 +1478,21 @@ classdef NonIdealReactorApp < handle
 
             % Row 6: Define RS button + Load from workspace
             app.TIS_RSDefineButton = uibutton(leftGrid, 'push', ...
-                'Text', 'Define Reaction System', ...
+                'Text', 'New RS', ...
                 'BackgroundColor', [0.85 0.90 1.0], ...
-                'Tooltip', 'Open the Reaction System definition window (stoichiometry, kinetics, thermodynamics)', ...
+                'Tooltip', 'Create a new Reaction System from scratch', ...
                 'ButtonPushedFcn', @(~,~) defineReactionSysApp()) ;
             app.TIS_RSDefineButton.Layout.Row = 6 ;
-            app.TIS_RSDefineButton.Layout.Column = [1 2] ;
+            app.TIS_RSDefineButton.Layout.Column = 1 ;
+
+            app.TIS_RSEditButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Edit RS', ...
+                'BackgroundColor', [1.0 0.95 0.80], ...
+                'Tooltip', 'Edit the currently loaded Reaction System', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.TIS_editRS()) ;
+            app.TIS_RSEditButton.Layout.Row = 6 ;
+            app.TIS_RSEditButton.Layout.Column = 2 ;
 
             % Row 7: RS name field + Load button
             app.TIS_RSNameField = uieditfield(leftGrid, 'text', ...
@@ -1561,17 +1595,44 @@ classdef NonIdealReactorApp < handle
                 app.TIS_RTDStatusLabel.Visible = 'on' ;
                 app.TIS_RefreshButton.Visible = 'on' ;
 
+                infoLines = {} ;
+
                 if ~isempty(app.rtd) && app.rtd.sigma2 > 0
                     N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
                     app.TIS_NField.Value = N_from_rtd ;
                     app.TIS_tauField.Value = app.rtd.tau ;
-                    app.TIS_RTDStatusLabel.Text = sprintf('RTD: tau=%.2f, N=%.2f', ...
+                    infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
                         app.rtd.tau, N_from_rtd) ;
-                    app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
                 else
-                    app.TIS_RTDStatusLabel.Text = 'RTD: not loaded (generate in Tab 1)' ;
-                    app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                    infoLines{end+1} = 'RTD: not loaded' ;
                 end
+
+                % Import RS from Prediction Models tab (if loaded)
+                if ~isempty(app.Pred_RS)
+                    app.TIS_RS = app.Pred_RS ;
+                    app.TIS_RSNameField.Value = app.Pred_RSNameField.Value ;
+                    nR = app.Pred_RS.nReactions ;
+                    nC = app.Pred_RS.nComponents ;
+                    app.TIS_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', nR, nC) ;
+                    app.TIS_RSStatusLabel.FontColor = [0 0.5 0] ;
+                    app.TIS_RSEditButton.Enable = 'on' ;
+                    infoLines{end+1} = sprintf('RS: %s', app.Pred_RSNameField.Value) ;
+                else
+                    infoLines{end+1} = 'RS: not loaded' ;
+                end
+
+                % Import CA0 from Prediction Models tab
+                if ~isempty(app.Pred_CA0Field)
+                    app.TIS_CA0Field.Value = app.Pred_CA0Field.Value ;
+                    infoLines{end+1} = sprintf('CA0=%.4g', app.Pred_CA0Field.Value) ;
+                end
+
+                if any(contains(infoLines, 'not loaded'))
+                    app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                else
+                    app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
+                end
+                app.TIS_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
             else
                 app.TIS_NField.Enable = 'on' ;
                 app.TIS_tauField.Enable = 'on' ;
@@ -1593,10 +1654,22 @@ classdef NonIdealReactorApp < handle
                 nC = RS.nComponents ;
                 app.TIS_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', nR, nC) ;
                 app.TIS_RSStatusLabel.FontColor = [0 0.5 0] ;
+                app.TIS_RSEditButton.Enable = 'on' ;
             catch ME
                 app.TIS_RSStatusLabel.Text = ME.message ;
                 app.TIS_RSStatusLabel.FontColor = [0.8 0 0] ;
             end
+        end
+
+        function TIS_editRS(app)
+            % Open defineReactionSysApp pre-loaded with the current RS
+            if isempty(app.TIS_RS)
+                uialert(app.UIFigure, ...
+                    'No Reaction System loaded to edit.', 'Nothing to Edit') ;
+                return
+            end
+            rsName = app.TIS_RSNameField.Value ;
+            defineReactionSysApp(app.TIS_RS, rsName) ;
         end
 
         function TIS_compute(app)
@@ -1796,76 +1869,93 @@ classdef NonIdealReactorApp < handle
                 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Mean residence time: tau = V/Q = L/u.') ;
 
-            % Row 7: Kinetics
-            app.Disp_KineticsLabel = uilabel(leftGrid, 'Text', 'Kinetics:') ;
-            app.Disp_KineticsLabel.Layout.Row = 7 ; app.Disp_KineticsLabel.Layout.Column = 1 ;
-            app.Disp_KineticsLabel.FontWeight = 'bold' ;
-            app.Disp_KineticsDropdown = uidropdown(leftGrid, ...
-                'Items', {'1st Order (-rA = k*CA)', ...
-                          '2nd Order (-rA = k*CA^2)'}, ...
-                'Value', '1st Order (-rA = k*CA)', ...
-                'ValueChangedFcn', @(~,~) app.Disp_kineticsChanged()) ;
-            app.Disp_KineticsDropdown.Layout.Row = 7 ;
-            app.Disp_KineticsDropdown.Layout.Column = 2 ;
+            % Row 7: Reaction System header
+            lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 7 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 8: k
-            app.Disp_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
-            app.Disp_kLabel.Layout.Row = 8 ; app.Disp_kLabel.Layout.Column = 1 ;
-            [app.Disp_kField, ~, btnDk] = app.createNumericWithConv( ...
-                leftGrid, 8, 2, 0.1, 'k_1stOrder', ...
-                'Limits', [0 Inf], ...
-                'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
-            btnDk.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Disp_kField, app.getKCategory(app.Disp_KineticsDropdown)) ;
+            % Row 8: New RS + Edit RS buttons
+            app.Disp_RSDefineButton = uibutton(leftGrid, 'push', ...
+                'Text', 'New RS', ...
+                'BackgroundColor', [0.85 0.90 1.0], ...
+                'Tooltip', 'Create a new Reaction System from scratch', ...
+                'ButtonPushedFcn', @(~,~) defineReactionSysApp()) ;
+            app.Disp_RSDefineButton.Layout.Row = 8 ;
+            app.Disp_RSDefineButton.Layout.Column = 1 ;
 
-            % Row 9: CA0 (2nd order only)
+            app.Disp_RSEditButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Edit RS', ...
+                'BackgroundColor', [1.0 0.95 0.80], ...
+                'Tooltip', 'Edit the currently loaded Reaction System', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.Disp_editRS()) ;
+            app.Disp_RSEditButton.Layout.Row = 8 ;
+            app.Disp_RSEditButton.Layout.Column = 2 ;
+
+            % Row 9: RS name field + Load button
+            app.Disp_RSNameField = uieditfield(leftGrid, 'text', ...
+                'Value', 'RS', ...
+                'Tooltip', 'Name of the ReactionSys variable in the MATLAB workspace') ;
+            app.Disp_RSNameField.Layout.Row = 9 ; app.Disp_RSNameField.Layout.Column = 1 ;
+            app.Disp_RSLoadButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Load from Workspace', ...
+                'BackgroundColor', [0.85 0.95 0.85], ...
+                'Tooltip', 'Load the ReactionSys object from the workspace', ...
+                'ButtonPushedFcn', @(~,~) app.Disp_loadRS()) ;
+            app.Disp_RSLoadButton.Layout.Row = 9 ; app.Disp_RSLoadButton.Layout.Column = 2 ;
+
+            % Row 10: RS status
+            app.Disp_RSStatusLabel = uilabel(leftGrid, ...
+                'Text', 'No Reaction System loaded', 'FontColor', [0.6 0 0]) ;
+            app.Disp_RSStatusLabel.Layout.Row = 10 ;
+            app.Disp_RSStatusLabel.Layout.Column = [1 2] ;
+
+            % Row 11: CA0
             app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
-            app.Disp_CA0Label.Layout.Row = 9 ; app.Disp_CA0Label.Layout.Column = 1 ;
-            app.Disp_CA0Label.Visible = 'off' ;
-            [app.Disp_CA0Field, tmpSGdisp] = app.createNumericWithConv( ...
-                leftGrid, 9, 2, 1000, 'Concentration', ...
+            app.Disp_CA0Label.Layout.Row = 11 ; app.Disp_CA0Label.Layout.Column = 1 ;
+            [app.Disp_CA0Field, ~] = app.createNumericWithConv( ...
+                leftGrid, 11, 2, 1000, 'Concentration', ...
                 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
-            tmpSGdisp.Visible = 'off' ;
 
-            % Row 10: Compute button
+            % Row 12: Compute button
             app.Disp_ComputeButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
                 'ButtonPushedFcn', @(~,~) app.Disp_compute()) ;
-            app.Disp_ComputeButton.Layout.Row = 10 ;
+            app.Disp_ComputeButton.Layout.Row = 12 ;
             app.Disp_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 11: Results header
+            % Row 13: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 12: Da and Bo info
-            lbl = uilabel(leftGrid, 'Text', 'Da / Bo:') ;
-            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            % Row 14: Bo info
+            lbl = uilabel(leftGrid, 'Text', 'Bo:') ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultBo = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultBo.Layout.Row = 12 ; app.Disp_ResultBo.Layout.Column = 2 ;
+            app.Disp_ResultBo.Layout.Row = 14 ; app.Disp_ResultBo.Layout.Column = 2 ;
 
-            % Row 13: X_dispersion
+            % Row 15: X_dispersion
             lbl = uilabel(leftGrid, 'Text', 'X<sub>dispersion</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultX = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultX.Layout.Row = 13 ; app.Disp_ResultX.Layout.Column = 2 ;
+            app.Disp_ResultX.Layout.Row = 15 ; app.Disp_ResultX.Layout.Column = 2 ;
             app.Disp_ResultX.FontWeight = 'bold' ;
 
-            % Row 14: X_CSTR
+            % Row 16: X_CSTR
             lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> [Bo&#8594;&#8734;]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXcstr.Layout.Row = 14 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
+            app.Disp_ResultXcstr.Layout.Row = 16 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
 
-            % Row 15: X_PFR
+            % Row 17: X_PFR
             lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> [Bo&#8594;0]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXpfr.Layout.Row = 15 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
+            app.Disp_ResultXpfr.Layout.Row = 17 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Dispersion Results') ;
@@ -1903,17 +1993,35 @@ classdef NonIdealReactorApp < handle
             app.Disp_PeLabel.Text = sprintf('%.2f', Pe) ;
         end
 
-        function Disp_kineticsChanged(app)
-            kinetics = app.Disp_KineticsDropdown.Value ;
-            if contains(kinetics, '2nd')
-                app.Disp_CA0Label.Visible = 'on' ;
-                app.Disp_CA0Field.Parent.Visible = 'on' ;
-                app.Disp_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
-            else
-                app.Disp_CA0Label.Visible = 'off' ;
-                app.Disp_CA0Field.Parent.Visible = 'off' ;
-                app.Disp_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
+        function Disp_loadRS(app)
+            % Load a ReactionSys object from the MATLAB workspace by name
+            rsName = app.Disp_RSNameField.Value ;
+            try
+                RS = evalin('base', rsName) ;
+                if ~isa(RS, 'ReactionSys')
+                    error('Variable "%s" is not a ReactionSys object.', rsName) ;
+                end
+                app.Disp_RS = RS ;
+                nR = RS.nReactions ;
+                nC = RS.nComponents ;
+                app.Disp_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', nR, nC) ;
+                app.Disp_RSStatusLabel.FontColor = [0 0.5 0] ;
+                app.Disp_RSEditButton.Enable = 'on' ;
+            catch ME
+                app.Disp_RSStatusLabel.Text = ME.message ;
+                app.Disp_RSStatusLabel.FontColor = [0.8 0 0] ;
             end
+        end
+
+        function Disp_editRS(app)
+            % Open defineReactionSysApp pre-loaded with the current RS
+            if isempty(app.Disp_RS)
+                uialert(app.UIFigure, ...
+                    'No Reaction System loaded to edit.', 'Nothing to Edit') ;
+                return
+            end
+            rsName = app.Disp_RSNameField.Value ;
+            defineReactionSysApp(app.Disp_RS, rsName) ;
         end
 
         function Disp_inputMethodChanged(app)
@@ -1923,8 +2031,6 @@ classdef NonIdealReactorApp < handle
                 % Disable manual fields and import data
                 app.Disp_BoField.Enable = 'off' ;
                 app.Disp_tauField.Enable = 'off' ;
-                app.Disp_kField.Enable = 'off' ;
-                app.Disp_KineticsDropdown.Enable = 'off' ;
                 app.Disp_CA0Field.Enable = 'off' ;
                 app.Disp_RTDStatusLabel.Visible = 'on' ;
                 app.Disp_RefreshButton.Visible = 'on' ;
@@ -1953,10 +2059,24 @@ classdef NonIdealReactorApp < handle
                     app.Disp_BoField.Value = Bo_calc ;
                     app.Disp_updatePe() ;
 
-                    infoLines{end+1} = sprintf('RTD: tau=%.2f, sigma2_theta=%.4f, Bo=%.4g', ...
-                        app.rtd.tau, sigma2_theta, Bo_calc) ;
+                    infoLines{end+1} = sprintf('RTD: tau=%.2f, Bo=%.4g', ...
+                        app.rtd.tau, Bo_calc) ;
                 else
                     infoLines{end+1} = 'RTD: not loaded' ;
+                end
+
+                % Import RS from Prediction Models tab (if loaded)
+                if ~isempty(app.Pred_RS)
+                    app.Disp_RS = app.Pred_RS ;
+                    app.Disp_RSNameField.Value = app.Pred_RSNameField.Value ;
+                    nR = app.Disp_RS.nReactions ;
+                    nC = app.Disp_RS.nComponents ;
+                    app.Disp_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', nR, nC) ;
+                    app.Disp_RSStatusLabel.FontColor = [0 0.5 0] ;
+                    app.Disp_RSEditButton.Enable = 'on' ;
+                    infoLines{end+1} = sprintf('RS: %s', app.Pred_RSNameField.Value) ;
+                else
+                    infoLines{end+1} = 'RS: not loaded' ;
                 end
 
                 % Import CA0 from Prediction Models tab
@@ -1975,8 +2095,6 @@ classdef NonIdealReactorApp < handle
                 % Manual mode: re-enable all fields
                 app.Disp_BoField.Enable = 'on' ;
                 app.Disp_tauField.Enable = 'on' ;
-                app.Disp_kField.Enable = 'on' ;
-                app.Disp_KineticsDropdown.Enable = 'on' ;
                 app.Disp_CA0Field.Enable = 'on' ;
                 app.Disp_RTDStatusLabel.Visible = 'off' ;
                 app.Disp_RefreshButton.Visible = 'off' ;
@@ -1987,54 +2105,48 @@ classdef NonIdealReactorApp < handle
 
             try
                 app.updateStatus('Computing dispersion model...') ;
+
+                % Validate that a ReactionSys is loaded
+                if isempty(app.Disp_RS)
+                    uialert(app.UIFigure, ...
+                        'No Reaction System loaded. Use "New RS" to create one, then "Load from Workspace" to import it.', ...
+                        'Missing Reaction System') ;
+                    app.updateStatus('Ready') ;
+                    return ;
+                end
+
                 Bo_val = app.Disp_BoField.Value ;
                 bcType = app.Disp_BCDropdown.Value ;
                 tau_val = app.Disp_tauField.Value ;
-                k_val = app.Disp_kField.Value ;
-                kinetics = app.Disp_KineticsDropdown.Value ;
-                is2nd = contains(kinetics, '2nd') ;
+                CA0_val = app.Disp_CA0Field.Value ;
+                RS = app.Disp_RS ;
 
-                Da = k_val * tau_val ;
+                % Build initial concentration vector
+                C0 = zeros(1, RS.nComponents) ;
+                C0(1) = CA0_val ;
 
                 % Create DispersionReactor
                 app.disp_reactor = DispersionReactor(Bo_val, bcType) ;
 
-                % Compute conversion
-                if is2nd
-                    CA0_val = app.Disp_CA0Field.Value ;
-                    X_disp = app.disp_reactor.compute_conversion_secondOrder(k_val, CA0_val, tau_val) ;
-                    order = 2 ;
-                else
-                    X_disp = app.disp_reactor.compute_conversion_firstOrder(k_val, tau_val) ;
-                    CA0_val = 0 ;
-                    order = 1 ;
-                end
+                % Compute dispersion conversion via general method
+                X_disp = app.disp_reactor.compute_conversion_general(RS, C0, tau_val) ;
 
-                % Reference: CSTR and PFR
-                if order == 1
-                    X_cstr = Da / (1 + Da) ;
-                    X_pfr = 1 - exp(-Da) ;
-                else
-                    X_cstr = (-1 + sqrt(1 + 4*Da*CA0_val*k_val*tau_val)) / ...
-                             (2 * k_val * CA0_val * tau_val) ;
-                    % Simplified: for 2nd order CSTR: X = (-1+sqrt(1+4*Da))/(2*Da) with Da=k*CA0*tau
-                    Da2 = k_val * CA0_val * tau_val ;
-                    X_cstr = (-1 + sqrt(1 + 4*Da2)) / (2 * Da2) ;
-                    X_pfr = Da2 / (1 + Da2) ;  % batch at t=tau
-                end
+                % Reference: CSTR and PFR via TanksInSeries module
+                [~, X_cstr] = TanksInSeries.solve_sequential(1, RS, C0, tau_val) ;
+                [~, X_pfr]  = TanksInSeries.solve_PFR(RS, C0, tau_val) ;
 
                 X_cstr = max(0, min(1, X_cstr)) ;
-                X_pfr = max(0, min(1, X_pfr)) ;
+                X_pfr  = max(0, min(1, X_pfr)) ;
 
                 % Update results
-                app.Disp_ResultBo.Text = sprintf('Da=%.4g, Bo=%.4g', Da, Bo_val) ;
+                app.Disp_ResultBo.Text = sprintf('Bo=%.4g, Pe=%.4g', Bo_val, 1/Bo_val) ;
                 app.Disp_ResultX.Text = sprintf('%.4f', X_disp) ;
                 app.Disp_ResultXcstr.Text = sprintf('%.4f', X_cstr) ;
                 app.Disp_ResultXpfr.Text = sprintf('%.4f', X_pfr) ;
 
                 % Update plots
-                app.Disp_updatePlots(Bo_val, tau_val, k_val, CA0_val, ...
-                                     order, X_disp, X_cstr, X_pfr) ;
+                app.Disp_updatePlots(Bo_val, tau_val, RS, C0, ...
+                                     X_disp, X_cstr, X_pfr) ;
 
                 app.updateStatus('Ready') ;
 
@@ -2044,8 +2156,8 @@ classdef NonIdealReactorApp < handle
             end
         end
 
-        function Disp_updatePlots(app, Bo_val, tau_val, k_val, CA0_val, ...
-                                  order, X_disp, X_cstr, X_pfr)
+        function Disp_updatePlots(app, Bo_val, tau_val, RS, C0, ...
+                                  X_disp, X_cstr, X_pfr)
 
             % ---- Plot 1: E(t) ----
             cla(app.Disp_AxesEt) ;
@@ -2056,7 +2168,7 @@ classdef NonIdealReactorApp < handle
             xlabel(app.Disp_AxesEt, 't [s]') ;
             ylabel(app.Disp_AxesEt, 'E(t) [1/s]') ;
 
-            % Add equation annotation
+            % Add annotation
             text(app.Disp_AxesEt, 0.95, 0.90, ...
                 sprintf('Bo = %.4g\nPe = %.4g\n\\tau = %.4g s', ...
                         Bo_val, 1/Bo_val, tau_val), ...
@@ -2067,7 +2179,7 @@ classdef NonIdealReactorApp < handle
 
             % ---- Plot 2: X vs Bo sweep ----
             cla(app.Disp_AxesXvsBo) ;
-            [Bo_sweep, X_sweep] = app.disp_reactor.sweep_Bo(k_val, tau_val, CA0_val, order) ;
+            [Bo_sweep, X_sweep] = app.disp_reactor.sweep_Bo_general(RS, C0, tau_val) ;
             semilogx(app.Disp_AxesXvsBo, Bo_sweep, X_sweep, 'b-', 'LineWidth', 1.5) ;
             hold(app.Disp_AxesXvsBo, 'on') ;
 

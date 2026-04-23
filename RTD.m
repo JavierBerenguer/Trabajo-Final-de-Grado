@@ -403,9 +403,11 @@ classdef RTD
             % Generate E(t) for the dispersion model with closed-closed BCs
             %   obj = RTD.dispersion_closed(Bo, tau, tspan)
             %
-            % Uses numerical inverse of the Danckwerts solution.
-            % For small Bo (< 0.01), it converges to the open approximation.
-            % For larger Bo, uses the series solution.
+            % Uses numerical inverse Laplace transform (Stehfest algorithm)
+            % of the exact Danckwerts transfer function:
+            %
+            %   G(s) = 4q*exp(Pe/2) / ((1+q)^2*exp(qPe/2) - (1-q)^2*exp(-qPe/2))
+            %   where q = sqrt(1 + 4*s*Bo), Pe = 1/Bo
             %
             % Bo = De/(u*L) = dispersion number
 
@@ -415,45 +417,50 @@ classdef RTD
             end
 
             theta = tspan / tau_val ;
+            Pe = 1 / Bo ;
+
+            % --- Stehfest weights (N=12, precomputed once) ---
+            N_st = 12 ;
+            N2 = N_st / 2 ;
+            V = zeros(1, N_st) ;
+            for ii = 1:N_st
+                for kk = floor((ii+1)/2) : min(ii, N2)
+                    V(ii) = V(ii) + kk^N2 * factorial(2*kk) / ...
+                        (factorial(N2-kk) * factorial(kk) * ...
+                         factorial(kk-1) * factorial(ii-kk) * ...
+                         factorial(2*kk-ii)) ;
+                end
+                V(ii) = (-1)^(N2+ii) * V(ii) ;
+            end
+
+            % --- Inverse Laplace transform at each theta ---
+            ln2 = log(2) ;
             Etheta = zeros(size(theta)) ;
 
-            if Bo < 0.05
-                % Small-to-moderate dispersion: Gaussian approximation
-                % Valid for Bo < 0.05 (Pe > 20)
-                idx = theta > 0 ;
-                Etheta(idx) = (1 ./ sqrt(4*pi*Bo)) .* ...
-                             exp(-(1 - theta(idx)).^2 ./ (4*Bo)) ;
-            else
-                % Larger dispersion: numerical series solution (Nauman, 1981)
-                % E(theta) = sum_{n=1}^{inf} c_n * exp(-lambda_n * theta)
-                % Approximation using eigenvalue expansion
-                idx = theta > 0 ;
-                nTerms = 500 ;
-                Etheta_prev = Etheta ;
-                for k = 1:nTerms
-                    % Eigenvalues from: tan(alpha) = 2*alpha*Bo / (alpha^2*Bo^2 - 1)
-                    alpha_k = k * pi ;  % initial guess
-                    try
-                        alpha_k = fzero(@(a) tan(a) - 2*a*Bo./(a.^2*Bo^2 - 1), ...
-                                       alpha_k + 0.1) ;
-                    catch
-                        continue ;
-                    end
-                    lambda_k = (1 + alpha_k^2 * Bo) / (2*Bo) ;
-                    c_k = 2 * Bo * alpha_k^2 / ...
-                          (alpha_k^2 * Bo^2 + Bo + alpha_k^2 * Bo) ;
-                    Etheta(idx) = Etheta(idx) + c_k * exp(-lambda_k * theta(idx)) ;
-
-                    % Convergence check every 50 terms
-                    if mod(k, 50) == 0
-                        change = max(abs(Etheta - Etheta_prev)) ;
-                        if change < 1e-10
-                            break ;
-                        end
-                        Etheta_prev = Etheta ;
-                    end
+            for j = 1:length(theta)
+                if theta(j) <= 0
+                    continue ;
                 end
+                s_base = ln2 / theta(j) ;
+                val = 0 ;
+                for ii = 1:N_st
+                    s = ii * s_base ;
+                    % Danckwerts closed-closed transfer function
+                    q = sqrt(1 + 4*s*Bo) ;
+                    if Pe > 500
+                        G = exp(-s) ;  % PFR limit
+                    else
+                        num = 4 * q * exp(Pe/2) ;
+                        den = (1+q)^2 * exp(q*Pe/2) - (1-q)^2 * exp(-q*Pe/2) ;
+                        G = num / den ;
+                    end
+                    val = val + V(ii) * G ;
+                end
+                Etheta(j) = val * s_base ;
             end
+
+            % Clamp numerical noise
+            Etheta = max(Etheta, 0) ;
 
             Et = Etheta / tau_val ;
             obj = RTD(tspan, Et) ;

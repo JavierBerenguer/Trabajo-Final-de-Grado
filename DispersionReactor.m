@@ -201,5 +201,91 @@ classdef DispersionReactor < Reactor
             obj.Bo = saved_Bo ;
         end
 
+        %% ============== GENERAL KINETICS (ReactionSys) ==============
+
+        function [X, C_out] = compute_conversion_general(obj, RS, C0, tau)
+            % Numerical conversion for any kinetics defined by ReactionSys,
+            % using the segregation approach with the dispersion RTD.
+            %
+            %   X = integral( X_batch(t) * E(t) dt )
+            %
+            % where X_batch(t) is solved from the batch ODE:
+            %   dC/dt = r(C) * stoich
+            %
+            % Inputs:
+            %   RS  - ReactionSys object (any kinetics)
+            %   C0  - [1 x nComponents] initial concentration vector
+            %   tau - mean residence time (s)
+            %
+            % Outputs:
+            %   X     - conversion of key component (component 1)
+            %   C_out - [1 x nComp] mean outlet concentrations
+
+            rtd_obj = obj.generate_RTD(tau) ;
+            t_rtd = rtd_obj.t ;
+            Et = rtd_obj.Et ;
+
+            stoich = RS.stochiometricMatrix ;
+            nComp = length(C0) ;
+            T = 298.15 ;  % isothermal (Ea=0 → T irrelevant)
+
+            % Solve batch ODE
+            odeOpts = odeset('NonNegative', 1:nComp, 'RelTol', 1e-8) ;
+            [t_ode, C_ode] = ode45(@(t, C) batch_ode(C), ...
+                [0, max(t_rtd)], C0(:), odeOpts) ;
+
+            % Conversion of key component (index 1)
+            X_vs_t = (C0(1) - C_ode(:, 1)) / C0(1) ;
+
+            % Interpolate at RTD time points
+            X_batch = interp1(t_ode, X_vs_t, t_rtd, 'pchip', 0) ;
+            X_batch = X_batch(:)' ;  % force row [1 x N]
+
+            % Segregation integral
+            X = trapz(t_rtd, X_batch .* Et) ;
+            X = max(0, min(1, X)) ;
+
+            % Mean outlet concentrations (optional)
+            if nargout >= 2
+                C_interp = interp1(t_ode, C_ode, t_rtd, 'pchip') ;
+                C_out = zeros(1, nComp) ;
+                for j = 1:nComp
+                    C_out(j) = trapz(t_rtd, C_interp(:, j)' .* Et) ;
+                end
+            end
+
+            function dCdt = batch_ode(C)
+                RS_temp = RS.computeRate(C(:)', T) ;
+                r = RS_temp.r_i ;
+                dCdt = (r * stoich)' ;
+            end
+        end
+
+        function [Bo_vec, X_vec] = sweep_Bo_general(obj, RS, C0, tau, n_points)
+            % Parametric sweep of conversion vs Bo for general kinetics
+            %
+            % Inputs:
+            %   RS       - ReactionSys object
+            %   C0       - [1 x nComp] initial concentrations
+            %   tau      - mean residence time (s)
+            %   n_points - number of points (default 50)
+
+            if nargin < 5
+                n_points = 50 ;
+            end
+
+            Bo_vec = logspace(-3, 1, n_points) ;
+            X_vec = zeros(size(Bo_vec)) ;
+
+            saved_Bo = obj.Bo ;
+
+            for i = 1:n_points
+                obj.Bo = Bo_vec(i) ;
+                X_vec(i) = obj.compute_conversion_general(RS, C0, tau) ;
+            end
+
+            obj.Bo = saved_Bo ;
+        end
+
     end
 end

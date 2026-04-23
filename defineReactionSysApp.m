@@ -455,6 +455,98 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         end
     end
 
+    methods (Access = public)
+
+        function loadFromRS(app, RS, name)
+            % loadFromRS  Populate the UI from an existing ReactionSys object.
+            %   app.loadFromRS(RS, name) sets the spinners, tables, and
+            %   kinetics controls so the user can edit the existing system.
+            %
+            %   Inputs:
+            %     RS   - ReactionSys object to load
+            %     name - char/string, workspace variable name
+
+            if nargin < 3 || isempty(name)
+                name = '' ;
+            end
+
+            nR = RS.nReactions ;
+            nC = RS.nComponents ;
+
+            % --- General tab ---
+            app.NameEditField.Value = char(name) ;
+            app.NumberofreactionsSpinner.Value = nR ;
+            app.NumberofcomponentsSpinner.Value = nC ;
+
+            % Trigger spinner callback to resize all tables
+            app.NumberofcomponentsSpinnerValueChanged([]) ;
+
+            % Stoichiometric matrix (UITable)
+            app.UITable.Data = num2cell(RS.stochiometricMatrix) ;
+
+            % Store the RS internally
+            app.RS = RS ;
+
+            % --- Kinetics tab ---
+            if ~isempty(RS.userDefinedKinetics)
+                % Other kinetics mode
+                app.KineticsButtonGroup.SelectedObject = app.OtherkineticsButton ;
+                app.KineticsButtonGroupSelectionChanged([]) ;
+
+                % Try to show the function handle as text
+                funcStr = func2str(RS.userDefinedKinetics) ;
+                app.OtherKineticsFormat.SelectedObject = app.FromfileButton ;
+                app.OtherKineticsFormatSelectionChanged([]) ;
+                app.SpecifythenameofthefunctionEditField.Value = funcStr ;
+
+            else
+                % Langmuir-Hinshelwood mode
+                app.KineticsButtonGroup.SelectedObject = app.LangmuirHinshelwoodRateLawButton ;
+                app.KineticsButtonGroupSelectionChanged([]) ;
+
+                % k0 and Ea (UITable2)
+                if ~isempty(RS.k0) && ~isempty(RS.Ea)
+                    k0_col = RS.k0(:) ;
+                    Ea_col = RS.Ea(:) ;
+                    app.UITable2.Data = num2cell([k0_col, Ea_col]) ;
+                elseif ~isempty(RS.k0)
+                    app.UITable2.Data = num2cell([RS.k0(:), zeros(nR, 1)]) ;
+                end
+
+                % Denominator terms (UITable3)
+                if ~isequal(RS.k0_denominator, 0) && ~isempty(RS.k0_denominator)
+                    nTerms = length(RS.k0_denominator) ;
+                    app.nDenominatorTerms = 0 ;  % reset counter
+                    for i = 1:nTerms
+                        app.AddButtonPushed([]) ;  % adds a row
+                    end
+                    % Populate: [k0_denom, Ea_denom, partialOrders_denom']
+                    k0d = RS.k0_denominator(:) ;
+                    Ead = RS.Ea_denominator(:) ;
+                    pod = RS.partialOrders_denominator ;  % stored as [nComp x nTerms]
+                    if size(pod, 2) == nTerms
+                        pod = pod' ;  % make [nTerms x nComp]
+                    end
+                    denomData = num2cell([k0d, Ead, pod]) ;
+                    app.UITable3.Data = denomData ;
+                end
+            end
+
+            % --- Thermodynamics tab ---
+            if ~isempty(RS.componentCp) && ~isempty(RS.componentMw)
+                app.PropertySelelctionDropDown.Value = 'User defined' ;
+                app.PropertySelelctionDropDownValueChanged([]) ;
+                Cp_col = RS.componentCp(:) ;
+                Mw_col = RS.componentMw(:) ;
+                app.UITable4.Data = num2cell([Cp_col, Mw_col]) ;
+                if ~isempty(RS.DHref)
+                    app.UITable5.Data = num2cell(RS.DHref(:)) ;
+                end
+                app.TrefKEditField.Value = RS.Tref ;
+            end
+        end
+    end
+
     % Component initialization
     methods (Access = private)
 
@@ -826,13 +918,24 @@ classdef defineReactionSysApp < matlab.apps.AppBase
     methods (Access = public)
 
         % Construct app
-        function app = defineReactionSysApp
+        function app = defineReactionSysApp(RS_existing, varName)
+            % defineReactionSysApp  Constructor.
+            %   app = defineReactionSysApp()            — empty (original)
+            %   app = defineReactionSysApp(RS, name)    — pre-load an existing RS
 
             % Create UIFigure and components
             createComponents(app)
 
             % Register the app with App Designer
             registerApp(app, app.ReactionSysDefinitionUIFigure)
+
+            % If an existing ReactionSys was provided, load it into the UI
+            if nargin >= 1 && ~isempty(RS_existing)
+                if nargin < 2
+                    varName = '' ;
+                end
+                app.loadFromRS(RS_existing, varName) ;
+            end
 
             if nargout == 0
                 clear app
