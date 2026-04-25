@@ -45,6 +45,8 @@ classdef NonIdealReactorApp < handle
         RTD_EqTStartField
         RTD_EqTEndLabel
         RTD_EqTEndField
+        RTD_EqTimeUnitLabel
+        RTD_EqTimeUnitDropdown
         RTD_EqNptsLabel
         RTD_EqNptsField
         RTD_GenerateButton
@@ -312,19 +314,20 @@ classdef NonIdealReactorApp < handle
             app.StatusBar.Position = [0 0 w 22] ;
         end
 
-        %% ============== HELPER: NUMERIC FIELD + UNIT CONVERTER BUTTON ==============
+        %% ============== HELPER: NUMERIC FIELD + UNIT SELECTOR ==============
 
         function [field, subGrid, btn] = createNumericWithConv(app, parentGrid, row, col, defaultVal, unitCat, varargin)
-            % createNumericWithConv  Create a text editfield with a unit dropdown
-            %   and a tiny button that opens the contextual unit converter.
+            % createNumericWithConv  Create a text editfield with a unit dropdown.
             %
             %   [field, subGrid, btn] = app.createNumericWithConv(parentGrid, row, col, defaultVal, unitCat, ...)
             %
             %   The edit field accepts simple arithmetic expressions such as
             %   10/6 or 2*60. Values are converted to SI only when read.
 
-            subGrid = uigridlayout(parentGrid, [1 3], ...
-                'ColumnWidth', {'1x', 92, 24}, ...
+            btn = [] ;
+
+            subGrid = uigridlayout(parentGrid, [1 2], ...
+                'ColumnWidth', {'1x', 78}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 2) ;
             subGrid.Layout.Row    = row ;
@@ -340,18 +343,9 @@ classdef NonIdealReactorApp < handle
                 'Value', UnitConverterHelper.defaultUnit(unitCat)) ;
             unitDropdown.Layout.Row = 1 ; unitDropdown.Layout.Column = 2 ;
 
-            btn = uibutton(subGrid, 'push', ...
-                'Text', '', ...
-                'Icon', 'UnitsLogo.png', ...
-                'Tooltip', ['Unit converter (' unitCat ')'], ...
-                'BackgroundColor', [0.85 0.90 1.0]) ;
-            btn.Layout.Row = 1 ; btn.Layout.Column = 3 ;
-            btn.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(field, unitCat) ;
-
             field.UserData = struct( ...
                 'unitCategory', unitCat, ...
-                'unitDropdown', unitDropdown, ...
-                'converterButton', btn) ;
+                'unitDropdown', unitDropdown) ;
             app.updateInputFieldCategory(field, unitCat) ;
         end
 
@@ -381,11 +375,6 @@ classdef NonIdealReactorApp < handle
                 unitDropdown.Value = UnitConverterHelper.defaultUnit(unitCat) ;
             end
 
-            converterButton = fieldData.converterButton ;
-            if ~isempty(converterButton) && isvalid(converterButton)
-                converterButton.Tooltip = ['Unit converter (' unitCat ')'] ;
-                converterButton.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(field, unitCat) ;
-            end
         end
 
         function cat = getKCategory(~, dropdown)
@@ -498,7 +487,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpTVarLabel = uilabel(leftGrid, 'Text', 't variable (workspace):') ;
             app.RTD_ExpTVarLabel.Layout.Row = 5 ; app.RTD_ExpTVarLabel.Layout.Column = 1 ;
             expTGrid = uigridlayout(leftGrid, [1 2], ...
-                'ColumnWidth', {'1x', 85}, ...
+                'ColumnWidth', {'1x', 78}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 2) ;
             expTGrid.Layout.Row = 5 ; expTGrid.Layout.Column = 2 ;
@@ -556,30 +545,45 @@ classdef NonIdealReactorApp < handle
 
             app.RTD_EqField = uieditfield(leftGrid, 'text', ...
                 'Value', '5*exp(-2.5*t)', ...
-                'Tooltip', 'Use "t" as variable. Example: 5*exp(-2.5*t)') ;
+                'Tooltip', 'Use "t" as variable in the selected time unit. Example: 5*exp(-2.5*t)') ;
             app.RTD_EqField.Layout.Row = 4 ; app.RTD_EqField.Layout.Column = 2 ;
             app.RTD_EqField.Visible = 'off' ;
 
             app.RTD_EqTStartLabel = uilabel(leftGrid, 'Text', 't start:') ;
             app.RTD_EqTStartLabel.Layout.Row = 5 ; app.RTD_EqTStartLabel.Layout.Column = 1 ;
             app.RTD_EqTStartLabel.Visible = 'off' ;
-            [app.RTD_EqTStartField, tmpSG2] = app.createNumericWithConv( ...
-                leftGrid, 5, 2, 0, 'Time', 'Limits', [0 Inf]) ;
-            tmpSG2.Visible = 'off' ;
+            app.RTD_EqTStartField = uieditfield(leftGrid, 'text', ...
+                'Value', '0', ...
+                'Tooltip', 'Accepts simple arithmetic expressions in the selected time unit.') ;
+            app.RTD_EqTStartField.Layout.Row = 5 ; app.RTD_EqTStartField.Layout.Column = 2 ;
+            app.RTD_EqTStartField.Visible = 'off' ;
 
             app.RTD_EqTEndLabel = uilabel(leftGrid, 'Text', 't end:') ;
             app.RTD_EqTEndLabel.Layout.Row = 6 ; app.RTD_EqTEndLabel.Layout.Column = 1 ;
             app.RTD_EqTEndLabel.Visible = 'off' ;
-            [app.RTD_EqTEndField, tmpSG3] = app.createNumericWithConv( ...
-                leftGrid, 6, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
-            tmpSG3.Visible = 'off' ;
+            app.RTD_EqTEndField = uieditfield(leftGrid, 'text', ...
+                'Value', '10', ...
+                'Tooltip', 'Accepts simple arithmetic expressions in the selected time unit.') ;
+            app.RTD_EqTEndField.Layout.Row = 6 ; app.RTD_EqTEndField.Layout.Column = 2 ;
+            app.RTD_EqTEndField.Visible = 'off' ;
+
+            app.RTD_EqTimeUnitLabel = uilabel(leftGrid, 'Text', 'Time unit:') ;
+            app.RTD_EqTimeUnitLabel.Layout.Row = 7 ; app.RTD_EqTimeUnitLabel.Layout.Column = 1 ;
+            app.RTD_EqTimeUnitLabel.Visible = 'off' ;
+            app.RTD_EqTimeUnitDropdown = uidropdown(leftGrid, ...
+                'Items', UnitConverterHelper.getUnits('Time'), ...
+                'Value', 's', ...
+                'Tooltip', 'Defines the units of t start, t end, and the variable t in C(t).') ;
+            app.RTD_EqTimeUnitDropdown.Layout.Row = 7 ;
+            app.RTD_EqTimeUnitDropdown.Layout.Column = 2 ;
+            app.RTD_EqTimeUnitDropdown.Visible = 'off' ;
 
             app.RTD_EqNptsLabel = uilabel(leftGrid, 'Text', 'N points:') ;
-            app.RTD_EqNptsLabel.Layout.Row = 7 ; app.RTD_EqNptsLabel.Layout.Column = 1 ;
+            app.RTD_EqNptsLabel.Layout.Row = 8 ; app.RTD_EqNptsLabel.Layout.Column = 1 ;
             app.RTD_EqNptsLabel.Visible = 'off' ;
             app.RTD_EqNptsField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 500, 'Limits', [10 10000]) ;
-            app.RTD_EqNptsField.Layout.Row = 7 ; app.RTD_EqNptsField.Layout.Column = 2 ;
+            app.RTD_EqNptsField.Layout.Row = 8 ; app.RTD_EqNptsField.Layout.Column = 2 ;
             app.RTD_EqNptsField.Visible = 'off' ;
 
             % Rows 4-9: Tabular Input components (hidden by default)
@@ -753,9 +757,11 @@ classdef NonIdealReactorApp < handle
             app.RTD_EqLabel.Visible = 'off' ;
             app.RTD_EqField.Visible = 'off' ;
             app.RTD_EqTStartLabel.Visible = 'off' ;
-            app.RTD_EqTStartField.Parent.Visible = 'off' ;
+            app.RTD_EqTStartField.Visible = 'off' ;
             app.RTD_EqTEndLabel.Visible = 'off' ;
-            app.RTD_EqTEndField.Parent.Visible = 'off' ;
+            app.RTD_EqTEndField.Visible = 'off' ;
+            app.RTD_EqTimeUnitLabel.Visible = 'off' ;
+            app.RTD_EqTimeUnitDropdown.Visible = 'off' ;
             app.RTD_EqNptsLabel.Visible = 'off' ;
             app.RTD_EqNptsField.Visible = 'off' ;
             app.RTD_DataTypeLabel.Visible = 'off' ;
@@ -803,9 +809,11 @@ classdef NonIdealReactorApp < handle
                     app.RTD_EqLabel.Visible = 'on' ;
                     app.RTD_EqField.Visible = 'on' ;
                     app.RTD_EqTStartLabel.Visible = 'on' ;
-                    app.RTD_EqTStartField.Parent.Visible = 'on' ;
+                    app.RTD_EqTStartField.Visible = 'on' ;
                     app.RTD_EqTEndLabel.Visible = 'on' ;
-                    app.RTD_EqTEndField.Parent.Visible = 'on' ;
+                    app.RTD_EqTEndField.Visible = 'on' ;
+                    app.RTD_EqTimeUnitLabel.Visible = 'on' ;
+                    app.RTD_EqTimeUnitDropdown.Visible = 'on' ;
                     app.RTD_EqNptsLabel.Visible = 'on' ;
                     app.RTD_EqNptsField.Visible = 'on' ;
                     tauVisible = 'off' ;
@@ -908,12 +916,18 @@ classdef NonIdealReactorApp < handle
 
                     case 'C(t) Equation'
                         eq_str = app.RTD_EqField.Value ;
-                        t_start = app.readInputField(app.RTD_EqTStartField) ;
-                        t_end = app.readInputField(app.RTD_EqTEndField) ;
+                        t_unit = app.RTD_EqTimeUnitDropdown.Value ;
+                        t_start_user = InputLayerHelper.parseArithmeticExpression(app.RTD_EqTStartField.Value) ;
+                        t_end_user = InputLayerHelper.parseArithmeticExpression(app.RTD_EqTEndField.Value) ;
                         n_pts = round(app.RTD_EqNptsField.Value) ;
 
-                        % Generate t vector and evaluate C(t)
-                        t = linspace(t_start, t_end, n_pts) ;
+                        if t_end_user <= t_start_user
+                            error('t end must be greater than t start for C(t) Equation.') ;
+                        end
+
+                        % Evaluate C(t) in the user-selected time unit, then
+                        % convert the timeline to SI before creating the RTD.
+                        t = linspace(t_start_user, t_end_user, n_pts) ;
                         try
                             C_data = eval(eq_str) ;
                         catch evalErr
@@ -930,7 +944,8 @@ classdef NonIdealReactorApp < handle
                         C_data = max(C_data, 0) ;
 
                         % Build RTD from pulse response
-                        app.rtd = RTD.from_pulse(t, C_data) ;
+                        t_si = UnitConverterHelper.convertToSI('Time', t, t_unit) ;
+                        app.rtd = RTD.from_pulse(t_si, C_data) ;
 
                     case 'Tabular Input'
                         % Read data from the editable table
@@ -3029,11 +3044,10 @@ classdef NonIdealReactorApp < handle
             % Row 7: k
             app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k:', 'Interpreter', 'html') ;
             app.Comb_kLabel.Layout.Row = 7 ; app.Comb_kLabel.Layout.Column = 1 ;
-            [app.Comb_kField, ~, btnCk] = app.createNumericWithConv( ...
+            [app.Comb_kField, ~] = app.createNumericWithConv( ...
                 leftGrid, 7, 2, 0.1, 'k_1stOrder', ...
                 'Limits', [0 Inf], ...
                 'Tooltip', 'Rate constant. Units depend on order: 1/s (1st order), m³/(mol·s) (2nd order).') ;
-            btnCk.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Comb_kField, app.getKCategory(app.Comb_KineticsDropdown)) ;
 
             % Row 8: CA0 (2nd order only)
             app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
