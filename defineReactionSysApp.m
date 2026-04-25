@@ -23,6 +23,12 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         FromfileButton                  matlab.ui.control.RadioButton
         SpecifythenameofthefunctionEditField  matlab.ui.control.EditField
         SpecifythenameofthefunctionEditFieldLabel  matlab.ui.control.Label
+        UserKineticsUnitsPanel          matlab.ui.container.Panel
+        UserKineticsTimeUnitDropDown    matlab.ui.control.DropDown
+        UserKineticsTimeUnitLabel       matlab.ui.control.Label
+        UserKineticsConcentrationUnitDropDown  matlab.ui.control.DropDown
+        UserKineticsConcentrationUnitLabel  matlab.ui.control.Label
+        UserKineticsHelpLabel           matlab.ui.control.Label
         TextArea                        matlab.ui.control.TextArea
         KineticsButtonGroup             matlab.ui.container.ButtonGroup
         OtherkineticsButton             matlab.ui.control.RadioButton
@@ -90,6 +96,48 @@ classdef defineReactionSysApp < matlab.apps.AppBase
             app.UITable5.Visible = state ;
             app.TrefKEditField.Visible = state ;
             app.TrefKEditFieldLabel.Visible = state ;
+        end
+
+        function value = parseScalarCell(~, newData)
+            if isnumeric(newData)
+                value = newData ;
+            else
+                value = InputLayerHelper.parseArithmeticExpression(newData) ;
+            end
+        end
+
+        function wrappedKinetics = buildWrappedUserKinetics(app)
+            timeUnit = app.UserKineticsTimeUnitDropDown.Value ;
+            concUnit = app.UserKineticsConcentrationUnitDropDown.Value ;
+
+            switch app.OtherKineticsFormat.SelectedObject.Text
+                case 'From file'
+                    functionName = app.SpecifythenameofthefunctionEditField.Value ;
+                    wrappedKinetics = InputLayerHelper.wrapNamedKinetics( ...
+                        functionName, timeUnit, concUnit) ;
+                    app.RS.userDefinedKineticsSource = 'file' ;
+                    app.RS.userDefinedKineticsFunctionName = char(functionName) ;
+                    app.RS.userDefinedKineticsExpressions = strings(0, 1) ;
+
+                case 'Using table below'
+                    rateEquationsArray = table2array(app.UITable6.Data) ;
+                    exprList = strings(numel(rateEquationsArray), 1) ;
+                    for i = 1:numel(rateEquationsArray)
+                        expr = strtrim(string(rateEquationsArray(i))) ;
+                        if strlength(expr) == 0
+                            error('Rate expression %d is empty.', i) ;
+                        end
+                        exprList(i) = expr ;
+                    end
+                    wrappedKinetics = InputLayerHelper.wrapExpressionKinetics( ...
+                        cellstr(exprList), timeUnit, concUnit) ;
+                    app.RS.userDefinedKineticsSource = 'table' ;
+                    app.RS.userDefinedKineticsExpressions = exprList ;
+                    app.RS.userDefinedKineticsFunctionName = '' ;
+            end
+
+            app.RS.userKineticsTimeUnit = char(timeUnit) ;
+            app.RS.userKineticsConcentrationUnit = char(concUnit) ;
         end
     end
     
@@ -182,20 +230,12 @@ classdef defineReactionSysApp < matlab.apps.AppBase
                             app.RS.Ea_denominator = langmuirDataArray(:,2)' ;
                             app.RS.partialOrders_denominator = langmuirDataArray(:,3:end)' ;
                         end
+                        app.RS.userDefinedKinetics = [] ;
+                        app.RS.userDefinedKineticsExpressions = strings(0, 1) ;
+                        app.RS.userDefinedKineticsSource = '' ;
+                        app.RS.userDefinedKineticsFunctionName = '' ;
                     case 'Other kinetics'
-                        switch app.OtherKineticsFormat.SelectedObject.Text
-                            case 'From file'
-                                command = "@(concentration,T) " + app.SpecifythenameofthefunctionEditField.Value + "(concentration,T) ;" ;
-                            case 'Using table below'
-                                rateEquationsArray = table2array(app.UITable6.Data) ;
-                                command = "@(concentration,T) [" ;
-                                for i=1:length(rateEquationsArray)-1
-                                    command = command + rateEquationsArray(i) + ',' ;
-                                end
-                                command = command + rateEquationsArray(end) + '] ;' ;
-                        end
-                        
-                        app.RS.userDefinedKinetics = eval(command) ;
+                        app.RS.userDefinedKinetics = app.buildWrappedUserKinetics() ;
                 end
                 
                 if strcmp(app.PropertySelelctionDropDown.Value,'User defined')
@@ -350,7 +390,7 @@ classdef defineReactionSysApp < matlab.apps.AppBase
 
         % Button pushed function: UnitconversionhelperButton
         function UnitconversionhelperButtonPushed(app, event)
-            app.UnitsApp = unitConverterApp(app) ;
+            UnitConverterHelper.launch() ;
         end
 
         % Selection changed function: KineticsButtonGroup
@@ -370,6 +410,8 @@ classdef defineReactionSysApp < matlab.apps.AppBase
                     app.OtherKineticsFormat.Visible = 'off' ;
                     app.SpecifythenameofthefunctionEditField.Visible = 'off' ;
                     app.SpecifythenameofthefunctionEditFieldLabel.Visible = 'off' ;
+                    app.UserKineticsUnitsPanel.Visible = 'off' ;
+                    app.UserKineticsHelpLabel.Visible = 'off' ;
                 case 'Other kinetics'
                     app.UITable2.Visible = 'off' ;
                     app.UITable3.Visible = 'on' ;
@@ -383,6 +425,8 @@ classdef defineReactionSysApp < matlab.apps.AppBase
                     app.OtherKineticsFormat.Visible = 'on' ;
                     app.SpecifythenameofthefunctionEditField.Visible = 'on' ;
                     app.SpecifythenameofthefunctionEditFieldLabel.Visible = 'on' ;
+                    app.UserKineticsUnitsPanel.Visible = 'on' ;
+                    app.UserKineticsHelpLabel.Visible = 'on' ;
             end
         end
 
@@ -390,9 +434,14 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         function UITableCellEdit(app, event)
             indices = event.Indices;
             newData = event.NewData;
-            
-            if isa(newData,'char')
-                app.UITable.Data{indices(1),indices(2)} = str2double(newData) ;
+
+            try
+                if isa(newData,'char') || isa(newData, 'string')
+                    app.UITable.Data{indices(1),indices(2)} = app.parseScalarCell(newData) ;
+                end
+            catch ME
+                uialert(app.ReactionSysDefinitionUIFigure, ME.message, 'Invalid Input') ;
+                app.UITable.Data{indices(1),indices(2)} = [] ;
             end
         end
 
@@ -400,8 +449,13 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         function UITable2CellEdit(app, event)
             indices = event.Indices;
             newData = event.NewData;
-            if isa(newData,'char')
-                app.UITable2.Data{indices(1),indices(2)} = str2double(newData) ;
+            try
+                if isa(newData,'char') || isa(newData, 'string')
+                    app.UITable2.Data{indices(1),indices(2)} = app.parseScalarCell(newData) ;
+                end
+            catch ME
+                uialert(app.ReactionSysDefinitionUIFigure, ME.message, 'Invalid Input') ;
+                app.UITable2.Data{indices(1),indices(2)} = [] ;
             end
         end
 
@@ -409,8 +463,13 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         function UITable3CellEdit(app, event)
             indices = event.Indices;
             newData = event.NewData;
-            if isa(newData,'char')
-                app.UITable3.Data{indices(1),indices(2)} = str2double(newData) ;
+            try
+                if isa(newData,'char') || isa(newData, 'string')
+                    app.UITable3.Data{indices(1),indices(2)} = app.parseScalarCell(newData) ;
+                end
+            catch ME
+                uialert(app.ReactionSysDefinitionUIFigure, ME.message, 'Invalid Input') ;
+                app.UITable3.Data{indices(1),indices(2)} = [] ;
             end
         end
 
@@ -418,8 +477,13 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         function UITable4CellEdit(app, event)
             indices = event.Indices;
             newData = event.NewData;
-            if isa(newData,'char')
-                app.UITable4.Data{indices(1),indices(2)} = str2double(newData) ;
+            try
+                if isa(newData,'char') || isa(newData, 'string')
+                    app.UITable4.Data{indices(1),indices(2)} = app.parseScalarCell(newData) ;
+                end
+            catch ME
+                uialert(app.ReactionSysDefinitionUIFigure, ME.message, 'Invalid Input') ;
+                app.UITable4.Data{indices(1),indices(2)} = [] ;
             end
         end
 
@@ -427,8 +491,13 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         function UITable5CellEdit(app, event)
             indices = event.Indices;
             newData = event.NewData;
-            if isa(newData,'char')
-                app.UITable5.Data{indices(1),indices(2)} = str2double(newData) ;
+            try
+                if isa(newData,'char') || isa(newData, 'string')
+                    app.UITable5.Data{indices(1),indices(2)} = app.parseScalarCell(newData) ;
+                end
+            catch ME
+                uialert(app.ReactionSysDefinitionUIFigure, ME.message, 'Invalid Input') ;
+                app.UITable5.Data{indices(1),indices(2)} = [] ;
             end
         end
 
@@ -436,8 +505,11 @@ classdef defineReactionSysApp < matlab.apps.AppBase
         function UITable6CellEdit(app, event)
             indices = event.Indices;
             newData = event.NewData;
+            if isa(newData,'string')
+                newData = char(newData) ;
+            end
             if isa(newData,'char')
-                app.UITable6.Data{indices(1),indices(2)} = str2double(newData) ;
+                app.UITable6.Data{indices(1),indices(2)} = string(strtrim(newData)) ;
             end
         end
 
@@ -492,12 +564,24 @@ classdef defineReactionSysApp < matlab.apps.AppBase
                 % Other kinetics mode
                 app.KineticsButtonGroup.SelectedObject = app.OtherkineticsButton ;
                 app.KineticsButtonGroupSelectionChanged([]) ;
+                app.UserKineticsTimeUnitDropDown.Value = char(RS.userKineticsTimeUnit) ;
+                app.UserKineticsConcentrationUnitDropDown.Value = char(RS.userKineticsConcentrationUnit) ;
 
-                % Try to show the function handle as text
-                funcStr = func2str(RS.userDefinedKinetics) ;
-                app.OtherKineticsFormat.SelectedObject = app.FromfileButton ;
-                app.OtherKineticsFormatSelectionChanged([]) ;
-                app.SpecifythenameofthefunctionEditField.Value = funcStr ;
+                if strcmp(RS.userDefinedKineticsSource, 'table') && ~isempty(RS.userDefinedKineticsExpressions)
+                    app.OtherKineticsFormat.SelectedObject = app.UsingtablebelowButton ;
+                    app.OtherKineticsFormatSelectionChanged([]) ;
+                    exprData = cellstr(RS.userDefinedKineticsExpressions(:)) ;
+                    app.UITable6.Data = array2table(string(exprData)) ;
+                    app.UITable6.RowName = app.UITable.RowName ;
+                else
+                    app.OtherKineticsFormat.SelectedObject = app.FromfileButton ;
+                    app.OtherKineticsFormatSelectionChanged([]) ;
+                    if ~isempty(RS.userDefinedKineticsFunctionName)
+                        app.SpecifythenameofthefunctionEditField.Value = char(RS.userDefinedKineticsFunctionName) ;
+                    else
+                        app.SpecifythenameofthefunctionEditField.Value = func2str(RS.userDefinedKinetics) ;
+                    end
+                end
 
             else
                 % Langmuir-Hinshelwood mode
@@ -710,7 +794,7 @@ classdef defineReactionSysApp < matlab.apps.AppBase
             app.UITable6.RowName = {};
             app.UITable6.CellEditCallback = createCallbackFcn(app, @UITable6CellEdit, true);
             app.UITable6.Visible = 'off';
-            app.UITable6.Position = [51 22 556 205];
+            app.UITable6.Position = [51 22 556 145];
 
             % Create KineticsButtonGroup
             app.KineticsButtonGroup = uibuttongroup(app.KineticsTab);
@@ -737,21 +821,58 @@ classdef defineReactionSysApp < matlab.apps.AppBase
             app.TextArea.Editable = 'off';
             app.TextArea.BackgroundColor = [0.9412 0.9412 0.9412];
             app.TextArea.Visible = 'off';
-            app.TextArea.Position = [51 273 556 80];
-            app.TextArea.Value = {'How to specify different kinetics expressions?'; '- Each row corresponds to the rate equation of a different reaction'; '- Concentration of each species has to be expressed as an element of the vector concentration, being consistent with the order used in the stochiometric matrix.'; '- Temperature has to be expressed as T'; ''; 'Example: A + B <-> C  with r_forward = 20*C_A^0.5*C_B^3 and r_reverse = 2*exp(1000/T)*C_C'; 'In the first row of the table you should write:'; '       20 * concentration(1)^0.5 * concentration(2)^3'; 'In the second row you should write:'; '       2 * exp(1000/T)* concentration(3)'; ''};
+            app.TextArea.Position = [51 289 556 64];
+            app.TextArea.Value = {'How to specify different kinetics expressions?'; '- Each row corresponds to the rate equation r_i of a different reaction'; '- Concentration of each species has to be expressed as an element of the vector concentration, being consistent with the order used in the stochiometric matrix.'; '- Temperature has to be expressed as T'; '- Use the base-unit panel below to tell the app which time and concentration units you are using'; ''; 'Example: A + B <-> C  with r_forward = 20*C_A^0.5*C_B^3 and r_reverse = 2*exp(1000/T)*C_C'; 'In the first row of the table you should write:'; '       20 * concentration(1)^0.5 * concentration(2)^3'; 'In the second row you should write:'; '       2 * exp(1000/T)* concentration(3)'; ''};
 
             % Create SpecifythenameofthefunctionEditFieldLabel
             app.SpecifythenameofthefunctionEditFieldLabel = uilabel(app.KineticsTab);
             app.SpecifythenameofthefunctionEditFieldLabel.HorizontalAlignment = 'right';
             app.SpecifythenameofthefunctionEditFieldLabel.Visible = 'off';
-            app.SpecifythenameofthefunctionEditFieldLabel.Position = [53 239 180 22];
+            app.SpecifythenameofthefunctionEditFieldLabel.Position = [53 173 180 22];
             app.SpecifythenameofthefunctionEditFieldLabel.Text = 'Specify the name of the function ';
 
             % Create SpecifythenameofthefunctionEditField
             app.SpecifythenameofthefunctionEditField = uieditfield(app.KineticsTab, 'text');
             app.SpecifythenameofthefunctionEditField.Enable = 'off';
             app.SpecifythenameofthefunctionEditField.Visible = 'off';
-            app.SpecifythenameofthefunctionEditField.Position = [257 239 340 22];
+            app.SpecifythenameofthefunctionEditField.Position = [257 173 340 22];
+
+            % Create UserKineticsUnitsPanel
+            app.UserKineticsUnitsPanel = uipanel(app.KineticsTab);
+            app.UserKineticsUnitsPanel.Title = 'Base units for Other kinetics';
+            app.UserKineticsUnitsPanel.Visible = 'off';
+            app.UserKineticsUnitsPanel.Position = [51 219 556 50];
+
+            % Create UserKineticsTimeUnitLabel
+            app.UserKineticsTimeUnitLabel = uilabel(app.UserKineticsUnitsPanel);
+            app.UserKineticsTimeUnitLabel.HorizontalAlignment = 'right';
+            app.UserKineticsTimeUnitLabel.Position = [10 2 70 22];
+            app.UserKineticsTimeUnitLabel.Text = 'Time';
+
+            % Create UserKineticsTimeUnitDropDown
+            app.UserKineticsTimeUnitDropDown = uidropdown(app.UserKineticsUnitsPanel);
+            app.UserKineticsTimeUnitDropDown.Items = UnitConverterHelper.getUnits('Time');
+            app.UserKineticsTimeUnitDropDown.Position = [90 2 90 22];
+            app.UserKineticsTimeUnitDropDown.Value = 's';
+
+            % Create UserKineticsConcentrationUnitLabel
+            app.UserKineticsConcentrationUnitLabel = uilabel(app.UserKineticsUnitsPanel);
+            app.UserKineticsConcentrationUnitLabel.HorizontalAlignment = 'right';
+            app.UserKineticsConcentrationUnitLabel.Position = [205 2 90 22];
+            app.UserKineticsConcentrationUnitLabel.Text = 'Concentration';
+
+            % Create UserKineticsConcentrationUnitDropDown
+            app.UserKineticsConcentrationUnitDropDown = uidropdown(app.UserKineticsUnitsPanel);
+            app.UserKineticsConcentrationUnitDropDown.Items = UnitConverterHelper.getUnits('Concentration');
+            app.UserKineticsConcentrationUnitDropDown.Position = [308 2 120 22];
+            app.UserKineticsConcentrationUnitDropDown.Value = 'mol/m^3';
+
+            % Create UserKineticsHelpLabel
+            app.UserKineticsHelpLabel = uilabel(app.KineticsTab);
+            app.UserKineticsHelpLabel.Visible = 'off';
+            app.UserKineticsHelpLabel.FontColor = [0.35 0.35 0.35];
+            app.UserKineticsHelpLabel.Position = [53 199 552 16];
+            app.UserKineticsHelpLabel.Text = 'Write r_i in your preferred base units. The app converts concentration inputs and rate outputs to SI automatically.';
 
             % Create OtherKineticsFormat
             app.OtherKineticsFormat = uibuttongroup(app.KineticsTab);

@@ -33,6 +33,11 @@ classdef ReactionSys
         DHref  
         r_i
         userDefinedKinetics 
+        userDefinedKineticsExpressions = strings(0, 1)
+        userDefinedKineticsSource = ''
+        userDefinedKineticsFunctionName = ''
+        userKineticsTimeUnit = 's'
+        userKineticsConcentrationUnit = 'mol/m^3'
     end
     
     properties (Dependent)

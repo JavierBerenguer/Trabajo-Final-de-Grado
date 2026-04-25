@@ -172,6 +172,8 @@ classdef UnitConverterHelper < handle
             end
             entry = cats.(categoryName) ;
             units = entry.factors.keys ;
+            inputVal = UnitConverterHelper.extractFieldNumericValue(targetField) ;
+            defaultFrom = UnitConverterHelper.getFieldUnit(targetField, units{1}) ;
 
             % === Create figure ===
             fig = uifigure('Name', ['Unit Converter — ' categoryName], ...
@@ -186,8 +188,8 @@ classdef UnitConverterHelper < handle
                 'ColumnWidth', {60, '1x', '1x'}, 'Padding', [0 0 0 0]) ;
             fromPanel.Layout.Row = 1 ;
             uilabel(fromPanel, 'Text', 'From:', 'FontWeight', 'bold') ;
-            efInput = uieditfield(fromPanel, 'numeric', 'Value', targetField.Value) ;
-            ddFrom = uidropdown(fromPanel, 'Items', units, 'Value', units{1}) ;
+            efInput = uieditfield(fromPanel, 'numeric', 'Value', inputVal) ;
+            ddFrom = uidropdown(fromPanel, 'Items', units, 'Value', defaultFrom) ;
 
             % --- Row 2: To unit + result ---
             toPanel = uigridlayout(mainGrid, [1 3], ...
@@ -278,7 +280,16 @@ classdef UnitConverterHelper < handle
                     siVal = val * entry.factors(fromU) ;
                 end
 
-                targetField.Value = siVal ;
+                if isa(targetField, 'matlab.ui.control.NumericEditField')
+                    targetField.Value = siVal ;
+                else
+                    targetField.Value = sprintf('%.15g', siVal) ;
+                end
+
+                if isprop(targetField, 'UserData') && isstruct(targetField.UserData) && ...
+                        isfield(targetField.UserData, 'unitDropdown') && isvalid(targetField.UserData.unitDropdown)
+                    targetField.UserData.unitDropdown.Value = UnitConverterHelper.defaultUnit(categoryName) ;
+                end
                 delete(fig) ;
             end
 
@@ -293,9 +304,77 @@ classdef UnitConverterHelper < handle
             doConvert() ;
         end
 
+        function units = getUnits(categoryName)
+            cats = UnitConverterHelper.buildCatalog() ;
+            if ~isfield(cats, categoryName)
+                error('UnitConverterHelper:UnknownCategory', ...
+                    'Unknown category "%s".', categoryName) ;
+            end
+            units = cats.(categoryName).factors.keys ;
+        end
+
+        function unit = defaultUnit(categoryName)
+            units = UnitConverterHelper.getUnits(categoryName) ;
+            unit = units{1} ;
+        end
+
+        function factor = factorToSI(categoryName, unitName)
+            cats = UnitConverterHelper.buildCatalog() ;
+            if ~isfield(cats, categoryName)
+                error('UnitConverterHelper:UnknownCategory', ...
+                    'Unknown category "%s".', categoryName) ;
+            end
+            if strcmp(categoryName, 'Temperature')
+                error('UnitConverterHelper:UnsupportedFactor', ...
+                    'Temperature requires offset-aware conversion.') ;
+            end
+            factor = cats.(categoryName).factors(unitName) ;
+        end
+
+        function siValue = convertToSI(categoryName, value, unitName)
+            if strcmp(categoryName, 'Temperature')
+                siValue = UnitConverterHelper.convertTemperature(value, unitName, 'K') ;
+            else
+                siValue = value * UnitConverterHelper.factorToSI(categoryName, unitName) ;
+            end
+        end
+
+        function value = convertFromSI(categoryName, siValue, unitName)
+            if strcmp(categoryName, 'Temperature')
+                value = UnitConverterHelper.convertTemperature(siValue, 'K', unitName) ;
+            else
+                value = siValue / UnitConverterHelper.factorToSI(categoryName, unitName) ;
+            end
+        end
+
     end
 
     methods (Static, Access = private)
+
+        function val = extractFieldNumericValue(targetField)
+            if isa(targetField, 'matlab.ui.control.NumericEditField')
+                val = targetField.Value ;
+                return
+            end
+
+            try
+                val = InputLayerHelper.parseArithmeticExpression(targetField.Value) ;
+            catch
+                val = 0 ;
+            end
+        end
+
+        function unit = getFieldUnit(targetField, fallback)
+            unit = fallback ;
+            if ~isprop(targetField, 'UserData') || ~isstruct(targetField.UserData)
+                return
+            end
+
+            fieldData = targetField.UserData ;
+            if isfield(fieldData, 'unitDropdown') && ~isempty(fieldData.unitDropdown) && isvalid(fieldData.unitDropdown)
+                unit = fieldData.unitDropdown.Value ;
+            end
+        end
 
         function cats = buildCatalog()
             % buildCatalog  Return struct with every category.
@@ -336,6 +415,11 @@ classdef UnitConverterHelper < handle
             m('kmol/m^3') = 1e3 ;
             m('mmol/L')   = 1 ;
             cats.Concentration.factors = m ;
+
+            % ----- Raw scalar (no conversion) -----
+            m = containers.Map() ;
+            m('as entered') = 1 ;
+            cats.RawScalar.factors = m ;
 
             % ----- k (1st order) -----
             m = containers.Map() ;

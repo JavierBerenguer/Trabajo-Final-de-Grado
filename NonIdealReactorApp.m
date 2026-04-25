@@ -31,6 +31,7 @@ classdef NonIdealReactorApp < handle
         RTD_BoundaryDropdown
         RTD_BoundaryLabel
         RTD_ExpTVarField
+        RTD_ExpTUnitDropdown
         RTD_ExpTVarLabel
         RTD_ExpCVarField
         RTD_ExpCVarLabel
@@ -313,35 +314,78 @@ classdef NonIdealReactorApp < handle
 
         %% ============== HELPER: NUMERIC FIELD + UNIT CONVERTER BUTTON ==============
 
-        function [field, subGrid, btn] = createNumericWithConv(~, parentGrid, row, col, defaultVal, unitCat, varargin)
-            % createNumericWithConv  Create a numeric editfield with a tiny
-            %   button that opens the contextual unit converter.
+        function [field, subGrid, btn] = createNumericWithConv(app, parentGrid, row, col, defaultVal, unitCat, varargin)
+            % createNumericWithConv  Create a text editfield with a unit dropdown
+            %   and a tiny button that opens the contextual unit converter.
             %
             %   [field, subGrid, btn] = app.createNumericWithConv(parentGrid, row, col, defaultVal, unitCat, ...)
             %
-            %   Extra name-value pairs (e.g. 'Limits', [0 Inf]) are forwarded
-            %   to the uieditfield constructor.  The third output (btn) allows
-            %   the caller to override the ButtonPushedFcn (e.g. for dynamic
-            %   unit categories).
+            %   The edit field accepts simple arithmetic expressions such as
+            %   10/6 or 2*60. Values are converted to SI only when read.
 
-            subGrid = uigridlayout(parentGrid, [1 2], ...
-                'ColumnWidth', {'1x', 24}, ...
+            subGrid = uigridlayout(parentGrid, [1 3], ...
+                'ColumnWidth', {'1x', 92, 24}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 2) ;
             subGrid.Layout.Row    = row ;
             subGrid.Layout.Column = col ;
 
-            field = uieditfield(subGrid, 'numeric', ...
-                'Value', defaultVal, varargin{:}) ;
+            field = uieditfield(subGrid, 'text', ...
+                'Value', InputLayerHelper.formatScalar(defaultVal), ...
+                'Tooltip', 'Accepts simple arithmetic expressions. Converted to SI at runtime.') ;
             field.Layout.Row = 1 ; field.Layout.Column = 1 ;
+
+            unitDropdown = uidropdown(subGrid, ...
+                'Items', UnitConverterHelper.getUnits(unitCat), ...
+                'Value', UnitConverterHelper.defaultUnit(unitCat)) ;
+            unitDropdown.Layout.Row = 1 ; unitDropdown.Layout.Column = 2 ;
 
             btn = uibutton(subGrid, 'push', ...
                 'Text', '', ...
                 'Icon', 'UnitsLogo.png', ...
                 'Tooltip', ['Unit converter (' unitCat ')'], ...
                 'BackgroundColor', [0.85 0.90 1.0]) ;
-            btn.Layout.Row = 1 ; btn.Layout.Column = 2 ;
+            btn.Layout.Row = 1 ; btn.Layout.Column = 3 ;
             btn.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(field, unitCat) ;
+
+            field.UserData = struct( ...
+                'unitCategory', unitCat, ...
+                'unitDropdown', unitDropdown, ...
+                'converterButton', btn) ;
+            app.updateInputFieldCategory(field, unitCat) ;
+        end
+
+        function value = readInputField(~, field)
+            value = InputLayerHelper.readFieldToSI(field) ;
+        end
+
+        function setInputFieldValue(~, field, siValue)
+            InputLayerHelper.setFieldFromSI(field, siValue) ;
+        end
+
+        function updateInputFieldCategory(~, field, unitCat)
+            fieldData = field.UserData ;
+            fieldData.unitCategory = unitCat ;
+            field.UserData = fieldData ;
+
+            unitDropdown = fieldData.unitDropdown ;
+            if isempty(unitDropdown) || ~isvalid(unitDropdown)
+                return
+            end
+
+            currentUnit = unitDropdown.Value ;
+            unitDropdown.Items = UnitConverterHelper.getUnits(unitCat) ;
+            if any(strcmp(unitDropdown.Items, currentUnit))
+                unitDropdown.Value = currentUnit ;
+            else
+                unitDropdown.Value = UnitConverterHelper.defaultUnit(unitCat) ;
+            end
+
+            converterButton = fieldData.converterButton ;
+            if ~isempty(converterButton) && isvalid(converterButton)
+                converterButton.Tooltip = ['Unit converter (' unitCat ')'] ;
+                converterButton.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(field, unitCat) ;
+            end
         end
 
         function cat = getKCategory(~, dropdown)
@@ -420,13 +464,13 @@ classdef NonIdealReactorApp < handle
             app.RTD_SourceDropdown.Layout.Column = 2 ;
 
             % Row 2: Tau field
-            lbl = uilabel(leftGrid, 'Text', '&tau; [s]:', 'Interpreter', 'html') ;
+            lbl = uilabel(leftGrid, 'Text', '&tau;:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
             [app.RTD_TauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 2, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
 
             % Row 3: Qv (volumetric flow rate) — always visible
-            app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Q<sub>v</sub> [m&sup3;/s]:', 'Interpreter', 'html') ;
+            app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Q<sub>v</sub>:', 'Interpreter', 'html') ;
             app.RTD_QvLabel.Layout.Row = 3 ; app.RTD_QvLabel.Layout.Column = 1 ;
             [app.RTD_QvField, ~] = app.createNumericWithConv( ...
                 leftGrid, 3, 2, 0.001, 'VolumetricFlow', 'Limits', [1e-12 Inf]) ;
@@ -453,11 +497,20 @@ classdef NonIdealReactorApp < handle
             % Row 5: Experimental t variable
             app.RTD_ExpTVarLabel = uilabel(leftGrid, 'Text', 't variable (workspace):') ;
             app.RTD_ExpTVarLabel.Layout.Row = 5 ; app.RTD_ExpTVarLabel.Layout.Column = 1 ;
-            app.RTD_ExpTVarField = uieditfield(leftGrid, 'text', ...
+            expTGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {'1x', 85}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 2) ;
+            expTGrid.Layout.Row = 5 ; expTGrid.Layout.Column = 2 ;
+            app.RTD_ExpTVarField = uieditfield(expTGrid, 'text', ...
                 'Value', 't_exp') ;
-            app.RTD_ExpTVarField.Layout.Row = 5 ; app.RTD_ExpTVarField.Layout.Column = 2 ;
+            app.RTD_ExpTVarField.Layout.Row = 1 ; app.RTD_ExpTVarField.Layout.Column = 1 ;
+            app.RTD_ExpTUnitDropdown = uidropdown(expTGrid, ...
+                'Items', UnitConverterHelper.getUnits('Time'), ...
+                'Value', 's') ;
+            app.RTD_ExpTUnitDropdown.Layout.Row = 1 ; app.RTD_ExpTUnitDropdown.Layout.Column = 2 ;
             app.RTD_ExpTVarLabel.Visible = 'off' ;
-            app.RTD_ExpTVarField.Visible = 'off' ;
+            expTGrid.Visible = 'off' ;
 
             % Row 6: Experimental C variable
             app.RTD_ExpCVarLabel = uilabel(leftGrid, 'Text', 'C variable (workspace):') ;
@@ -469,10 +522,10 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpCVarField.Visible = 'off' ;
 
             % Row 7: C0 (step only)
-            app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', 'C<sub>0</sub> [mol/m&sup3;] (step):', 'Interpreter', 'html') ;
+            app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', 'C<sub>0</sub> (same units as C(t)):', 'Interpreter', 'html') ;
             app.RTD_ExpC0Label.Layout.Row = 7 ; app.RTD_ExpC0Label.Layout.Column = 1 ;
             [app.RTD_ExpC0Field, tmpSG] = app.createNumericWithConv( ...
-                leftGrid, 7, 2, 1, 'Concentration', 'Limits', [0 Inf]) ;
+                leftGrid, 7, 2, 1, 'RawScalar', 'Limits', [0 Inf]) ;
             app.RTD_ExpC0Label.Visible = 'off' ;
             tmpSG.Visible = 'off' ;
 
@@ -507,14 +560,14 @@ classdef NonIdealReactorApp < handle
             app.RTD_EqField.Layout.Row = 4 ; app.RTD_EqField.Layout.Column = 2 ;
             app.RTD_EqField.Visible = 'off' ;
 
-            app.RTD_EqTStartLabel = uilabel(leftGrid, 'Text', 't start [s]:') ;
+            app.RTD_EqTStartLabel = uilabel(leftGrid, 'Text', 't start:') ;
             app.RTD_EqTStartLabel.Layout.Row = 5 ; app.RTD_EqTStartLabel.Layout.Column = 1 ;
             app.RTD_EqTStartLabel.Visible = 'off' ;
             [app.RTD_EqTStartField, tmpSG2] = app.createNumericWithConv( ...
                 leftGrid, 5, 2, 0, 'Time', 'Limits', [0 Inf]) ;
             tmpSG2.Visible = 'off' ;
 
-            app.RTD_EqTEndLabel = uilabel(leftGrid, 'Text', 't end [s]:') ;
+            app.RTD_EqTEndLabel = uilabel(leftGrid, 'Text', 't end:') ;
             app.RTD_EqTEndLabel.Layout.Row = 6 ; app.RTD_EqTEndLabel.Layout.Column = 1 ;
             app.RTD_EqTEndLabel.Visible = 'off' ;
             [app.RTD_EqTEndField, tmpSG3] = app.createNumericWithConv( ...
@@ -690,7 +743,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_BoLabel.Visible = 'off' ;
             app.RTD_BoField.Visible = 'off' ;
             app.RTD_ExpTVarLabel.Visible = 'off' ;
-            app.RTD_ExpTVarField.Visible = 'off' ;
+            app.RTD_ExpTVarField.Parent.Visible = 'off' ;
             app.RTD_ExpCVarLabel.Visible = 'off' ;
             app.RTD_ExpCVarField.Visible = 'off' ;
             app.RTD_ExpC0Label.Visible = 'off' ;
@@ -728,7 +781,7 @@ classdef NonIdealReactorApp < handle
 
                 case 'Experimental Pulse'
                     app.RTD_ExpTVarLabel.Visible = 'on' ;
-                    app.RTD_ExpTVarField.Visible = 'on' ;
+                    app.RTD_ExpTVarField.Parent.Visible = 'on' ;
                     app.RTD_ExpCVarLabel.Visible = 'on' ;
                     app.RTD_ExpCVarField.Visible = 'on' ;
                     app.RTD_ImportButton.Visible = 'on' ;
@@ -737,7 +790,7 @@ classdef NonIdealReactorApp < handle
 
                 case 'Experimental Step'
                     app.RTD_ExpTVarLabel.Visible = 'on' ;
-                    app.RTD_ExpTVarField.Visible = 'on' ;
+                    app.RTD_ExpTVarField.Parent.Visible = 'on' ;
                     app.RTD_ExpCVarLabel.Visible = 'on' ;
                     app.RTD_ExpCVarField.Visible = 'on' ;
                     app.RTD_ExpC0Label.Visible = 'on' ;
@@ -811,7 +864,7 @@ classdef NonIdealReactorApp < handle
             try
                 app.updateStatus('Generating RTD...') ;
                 source = app.RTD_SourceDropdown.Value ;
-                tau_val = app.RTD_TauField.Value ;
+                tau_val = app.readInputField(app.RTD_TauField) ;
 
                 switch source
                     case 'Ideal CSTR'
@@ -833,7 +886,7 @@ classdef NonIdealReactorApp < handle
                         app.rtd = RTD.dispersion_closed(Bo, tau_val) ;
 
                     case 'Laminar Flow'
-                        tau_val = app.RTD_TauField.Value ;
+                        tau_val = app.readInputField(app.RTD_TauField) ;
                         app.rtd = RTD.laminar_flow(tau_val) ;
 
                     case 'Experimental Pulse'
@@ -841,6 +894,7 @@ classdef NonIdealReactorApp < handle
                         C_var = app.RTD_ExpCVarField.Value ;
                         t_data = evalin('base', t_var) ;
                         C_data = evalin('base', C_var) ;
+                        t_data = UnitConverterHelper.convertToSI('Time', t_data, app.RTD_ExpTUnitDropdown.Value) ;
                         app.rtd = RTD.from_pulse(t_data, C_data) ;
 
                     case 'Experimental Step'
@@ -848,13 +902,14 @@ classdef NonIdealReactorApp < handle
                         C_var = app.RTD_ExpCVarField.Value ;
                         t_data = evalin('base', t_var) ;
                         C_data = evalin('base', C_var) ;
-                        C0 = app.RTD_ExpC0Field.Value ;
+                        t_data = UnitConverterHelper.convertToSI('Time', t_data, app.RTD_ExpTUnitDropdown.Value) ;
+                        C0 = app.readInputField(app.RTD_ExpC0Field) ;
                         app.rtd = RTD.from_step(t_data, C_data, C0) ;
 
                     case 'C(t) Equation'
                         eq_str = app.RTD_EqField.Value ;
-                        t_start = app.RTD_EqTStartField.Value ;
-                        t_end = app.RTD_EqTEndField.Value ;
+                        t_start = app.readInputField(app.RTD_EqTStartField) ;
+                        t_end = app.readInputField(app.RTD_EqTEndField) ;
                         n_pts = round(app.RTD_EqNptsField.Value) ;
 
                         % Generate t vector and evaluate C(t)
@@ -893,7 +948,12 @@ classdef NonIdealReactorApp < handle
                                         break
                                     end
                                     if ischar(val) || isstring(val)
-                                        val = str2double(val) ;
+                                        try
+                                            val = InputLayerHelper.parseArithmeticExpression(val) ;
+                                        catch
+                                            validRows(iRow) = false ;
+                                            break
+                                        end
                                     end
                                     if isnan(val)
                                         validRows(iRow) = false ;
@@ -934,7 +994,7 @@ classdef NonIdealReactorApp < handle
                             app.rtd = RTD.from_pulse(t_data, C_data) ;
                         else
                             % Step input: need C0
-                            C0 = app.RTD_ExpC0Field.Value ;
+                            C0 = app.readInputField(app.RTD_ExpC0Field) ;
                             app.rtd = RTD.from_step(t_data, C_data, C0) ;
                         end
                 end
@@ -987,7 +1047,7 @@ classdef NonIdealReactorApp < handle
             end
 
             % V_eff = tau * Qv
-            Qv = app.RTD_QvField.Value ;
+            Qv = app.readInputField(app.RTD_QvField) ;
             V_eff = app.rtd.tau * Qv ;
             app.RTD_ResultVeff.Text = sprintf('%.6g', V_eff) ;
         end
@@ -1180,7 +1240,7 @@ classdef NonIdealReactorApp < handle
             app.Pred_RSStatusLabel.Layout.Column = [1 2] ;
 
             % Row 6: CA0
-            app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
+            app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
             app.Pred_CA0Label.Layout.Row = 6 ; app.Pred_CA0Label.Layout.Column = 1 ;
             [app.Pred_CA0Field, ~] = app.createNumericWithConv( ...
                 leftGrid, 6, 2, 1000, 'Concentration', ...
@@ -1315,7 +1375,7 @@ classdef NonIdealReactorApp < handle
                 end
 
                 RS = app.Pred_RS ;
-                CA0_val = app.Pred_CA0Field.Value ;
+                CA0_val = app.readInputField(app.Pred_CA0Field) ;
 
                 % Build initial concentration vector: [CA0, 0, 0, ...]
                 C0 = zeros(1, RS.nComponents) ;
@@ -1465,7 +1525,7 @@ classdef NonIdealReactorApp < handle
             app.TIS_RTDStatusLabel.Visible = 'off' ;
 
             % Row 4: tau
-            app.TIS_tauLabel = uilabel(leftGrid, 'Text', 'tau total [s]:') ;
+            app.TIS_tauLabel = uilabel(leftGrid, 'Text', 'tau total:') ;
             app.TIS_tauLabel.Layout.Row = 4 ; app.TIS_tauLabel.Layout.Column = 1 ;
             [app.TIS_tauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 4, 2, 10, 'Time', ...
@@ -1513,7 +1573,7 @@ classdef NonIdealReactorApp < handle
             app.TIS_RSStatusLabel.Layout.Column = [1 2] ;
 
             % Row 9: CA0
-            app.TIS_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
+            app.TIS_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
             app.TIS_CA0Label.Layout.Row = 9 ; app.TIS_CA0Label.Layout.Column = 1 ;
             [app.TIS_CA0Field, ~] = app.createNumericWithConv( ...
                 leftGrid, 9, 2, 1000, 'Concentration', ...
@@ -1600,7 +1660,7 @@ classdef NonIdealReactorApp < handle
                 if ~isempty(app.rtd) && app.rtd.sigma2 > 0
                     N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
                     app.TIS_NField.Value = N_from_rtd ;
-                    app.TIS_tauField.Value = app.rtd.tau ;
+                    app.setInputFieldValue(app.TIS_tauField, app.rtd.tau) ;
                     infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
                         app.rtd.tau, N_from_rtd) ;
                 else
@@ -1624,7 +1684,8 @@ classdef NonIdealReactorApp < handle
                 % Import CA0 from Prediction Models tab
                 if ~isempty(app.Pred_CA0Field)
                     app.TIS_CA0Field.Value = app.Pred_CA0Field.Value ;
-                    infoLines{end+1} = sprintf('CA0=%.4g', app.Pred_CA0Field.Value) ;
+                    app.TIS_CA0Field.UserData.unitDropdown.Value = app.Pred_CA0Field.UserData.unitDropdown.Value ;
+                    infoLines{end+1} = sprintf('CA0=%.4g', app.readInputField(app.Pred_CA0Field)) ;
                 end
 
                 if any(contains(infoLines, 'not loaded'))
@@ -1686,9 +1747,9 @@ classdef NonIdealReactorApp < handle
                 end
 
                 N_val = app.TIS_NField.Value ;
-                tau_val = app.TIS_tauField.Value ;
+                tau_val = app.readInputField(app.TIS_tauField) ;
                 RS = app.TIS_RS ;
-                CA0_val = app.TIS_CA0Field.Value ;
+                CA0_val = app.readInputField(app.TIS_CA0Field) ;
 
                 % Build initial concentration vector: [CA0, 0, 0, ...]
                 C0 = zeros(1, RS.nComponents) ;
@@ -1862,7 +1923,7 @@ classdef NonIdealReactorApp < handle
             app.Disp_BCDropdown.Layout.Row = 5 ; app.Disp_BCDropdown.Layout.Column = 2 ;
 
             % Row 6: tau
-            app.Disp_tauLabel = uilabel(leftGrid, 'Text', '&tau; [s]:', 'Interpreter', 'html') ;
+            app.Disp_tauLabel = uilabel(leftGrid, 'Text', '&tau;:', 'Interpreter', 'html') ;
             app.Disp_tauLabel.Layout.Row = 6 ; app.Disp_tauLabel.Layout.Column = 1 ;
             [app.Disp_tauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 6, 2, 10, 'Time', ...
@@ -1910,7 +1971,7 @@ classdef NonIdealReactorApp < handle
             app.Disp_RSStatusLabel.Layout.Column = [1 2] ;
 
             % Row 11: CA0
-            app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
+            app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
             app.Disp_CA0Label.Layout.Row = 11 ; app.Disp_CA0Label.Layout.Column = 1 ;
             [app.Disp_CA0Field, ~] = app.createNumericWithConv( ...
                 leftGrid, 11, 2, 1000, 'Concentration', ...
@@ -2039,7 +2100,7 @@ classdef NonIdealReactorApp < handle
 
                 % Import RTD data (tau, sigma2_theta -> Bo)
                 if ~isempty(app.rtd) && app.rtd.sigma2 > 0
-                    app.Disp_tauField.Value = app.rtd.tau ;
+                    app.setInputFieldValue(app.Disp_tauField, app.rtd.tau) ;
                     sigma2_theta = app.rtd.sigma2 / app.rtd.tau^2 ;
                     bcType = app.Disp_BCDropdown.Value ;
 
@@ -2082,7 +2143,8 @@ classdef NonIdealReactorApp < handle
                 % Import CA0 from Prediction Models tab
                 if ~isempty(app.Pred_CA0Field)
                     app.Disp_CA0Field.Value = app.Pred_CA0Field.Value ;
-                    infoLines{end+1} = sprintf('CA0=%.4g', app.Pred_CA0Field.Value) ;
+                    app.Disp_CA0Field.UserData.unitDropdown.Value = app.Pred_CA0Field.UserData.unitDropdown.Value ;
+                    infoLines{end+1} = sprintf('CA0=%.4g', app.readInputField(app.Pred_CA0Field)) ;
                 end
 
                 if any(contains(infoLines, 'not loaded'))
@@ -2117,8 +2179,8 @@ classdef NonIdealReactorApp < handle
 
                 Bo_val = app.Disp_BoField.Value ;
                 bcType = app.Disp_BCDropdown.Value ;
-                tau_val = app.Disp_tauField.Value ;
-                CA0_val = app.Disp_CA0Field.Value ;
+                tau_val = app.readInputField(app.Disp_tauField) ;
+                CA0_val = app.readInputField(app.Disp_CA0Field) ;
                 RS = app.Disp_RS ;
 
                 % Build initial concentration vector
@@ -2310,14 +2372,14 @@ classdef NonIdealReactorApp < handle
 
             % ---- Equation mode: time params (rows 5-7, overlapping WS) ----
             app.Conv_TstartLabel = uilabel(leftGrid, ...
-                'Text', 't start [s]:', 'Visible', 'off') ;
+                'Text', 't start:', 'Visible', 'off') ;
             app.Conv_TstartLabel.Layout.Row = 5 ; app.Conv_TstartLabel.Layout.Column = 1 ;
             [app.Conv_TstartField, tmpSGcs] = app.createNumericWithConv( ...
                 leftGrid, 5, 2, 0, 'Time') ;
             tmpSGcs.Visible = 'off' ;
 
             app.Conv_TendLabel = uilabel(leftGrid, ...
-                'Text', 't end [s]:', 'Visible', 'off') ;
+                'Text', 't end:', 'Visible', 'off') ;
             app.Conv_TendLabel.Layout.Row = 6 ; app.Conv_TendLabel.Layout.Column = 1 ;
             [app.Conv_TendField, tmpSGce] = app.createNumericWithConv( ...
                 leftGrid, 6, 2, 50, 'Time', 'Limits', [0.001 Inf]) ;
@@ -2688,8 +2750,8 @@ classdef NonIdealReactorApp < handle
 
                     case 'From Equation'
                         t_data = linspace( ...
-                            app.Conv_TstartField.Value, ...
-                            app.Conv_TendField.Value, ...
+                            app.readInputField(app.Conv_TstartField), ...
+                            app.readInputField(app.Conv_TendField), ...
                             round(app.Conv_NptsField.Value)) ;
                         t = t_data ; %#ok<NASGU>
                         C_in = eval(app.Conv_CinEqField.Value) ;
@@ -2926,7 +2988,7 @@ classdef NonIdealReactorApp < handle
             app.Comb_ModelDescLabel.Layout.Row = 2 ; app.Comb_ModelDescLabel.Layout.Column = [1 2] ;
 
             % Row 3: tau (with "From RTD" option)
-            lbl = uilabel(leftGrid, 'Text', 'tau total [s]:') ;
+            lbl = uilabel(leftGrid, 'Text', 'tau total:') ;
             lbl.Layout.Row = 3 ; lbl.Layout.Column = 1 ;
             [app.Comb_tauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 3, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
@@ -2965,7 +3027,7 @@ classdef NonIdealReactorApp < handle
             app.Comb_KineticsDropdown.Layout.Column = 2 ;
 
             % Row 7: k
-            app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k [s<sup>-1</sup>]:', 'Interpreter', 'html') ;
+            app.Comb_kLabel = uilabel(leftGrid, 'Text', 'k:', 'Interpreter', 'html') ;
             app.Comb_kLabel.Layout.Row = 7 ; app.Comb_kLabel.Layout.Column = 1 ;
             [app.Comb_kField, ~, btnCk] = app.createNumericWithConv( ...
                 leftGrid, 7, 2, 0.1, 'k_1stOrder', ...
@@ -2974,7 +3036,7 @@ classdef NonIdealReactorApp < handle
             btnCk.ButtonPushedFcn = @(~,~) UnitConverterHelper.launchForField(app.Comb_kField, app.getKCategory(app.Comb_KineticsDropdown)) ;
 
             % Row 8: CA0 (2nd order only)
-            app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub> [mol/m&sup3;]:', 'Interpreter', 'html') ;
+            app.Comb_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
             app.Comb_CA0Label.Layout.Row = 8 ; app.Comb_CA0Label.Layout.Column = 1 ;
             app.Comb_CA0Label.Visible = 'off' ;
             [app.Comb_CA0Field, tmpSGcomb] = app.createNumericWithConv( ...
@@ -3110,14 +3172,15 @@ classdef NonIdealReactorApp < handle
 
         function Comb_kineticsChanged(app)
             kinetics = app.Comb_KineticsDropdown.Value ;
+            app.updateInputFieldCategory(app.Comb_kField, app.getKCategory(app.Comb_KineticsDropdown)) ;
             if contains(kinetics, '2nd')
                 app.Comb_CA0Label.Visible = 'on' ;
                 app.Comb_CA0Field.Parent.Visible = 'on' ;
-                app.Comb_kLabel.Text = 'k [m&sup3;/(mol&middot;s)]:' ;
+                app.Comb_kLabel.Text = 'k:' ;
             else
                 app.Comb_CA0Label.Visible = 'off' ;
                 app.Comb_CA0Field.Parent.Visible = 'off' ;
-                app.Comb_kLabel.Text = 'k [s<sup>-1</sup>]:' ;
+                app.Comb_kLabel.Text = 'k:' ;
             end
         end
 
@@ -3126,14 +3189,14 @@ classdef NonIdealReactorApp < handle
             try
                 app.updateStatus('Computing combined model...') ;
                 model = app.Comb_ModelDropdown.Value ;
-                tau_val = app.Comb_tauField.Value ;
+                tau_val = app.readInputField(app.Comb_tauField) ;
                 p1 = app.Comb_Param1Field.Value ;
                 p2 = app.Comb_Param2Field.Value ;
-                k_val = app.Comb_kField.Value ;
+                k_val = app.readInputField(app.Comb_kField) ;
                 kinetics = app.Comb_KineticsDropdown.Value ;
                 is2nd = contains(kinetics, '2nd') ;
                 if is2nd
-                    CA0_val = app.Comb_CA0Field.Value ;
+                    CA0_val = app.readInputField(app.Comb_CA0Field) ;
                 end
 
                 Da = k_val * tau_val ;
@@ -3241,7 +3304,7 @@ classdef NonIdealReactorApp < handle
             hold(app.Comb_AxesEt, 'on') ;
 
             % Overlay ideal CSTR for reference
-            tau_val = app.Comb_tauField.Value ;
+            tau_val = app.readInputField(app.Comb_tauField) ;
             rtd_ideal = RTD.ideal_cstr(tau_val) ;
             plot(app.Comb_AxesEt, rtd_ideal.t, rtd_ideal.Et, 'r--', 'LineWidth', 1) ;
             hold(app.Comb_AxesEt, 'off') ;
@@ -3293,11 +3356,11 @@ classdef NonIdealReactorApp < handle
 
             % ---- Plot 3: Sensitivity to main parameter ----
             cla(app.Comb_AxesSensitivity) ;
-            k_val = app.Comb_kField.Value ;
+            k_val = app.readInputField(app.Comb_kField) ;
             kinetics = app.Comb_KineticsDropdown.Value ;
             is2nd = contains(kinetics, '2nd') ;
             if is2nd
-                CA0_val = app.Comb_CA0Field.Value ;
+                CA0_val = app.readInputField(app.Comb_CA0Field) ;
             end
 
             switch model
