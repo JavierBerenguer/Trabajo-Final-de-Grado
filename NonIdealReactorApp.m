@@ -19,6 +19,8 @@ classdef NonIdealReactorApp < handle
 
         % Shared state
         rtd                 % Current RTD object (shared across tabs)
+        DisplayControls = struct()
+        DisplayCache = struct()
 
         % ---- Tab 1: RTD Analysis ----
         RTDTab
@@ -56,11 +58,14 @@ classdef NonIdealReactorApp < handle
         RTD_QvLabel
         RTD_QvField
         RTD_ResultTau
+        RTD_ResultTauLabel
         RTD_ResultSigma2
+        RTD_ResultSigma2Label
         RTD_ResultSigma2Theta
         RTD_ResultS3
         RTD_ResultN
         RTD_ResultVeff
+        RTD_ResultVeffLabel
         RTD_VtotalLabel         % Label for V_total input
         RTD_VtotalField         % V_total numeric input field
         RTD_ResultVdead         % Dead volume result label
@@ -387,6 +392,139 @@ classdef NonIdealReactorApp < handle
             end
         end
 
+        function dropdown = createDisplayUnitControl(~, parentGrid, row, col, ...
+                labelText, category, defaultUnit, callbackFcn)
+            subGrid = uigridlayout(parentGrid, [1 2], ...
+                'ColumnWidth', {'fit', '1x'}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 4) ;
+            subGrid.Layout.Row = row ;
+            subGrid.Layout.Column = col ;
+
+            uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
+            dropdown = uidropdown(subGrid, ...
+                'Items', UnitConverterHelper.getUnits(category), ...
+                'Value', defaultUnit, ...
+                'FontSize', 11, ...
+                'ValueChangedFcn', callbackFcn) ;
+            dropdown.Layout.Row = 1 ;
+            dropdown.Layout.Column = 2 ;
+        end
+
+        function value = convertOutputScalar(~, category, siValue, dropdown)
+            if isempty(dropdown) || ~isvalid(dropdown)
+                value = siValue ;
+                return
+            end
+            value = UnitConverterHelper.convertFromSI(category, siValue, dropdown.Value) ;
+        end
+
+        function values = convertOutputVector(~, category, siValues, dropdown)
+            if isempty(dropdown) || ~isvalid(dropdown)
+                values = siValues ;
+                return
+            end
+            values = UnitConverterHelper.convertFromSI(category, siValues, dropdown.Value) ;
+        end
+
+        function label = axisLabelWithUnit(~, baseText, dropdown)
+            if isempty(dropdown) || ~isvalid(dropdown)
+                label = baseText ;
+                return
+            end
+            label = sprintf('%s [%s]', baseText, dropdown.Value) ;
+        end
+
+        function label = htmlLabelWithUnit(app, baseHtml, dropdown)
+            unitText = app.unitToHtml(dropdown.Value) ;
+            label = sprintf('%s [%s]:', baseHtml, unitText) ;
+        end
+
+        function label = axisLabelWithUnitName(~, baseText, unitName)
+            label = sprintf('%s [%s]', baseText, unitName) ;
+        end
+
+        function unitName = timeSquaredUnitName(~, timeDropdown)
+            switch timeDropdown.Value
+                case 's'
+                    unitName = 's^2' ;
+                case 'min'
+                    unitName = 'min^2' ;
+                case 'h'
+                    unitName = 'h^2' ;
+                otherwise
+                    unitName = 's^2' ;
+            end
+        end
+
+        function unitName = timeInverseUnitName(~, timeDropdown)
+            unitName = ['1/' timeDropdown.Value] ;
+        end
+
+        function value = convertOutputFromTime(app, mode, siValue, timeDropdown)
+            switch mode
+                case 'time'
+                    value = app.convertOutputScalar('Time', siValue, timeDropdown) ;
+                case 'timeSquared'
+                    value = UnitConverterHelper.convertFromSI('TimeSquared', siValue, ...
+                        app.timeSquaredUnitName(timeDropdown)) ;
+                case 'timeInverse'
+                    value = UnitConverterHelper.convertFromSI('TimeInverse', siValue, ...
+                        app.timeInverseUnitName(timeDropdown)) ;
+                otherwise
+                    value = siValue ;
+            end
+        end
+
+        function values = convertOutputVectorFromTime(app, mode, siValues, timeDropdown)
+            switch mode
+                case 'time'
+                    values = app.convertOutputVector('Time', siValues, timeDropdown) ;
+                case 'timeInverse'
+                    values = UnitConverterHelper.convertFromSI('TimeInverse', siValues, ...
+                        app.timeInverseUnitName(timeDropdown)) ;
+                otherwise
+                    values = siValues ;
+            end
+        end
+
+        function refreshDisplayUnits(app, tabName)
+            switch tabName
+                case 'RTD'
+                    app.RTD_updateResults() ;
+                    app.RTD_updatePlots() ;
+                case 'Prediction'
+                    app.Pred_updatePlots() ;
+                case 'TIS'
+                    if isfield(app.DisplayCache, 'TIS') && ~isempty(app.DisplayCache.TIS)
+                        c = app.DisplayCache.TIS ;
+                        app.TIS_updatePlots(c.N_val, c.tau_val, c.RS, c.C0, ...
+                            c.X_tis, c.X_cstr, c.X_pfr) ;
+                    end
+                case 'Dispersion'
+                    if isfield(app.DisplayCache, 'Dispersion') && ~isempty(app.DisplayCache.Dispersion)
+                        c = app.DisplayCache.Dispersion ;
+                        app.Disp_updatePlots(c.Bo_val, c.tau_val, c.RS, c.C0, ...
+                            c.X_disp, c.X_cstr, c.X_pfr) ;
+                    end
+                case 'Convolution'
+                    app.Conv_refreshPlots() ;
+                case 'Combined'
+                    if isfield(app.DisplayCache, 'Combined') && ~isempty(app.DisplayCache.Combined)
+                        c = app.DisplayCache.Combined ;
+                        app.Comb_updatePlots(c.rtd_comb, c.model, c.X_model, ...
+                            c.X_cstr, c.X_pfr, c.paramStr) ;
+                    end
+                case 'Optimization'
+                    app.Opt_refreshDisplayUnits() ;
+            end
+        end
+
+        function htmlText = unitToHtml(~, unitText)
+            htmlText = strrep(unitText, '^2', '<sup>2</sup>') ;
+            htmlText = strrep(htmlText, '^3', '<sup>3</sup>') ;
+        end
+
         %% ============== ABOUT DIALOG (T7) ==============
 
         function showAbout(app) %#ok<INUSD>
@@ -640,69 +778,88 @@ classdef NonIdealReactorApp < handle
             app.RTD_GenerateButton.Layout.Row = 10 ;
             app.RTD_GenerateButton.Layout.Column = [1 2] ;
 
-            % Row 11: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+            % Row 11-12: Display units
+            lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
+            unitsGrid = uigridlayout(leftGrid, [2 2], ...
+                'ColumnWidth', {'1x', '1x'}, ...
+                'RowHeight', {28, 28}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 6) ;
+            unitsGrid.Layout.Row = 12 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.RTD.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('RTD')) ;
+            app.DisplayControls.RTD.volume = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 2, 'Volume:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('RTD')) ;
 
-            % Row 12: tau_m
-            lbl = uilabel(leftGrid, 'Text', '&tau;<sub>m</sub> [s]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            % Row 13: Results header
+            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+                'FontWeight', 'bold', 'FontSize', 13) ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = [1 2] ;
+
+            % Row 14: tau_m
+            app.RTD_ResultTauLabel = uilabel(leftGrid, ...
+                'Text', '&tau;<sub>m</sub> [s]:', 'Interpreter', 'html') ;
+            app.RTD_ResultTauLabel.Layout.Row = 14 ; app.RTD_ResultTauLabel.Layout.Column = 1 ;
             app.RTD_ResultTau = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultTau.Layout.Row = 12 ;
+            app.RTD_ResultTau.Layout.Row = 14 ;
             app.RTD_ResultTau.Layout.Column = 2 ;
 
-            % Row 13: sigma^2
-            lbl = uilabel(leftGrid, 'Text', '&sigma;&sup2; [s&sup2;]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            % Row 15: sigma^2
+            app.RTD_ResultSigma2Label = uilabel(leftGrid, ...
+                'Text', '&sigma;&sup2; [s&sup2;]:', 'Interpreter', 'html') ;
+            app.RTD_ResultSigma2Label.Layout.Row = 15 ; app.RTD_ResultSigma2Label.Layout.Column = 1 ;
             app.RTD_ResultSigma2 = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultSigma2.Layout.Row = 13 ;
+            app.RTD_ResultSigma2.Layout.Row = 15 ;
             app.RTD_ResultSigma2.Layout.Column = 2 ;
 
-            % Row 14: sigma^2_theta
+            % Row 16: sigma^2_theta
             lbl = uilabel(leftGrid, 'Text', '&sigma;&sup2;<sub>&theta;</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultSigma2Theta = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultSigma2Theta.Layout.Row = 14 ;
+            app.RTD_ResultSigma2Theta.Layout.Row = 16 ;
             app.RTD_ResultSigma2Theta.Layout.Column = 2 ;
 
-            % Row 15: s^3
+            % Row 17: s^3
             lbl = uilabel(leftGrid, 'Text', 's&sup3; [skewness]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultS3 = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultS3.Layout.Row = 15 ;
+            app.RTD_ResultS3.Layout.Row = 17 ;
             app.RTD_ResultS3.Layout.Column = 2 ;
 
-            % Row 16: N_est
+            % Row 18: N_est
             lbl = uilabel(leftGrid, 'Text', 'N<sub>est</sub> [= &tau;&sup2;/&sigma;&sup2;]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultN = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultN.Layout.Row = 16 ;
+            app.RTD_ResultN.Layout.Row = 18 ;
             app.RTD_ResultN.Layout.Column = 2 ;
 
-            % Row 17: V_eff
-            lbl = uilabel(leftGrid, 'Text', 'V<sub>eff</sub> [m&sup3;]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
+            % Row 19: V_eff
+            app.RTD_ResultVeffLabel = uilabel(leftGrid, ...
+                'Text', 'V<sub>eff</sub> [m&sup3;]:', 'Interpreter', 'html') ;
+            app.RTD_ResultVeffLabel.Layout.Row = 19 ; app.RTD_ResultVeffLabel.Layout.Column = 1 ;
             app.RTD_ResultVeff = uilabel(leftGrid, 'Text', '--') ;
-            app.RTD_ResultVeff.Layout.Row = 17 ;
+            app.RTD_ResultVeff.Layout.Row = 19 ;
             app.RTD_ResultVeff.Layout.Column = 2 ;
 
-            % Row 18: Export name
+            % Row 20: Export name
             lbl = uilabel(leftGrid, 'Text', 'Export name:') ;
-            lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 20 ; lbl.Layout.Column = 1 ;
             app.RTD_ExportNameField = uieditfield(leftGrid, 'text', ...
                 'Value', 'RTD_1') ;
-            app.RTD_ExportNameField.Layout.Row = 18 ;
+            app.RTD_ExportNameField.Layout.Row = 20 ;
             app.RTD_ExportNameField.Layout.Column = 2 ;
 
-            % Row 19: Export button
+            % Row 21: Export button
             app.RTD_ExportButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Export RTD to Workspace', ...
                 'BackgroundColor', [0.2 0.7 0.3], ...
                 'FontColor', 'white', ...
                 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.RTD_export()) ;
-            app.RTD_ExportButton.Layout.Row = 19 ;
+            app.RTD_ExportButton.Layout.Row = 21 ;
             app.RTD_ExportButton.Layout.Column = [1 2] ;
 
             % ---- RIGHT PANEL (PLOTS) ----
@@ -1045,8 +1202,18 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
-            app.RTD_ResultTau.Text = sprintf('%.4f', app.rtd.tau) ;
-            app.RTD_ResultSigma2.Text = sprintf('%.4f', app.rtd.sigma2) ;
+            timeDD = app.DisplayControls.RTD.time ;
+            volDD = app.DisplayControls.RTD.volume ;
+
+            app.RTD_ResultTauLabel.Text = app.htmlLabelWithUnit('&tau;<sub>m</sub>', timeDD) ;
+            app.RTD_ResultSigma2Label.Text = sprintf('&sigma;&sup2; [%s]:', ...
+                app.unitToHtml(app.timeSquaredUnitName(timeDD))) ;
+            app.RTD_ResultVeffLabel.Text = app.htmlLabelWithUnit('V<sub>eff</sub>', volDD) ;
+
+            tauDisplay = app.convertOutputFromTime('time', app.rtd.tau, timeDD) ;
+            sigmaDisplay = app.convertOutputFromTime('timeSquared', app.rtd.sigma2, timeDD) ;
+            app.RTD_ResultTau.Text = sprintf('%.4f', tauDisplay) ;
+            app.RTD_ResultSigma2.Text = sprintf('%.4f', sigmaDisplay) ;
 
             if ~isempty(app.rtd.sigma2_theta)
                 app.RTD_ResultSigma2Theta.Text = sprintf('%.6f', app.rtd.sigma2_theta) ;
@@ -1064,7 +1231,8 @@ classdef NonIdealReactorApp < handle
             % V_eff = tau * Qv
             Qv = app.readInputField(app.RTD_QvField) ;
             V_eff = app.rtd.tau * Qv ;
-            app.RTD_ResultVeff.Text = sprintf('%.6g', V_eff) ;
+            VeffDisplay = app.convertOutputScalar('Volume', V_eff, volDD) ;
+            app.RTD_ResultVeff.Text = sprintf('%.6g', VeffDisplay) ;
         end
 
         function RTD_updatePlots(app)
@@ -1074,18 +1242,22 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
+            timeDD = app.DisplayControls.RTD.time ;
+            t_display = app.convertOutputVectorFromTime('time', app.rtd.t, timeDD) ;
+            Et_display = app.convertOutputVectorFromTime('timeInverse', app.rtd.Et, timeDD) ;
+
             % E(t) plot
             cla(app.RTD_AxesEt) ;
-            plot(app.RTD_AxesEt, app.rtd.t, app.rtd.Et, 'b-', 'LineWidth', 1.5) ;
+            plot(app.RTD_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
             title(app.RTD_AxesEt, 'E(t)') ;
-            xlabel(app.RTD_AxesEt, 't [s]') ;
-            ylabel(app.RTD_AxesEt, 'E(t) [1/s]') ;
+            xlabel(app.RTD_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.RTD_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
             % F(t) plot
             cla(app.RTD_AxesFt) ;
-            plot(app.RTD_AxesFt, app.rtd.t, app.rtd.Ft, 'r-', 'LineWidth', 1.5) ;
+            plot(app.RTD_AxesFt, t_display, app.rtd.Ft, 'r-', 'LineWidth', 1.5) ;
             title(app.RTD_AxesFt, 'F(t)') ;
-            xlabel(app.RTD_AxesFt, 't [s]') ;
+            xlabel(app.RTD_AxesFt, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.RTD_AxesFt, 'F(t)') ;
             ylim(app.RTD_AxesFt, [0 1.05]) ;
 
@@ -1201,8 +1373,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Conversion Bounds') ;
-            leftGrid = uigridlayout(leftPanel, [14 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 14) ;
+            leftGrid = uigridlayout(leftPanel, [15 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 15) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -1272,28 +1444,38 @@ classdef NonIdealReactorApp < handle
             app.Pred_ComputeButton.Layout.Row = 7 ;
             app.Pred_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 8: Results header
+            % Row 8: Display units
+            unitsGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {110, '1x'}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 8 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.Prediction.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Prediction')) ;
+
+            % Row 9: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 8 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 9 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 9: Segregation result
+            % Row 10: Segregation result
             lbl = uilabel(leftGrid, 'Text', 'Segregation X<sub>seg</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 9 ; lbl.Layout.Column = 1 ;
-            app.Pred_ResultSegLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultSegLabel.Layout.Row = 9 ; app.Pred_ResultSegLabel.Layout.Column = 2 ;
-
-            % Row 10: Max Mixedness result
-            lbl = uilabel(leftGrid, 'Text', 'Max Mixedness X<sub>MM</sub>:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 10 ; lbl.Layout.Column = 1 ;
-            app.Pred_ResultMMLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultMMLabel.Layout.Row = 10 ; app.Pred_ResultMMLabel.Layout.Column = 2 ;
+            app.Pred_ResultSegLabel = uilabel(leftGrid, 'Text', '--') ;
+            app.Pred_ResultSegLabel.Layout.Row = 10 ; app.Pred_ResultSegLabel.Layout.Column = 2 ;
 
-            % Row 11: Interpretation
-            lbl = uilabel(leftGrid, 'Text', 'Interpretation:') ;
+            % Row 11: Max Mixedness result
+            lbl = uilabel(leftGrid, 'Text', 'Max Mixedness X<sub>MM</sub>:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 11 ; lbl.Layout.Column = 1 ;
+            app.Pred_ResultMMLabel = uilabel(leftGrid, 'Text', '--') ;
+            app.Pred_ResultMMLabel.Layout.Row = 11 ; app.Pred_ResultMMLabel.Layout.Column = 2 ;
+
+            % Row 12: Interpretation
+            lbl = uilabel(leftGrid, 'Text', 'Interpretation:') ;
+            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
             app.Pred_ResultBoundsLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultBoundsLabel.Layout.Row = 12 ;
+            app.Pred_ResultBoundsLabel.Layout.Row = 13 ;
             app.Pred_ResultBoundsLabel.Layout.Column = [1 2] ;
             app.Pred_ResultBoundsLabel.WordWrap = 'on' ;
 
@@ -1451,11 +1633,46 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
+            timeDD = app.DisplayControls.Prediction.time ;
+            t_display = app.convertOutputVectorFromTime('time', app.seg_model.rtd.t, timeDD) ;
+            lambda_display = app.convertOutputVectorFromTime('time', app.mm_model.lambda_profile, timeDD) ;
+            integrand_display = app.convertOutputVectorFromTime('timeInverse', app.seg_model.integrand, timeDD) ;
+
             % Segregation plots (X_batch and integrand)
-            app.seg_model.plot_on_axes(app.Pred_AxesXbatch, app.Pred_AxesIntegrand) ;
+            cla(app.Pred_AxesXbatch) ;
+            plot(app.Pred_AxesXbatch, t_display, app.seg_model.X_batch, ...
+                'b-', 'LineWidth', 1.5) ;
+            xlabel(app.Pred_AxesXbatch, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.Pred_AxesXbatch, 'X_{batch}(t)') ;
+            title(app.Pred_AxesXbatch, 'Intrinsic Conversion X(t)') ;
+            grid(app.Pred_AxesXbatch, 'on') ;
+            ylim(app.Pred_AxesXbatch, [0 1]) ;
+
+            cla(app.Pred_AxesIntegrand) ;
+            area(app.Pred_AxesIntegrand, t_display, integrand_display, ...
+                'FaceColor', [0.3 0.6 0.9], 'FaceAlpha', 0.5, 'EdgeColor', 'b') ;
+            xlabel(app.Pred_AxesIntegrand, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.Pred_AxesIntegrand, app.axisLabelWithUnitName('X(t)*E(t)', app.timeInverseUnitName(timeDD))) ;
+            title(app.Pred_AxesIntegrand, sprintf('Segregation Integrand | X_{seg} = %.4f', ...
+                app.seg_model.X_mean)) ;
+            grid(app.Pred_AxesIntegrand, 'on') ;
 
             % Max mixedness plot (X(lambda))
-            app.mm_model.plot_on_axes(app.Pred_AxesXlambda) ;
+            cla(app.Pred_AxesXlambda) ;
+            plot(app.Pred_AxesXlambda, lambda_display, app.mm_model.X_profile, ...
+                'm-', 'LineWidth', 1.5) ;
+            hold(app.Pred_AxesXlambda, 'on') ;
+            plot(app.Pred_AxesXlambda, 0, app.mm_model.X_exit, ...
+                'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r') ;
+            hold(app.Pred_AxesXlambda, 'off') ;
+            xlabel(app.Pred_AxesXlambda, app.axisLabelWithUnit('\lambda', timeDD)) ;
+            ylabel(app.Pred_AxesXlambda, 'X(\lambda)') ;
+            title(app.Pred_AxesXlambda, sprintf('Maximum Mixedness Conversion | X_{MM} = %.4f', ...
+                app.mm_model.X_exit)) ;
+            grid(app.Pred_AxesXlambda, 'on') ;
+            ylim(app.Pred_AxesXlambda, [0 1]) ;
+            legend(app.Pred_AxesXlambda, 'X(\lambda)', ...
+                sprintf('X_{MM} = %.4f', app.mm_model.X_exit), 'Location', 'best') ;
 
             % Comparison bar chart
             cla(app.Pred_AxesComparison) ;
@@ -1502,8 +1719,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'TIS Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [14 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 14) ;
+            leftGrid = uigridlayout(leftPanel, [15 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 15) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -1605,31 +1822,39 @@ classdef NonIdealReactorApp < handle
             app.TIS_ComputeButton.Layout.Row = 10 ;
             app.TIS_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 11: Results header
+            % Row 11: Display units
+            unitsGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {110, '1x'}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 11 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.TIS.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('TIS')) ;
+
+            % Row 12: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 12 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 12: N used
+            % Row 13: N used
             lbl = uilabel(leftGrid, 'Text', 'N used:') ;
-            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.TIS_ResultNused = uilabel(leftGrid, 'Text', '--') ;
-            app.TIS_ResultNused.Layout.Row = 12 ;
+            app.TIS_ResultNused.Layout.Row = 13 ;
             app.TIS_ResultNused.Layout.Column = 2 ;
 
-            % Row 13: X_TIS
+            % Row 14: X_TIS
             lbl = uilabel(leftGrid, 'Text', 'X<sub>TIS</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.TIS_ResultXtis = uilabel(leftGrid, 'Text', '--') ;
-            app.TIS_ResultXtis.Layout.Row = 13 ;
+            app.TIS_ResultXtis.Layout.Row = 14 ;
             app.TIS_ResultXtis.Layout.Column = 2 ;
             app.TIS_ResultXtis.FontWeight = 'bold' ;
 
-            % Row 14: X_CSTR + X_PFR on same row
+            % Row 15: X_CSTR + X_PFR on same row
             app.TIS_ResultXcstr = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub>: --', 'Interpreter', 'html') ;
-            app.TIS_ResultXcstr.Layout.Row = 14 ; app.TIS_ResultXcstr.Layout.Column = 1 ;
+            app.TIS_ResultXcstr.Layout.Row = 15 ; app.TIS_ResultXcstr.Layout.Column = 1 ;
             app.TIS_ResultXpfr = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub>: --', 'Interpreter', 'html') ;
-            app.TIS_ResultXpfr.Layout.Row = 14 ; app.TIS_ResultXpfr.Layout.Column = 2 ;
+            app.TIS_ResultXpfr.Layout.Row = 15 ; app.TIS_ResultXpfr.Layout.Column = 2 ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'TIS Results') ;
@@ -1785,6 +2010,15 @@ classdef NonIdealReactorApp < handle
                 app.TIS_ResultXcstr.Text = sprintf('X_{CSTR}: %.4f', X_cstr) ;
                 app.TIS_ResultXpfr.Text = sprintf('X_{PFR}: %.4f', X_pfr) ;
 
+                app.DisplayCache.TIS = struct( ...
+                    'N_val', N_val, ...
+                    'tau_val', tau_val, ...
+                    'RS', RS, ...
+                    'C0', C0, ...
+                    'X_tis', X_tis, ...
+                    'X_cstr', X_cstr, ...
+                    'X_pfr', X_pfr) ;
+
                 % --- Update plots ---
                 app.TIS_updatePlots(N_val, tau_val, RS, C0, ...
                     X_tis, X_cstr, X_pfr) ;
@@ -1803,10 +2037,13 @@ classdef NonIdealReactorApp < handle
             % ---- Plot 1: E(t) for current N ----
             cla(app.TIS_AxesEt) ;
             rtd_tis = RTD.tanks_in_series(N_val, tau_val) ;
-            plot(app.TIS_AxesEt, rtd_tis.t, rtd_tis.Et, 'b-', 'LineWidth', 1.5) ;
+            timeDD = app.DisplayControls.TIS.time ;
+            t_display = app.convertOutputVectorFromTime('time', rtd_tis.t, timeDD) ;
+            Et_display = app.convertOutputVectorFromTime('timeInverse', rtd_tis.Et, timeDD) ;
+            plot(app.TIS_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
             title(app.TIS_AxesEt, sprintf('E(t) - TIS  N=%.1f', N_val)) ;
-            xlabel(app.TIS_AxesEt, 't [s]') ;
-            ylabel(app.TIS_AxesEt, 'E(t) [1/s]') ;
+            xlabel(app.TIS_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.TIS_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
             % ---- Plot 2: X vs N sweep ----
             cla(app.TIS_AxesXvsN) ;
@@ -1883,8 +2120,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Dispersion Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [17 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 17) ;
+            leftGrid = uigridlayout(leftPanel, [18 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 18) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -2003,35 +2240,43 @@ classdef NonIdealReactorApp < handle
             app.Disp_ComputeButton.Layout.Row = 12 ;
             app.Disp_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 13: Results header
+            % Row 13: Display units
+            unitsGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {110, '1x'}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 13 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.Dispersion.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Dispersion')) ;
+
+            % Row 14: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 14: Bo info
+            % Row 15: Bo info
             lbl = uilabel(leftGrid, 'Text', 'Bo:') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
-            app.Disp_ResultBo = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultBo.Layout.Row = 14 ; app.Disp_ResultBo.Layout.Column = 2 ;
-
-            % Row 15: X_dispersion
-            lbl = uilabel(leftGrid, 'Text', 'X<sub>dispersion</sub>:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
+            app.Disp_ResultBo = uilabel(leftGrid, 'Text', '--') ;
+            app.Disp_ResultBo.Layout.Row = 15 ; app.Disp_ResultBo.Layout.Column = 2 ;
+
+            % Row 16: X_dispersion
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>dispersion</sub>:', 'Interpreter', 'html') ;
+            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultX = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultX.Layout.Row = 15 ; app.Disp_ResultX.Layout.Column = 2 ;
+            app.Disp_ResultX.Layout.Row = 16 ; app.Disp_ResultX.Layout.Column = 2 ;
             app.Disp_ResultX.FontWeight = 'bold' ;
 
-            % Row 16: X_CSTR
+            % Row 17: X_CSTR
             lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> [Bo&#8594;&#8734;]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
-            app.Disp_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXcstr.Layout.Row = 16 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
-
-            % Row 17: X_PFR
-            lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> [Bo&#8594;0]:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
+            app.Disp_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
+            app.Disp_ResultXcstr.Layout.Row = 17 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
+
+            % Row 18: X_PFR
+            lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> [Bo&#8594;0]:', 'Interpreter', 'html') ;
+            lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXpfr.Layout.Row = 17 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
+            app.Disp_ResultXpfr.Layout.Row = 18 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Dispersion Results') ;
@@ -2221,6 +2466,15 @@ classdef NonIdealReactorApp < handle
                 app.Disp_ResultXcstr.Text = sprintf('%.4f', X_cstr) ;
                 app.Disp_ResultXpfr.Text = sprintf('%.4f', X_pfr) ;
 
+                app.DisplayCache.Dispersion = struct( ...
+                    'Bo_val', Bo_val, ...
+                    'tau_val', tau_val, ...
+                    'RS', RS, ...
+                    'C0', C0, ...
+                    'X_disp', X_disp, ...
+                    'X_cstr', X_cstr, ...
+                    'X_pfr', X_pfr) ;
+
                 % Update plots
                 app.Disp_updatePlots(Bo_val, tau_val, RS, C0, ...
                                      X_disp, X_cstr, X_pfr) ;
@@ -2239,16 +2493,20 @@ classdef NonIdealReactorApp < handle
             % ---- Plot 1: E(t) ----
             cla(app.Disp_AxesEt) ;
             rtd_obj = app.disp_reactor.generate_RTD(tau_val) ;
-            plot(app.Disp_AxesEt, rtd_obj.t, rtd_obj.Et, 'b-', 'LineWidth', 1.5) ;
+            timeDD = app.DisplayControls.Dispersion.time ;
+            t_display = app.convertOutputVectorFromTime('time', rtd_obj.t, timeDD) ;
+            Et_display = app.convertOutputVectorFromTime('timeInverse', rtd_obj.Et, timeDD) ;
+            plot(app.Disp_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
             title(app.Disp_AxesEt, sprintf('E(t) - %s, Bo=%.4g', ...
                   app.Disp_BCDropdown.Value, Bo_val)) ;
-            xlabel(app.Disp_AxesEt, 't [s]') ;
-            ylabel(app.Disp_AxesEt, 'E(t) [1/s]') ;
+            xlabel(app.Disp_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.Disp_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
             % Add annotation
+            tau_display = app.convertOutputScalar('Time', tau_val, timeDD) ;
             text(app.Disp_AxesEt, 0.95, 0.90, ...
-                sprintf('Bo = %.4g\nPe = %.4g\n\\tau = %.4g s', ...
-                        Bo_val, 1/Bo_val, tau_val), ...
+                sprintf('Bo = %.4g\nPe = %.4g\n\\tau = %.4g %s', ...
+                        Bo_val, 1/Bo_val, tau_display, timeDD.Value), ...
                 'Units', 'normalized', 'HorizontalAlignment', 'right', ...
                 'VerticalAlignment', 'top', 'FontSize', 9, ...
                 'Interpreter', 'tex', ...
@@ -2321,8 +2579,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Convolution / Deconvolution') ;
-            leftGrid = uigridlayout(leftPanel, [21 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 21) ;
+            leftGrid = uigridlayout(leftPanel, [23 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 23) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 4 ;
@@ -2480,18 +2738,26 @@ classdef NonIdealReactorApp < handle
             app.Conv_ComputeButton.Layout.Row = 15 ;
             app.Conv_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 16: Results header
+            % Row 16: Display units
+            unitsGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {110, '1x'}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 16 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.Convolution.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Convolution')) ;
+
+            % Row 17: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 16 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 17 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 17-18: Result text
+            % Row 18-19: Result text
             app.Conv_ResultLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Conv_ResultLabel.Layout.Row = [17 18] ;
+            app.Conv_ResultLabel.Layout.Row = [18 19] ;
             app.Conv_ResultLabel.Layout.Column = [1 2] ;
             app.Conv_ResultLabel.WordWrap = 'on' ;
 
-            % Row 19: Use Previous Result as C_in (chaining)
+            % Row 20: Use Previous Result as C_in (chaining)
             app.Conv_UsePrevButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Use Previous C_out as C_in', ...
                 'FontWeight', 'bold', ...
@@ -2500,25 +2766,25 @@ classdef NonIdealReactorApp < handle
                 'Enable', 'off', ...
                 'Tooltip', 'Load the last convolution output as new input for chaining.', ...
                 'ButtonPushedFcn', @(~,~) app.Conv_usePreviousResult()) ;
-            app.Conv_UsePrevButton.Layout.Row = 19 ;
+            app.Conv_UsePrevButton.Layout.Row = 20 ;
             app.Conv_UsePrevButton.Layout.Column = [1 2] ;
 
-            % Row 20: Export name
+            % Row 21: Export name
             lbl = uilabel(leftGrid, 'Text', 'Export Name:') ;
-            lbl.Layout.Row = 20 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 21 ; lbl.Layout.Column = 1 ;
             app.Conv_ExportNameField = uieditfield(leftGrid, 'text', ...
                 'Value', 'conv_result') ;
-            app.Conv_ExportNameField.Layout.Row = 20 ;
+            app.Conv_ExportNameField.Layout.Row = 21 ;
             app.Conv_ExportNameField.Layout.Column = 2 ;
 
-            % Row 21: Export button
+            % Row 22: Export button
             app.Conv_ExportButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Export to Workspace', ...
                 'BackgroundColor', [0.2 0.7 0.3], ...
                 'FontColor', 'white', ...
                 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Conv_export()) ;
-            app.Conv_ExportButton.Layout.Row = 21 ;
+            app.Conv_ExportButton.Layout.Row = 22 ;
             app.Conv_ExportButton.Layout.Column = [1 2] ;
 
             % ---- RIGHT PANEL (PLOTS) ----
@@ -2804,39 +3070,53 @@ classdef NonIdealReactorApp < handle
                     assignin('base', 'conv_t_out', t_out) ;
                     assignin('base', 'conv_C_out', C_out) ;
 
+                    timeDD = app.DisplayControls.Convolution.time ;
+                    t_input_display = app.convertOutputVectorFromTime('time', t_data, timeDD) ;
+                    t_out_display = app.convertOutputVectorFromTime('time', t_out, timeDD) ;
+                    E_display = app.convertOutputVectorFromTime('timeInverse', E, timeDD) ;
+
                     % Plot inputs (dual y-axis)
                     cla(app.Conv_AxesInput) ;
                     yyaxis(app.Conv_AxesInput, 'left') ;
-                    plot(app.Conv_AxesInput, t_data, C_in, 'b-', 'LineWidth', 1.5) ;
+                    plot(app.Conv_AxesInput, t_input_display, C_in, 'b-', 'LineWidth', 1.5) ;
                     ylabel(app.Conv_AxesInput, 'C_{in}(t)') ;
                     yyaxis(app.Conv_AxesInput, 'right') ;
-                    plot(app.Conv_AxesInput, t_data, E, 'r-', 'LineWidth', 1.5) ;
-                    ylabel(app.Conv_AxesInput, 'E(t) [1/s]') ;
-                    xlabel(app.Conv_AxesInput, 't [s]') ;
+                    plot(app.Conv_AxesInput, t_input_display, E_display, 'r-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+                    xlabel(app.Conv_AxesInput, app.axisLabelWithUnit('t', timeDD)) ;
                     title(app.Conv_AxesInput, 'Input: C_{in}(t) and E(t)') ;
                     legend(app.Conv_AxesInput, 'C_{in}', 'E(t)', 'Location', 'best') ;
 
                     % Plot result
                     cla(app.Conv_AxesResult) ;
-                    plot(app.Conv_AxesResult, t_out, C_out, 'b-', 'LineWidth', 1.5) ;
-                    xlabel(app.Conv_AxesResult, 't [s]') ;
+                    plot(app.Conv_AxesResult, t_out_display, C_out, 'b-', 'LineWidth', 1.5) ;
+                    xlabel(app.Conv_AxesResult, app.axisLabelWithUnit('t', timeDD)) ;
                     ylabel(app.Conv_AxesResult, 'C_{out}(t)') ;
                     title(app.Conv_AxesResult, 'Result: C_{out} = E \otimes C_{in}') ;
 
                     % Verification: overlay C_in and C_out
                     cla(app.Conv_AxesRecovered) ;
-                    plot(app.Conv_AxesRecovered, t_data, C_in, 'b--', 'LineWidth', 1) ;
+                    plot(app.Conv_AxesRecovered, t_input_display, C_in, 'b--', 'LineWidth', 1) ;
                     hold(app.Conv_AxesRecovered, 'on') ;
-                    plot(app.Conv_AxesRecovered, t_out, C_out, 'r-', 'LineWidth', 1.5) ;
+                    plot(app.Conv_AxesRecovered, t_out_display, C_out, 'r-', 'LineWidth', 1.5) ;
                     hold(app.Conv_AxesRecovered, 'off') ;
-                    xlabel(app.Conv_AxesRecovered, 't [s]') ;
+                    xlabel(app.Conv_AxesRecovered, app.axisLabelWithUnit('t', timeDD)) ;
                     title(app.Conv_AxesRecovered, 'Comparison: C_{in} vs C_{out}') ;
                     legend(app.Conv_AxesRecovered, 'C_{in}(t)', 'C_{out}(t)', ...
                         'Location', 'best') ;
 
                     app.Conv_ResultLabel.Text = sprintf( ...
-                        'Convolution OK\nC_{out}: %d points, t=[%.2f, %.2f] s\nSource: %s', ...
-                        length(C_out), t_out(1), t_out(end), source) ;
+                        'Convolution OK\nC_{out}: %d points, t=[%.2f, %.2f] %s\nSource: %s', ...
+                        length(C_out), t_out_display(1), t_out_display(end), timeDD.Value, source) ;
+
+                    app.DisplayCache.Convolution = struct( ...
+                        'mode', 'Convolution', ...
+                        'source', source, ...
+                        't_input', t_data, ...
+                        'C_in', C_in, ...
+                        'E', E, ...
+                        't_out', t_out, ...
+                        'C_out', C_out) ;
 
                 else
                     C_out_data = C_out_data(:)' ;
@@ -2855,23 +3135,29 @@ classdef NonIdealReactorApp < handle
                     assignin('base', 'deconv_t_E', t_E) ;
                     assignin('base', 'deconv_E', E_rec) ;
 
+                    timeDD = app.DisplayControls.Convolution.time ;
+                    t_cin_display = app.convertOutputVectorFromTime('time', t_Cin, timeDD) ;
+                    t_cout_display = app.convertOutputVectorFromTime('time', t_Cout, timeDD) ;
+                    t_E_display = app.convertOutputVectorFromTime('time', t_E, timeDD) ;
+                    E_display = app.convertOutputVectorFromTime('timeInverse', E_rec, timeDD) ;
+
                     % Plot inputs
                     cla(app.Conv_AxesInput) ;
                     yyaxis(app.Conv_AxesInput, 'left') ;
-                    plot(app.Conv_AxesInput, t_Cin, C_in, 'b-', 'LineWidth', 1.5) ;
+                    plot(app.Conv_AxesInput, t_cin_display, C_in, 'b-', 'LineWidth', 1.5) ;
                     ylabel(app.Conv_AxesInput, 'C_{in}(t)') ;
                     yyaxis(app.Conv_AxesInput, 'right') ;
-                    plot(app.Conv_AxesInput, t_Cout, C_out_data, 'r-', 'LineWidth', 1.5) ;
+                    plot(app.Conv_AxesInput, t_cout_display, C_out_data, 'r-', 'LineWidth', 1.5) ;
                     ylabel(app.Conv_AxesInput, 'C_{out}(t)') ;
-                    xlabel(app.Conv_AxesInput, 't [s]') ;
+                    xlabel(app.Conv_AxesInput, app.axisLabelWithUnit('t', timeDD)) ;
                     title(app.Conv_AxesInput, 'Input: C_{in}(t) and C_{out}(t)') ;
                     legend(app.Conv_AxesInput, 'C_{in}', 'C_{out}', 'Location', 'best') ;
 
                     % Plot recovered E(t)
                     cla(app.Conv_AxesResult) ;
-                    plot(app.Conv_AxesResult, t_E, E_rec, 'm-', 'LineWidth', 1.5) ;
-                    xlabel(app.Conv_AxesResult, 't [s]') ;
-                    ylabel(app.Conv_AxesResult, 'E(t) [1/s]') ;
+                    plot(app.Conv_AxesResult, t_E_display, E_display, 'm-', 'LineWidth', 1.5) ;
+                    xlabel(app.Conv_AxesResult, app.axisLabelWithUnit('t', timeDD)) ;
+                    ylabel(app.Conv_AxesResult, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
                     title(app.Conv_AxesResult, sprintf('Recovered E(t) | area=%.4f', ...
                         trapz(t_E, E_rec))) ;
 
@@ -2883,21 +3169,34 @@ classdef NonIdealReactorApp < handle
                         C_out_data(1:v_min) - C_out_check(1:v_min)) / v_min ;
 
                     cla(app.Conv_AxesRecovered) ;
-                    plot(app.Conv_AxesRecovered, t_Cout, C_out_data, ...
+                    plot(app.Conv_AxesRecovered, t_cout_display, C_out_data, ...
                         'b-', 'LineWidth', 1.5) ;
                     hold(app.Conv_AxesRecovered, 'on') ;
-                    plot(app.Conv_AxesRecovered, t_check, C_out_check, ...
+                    plot(app.Conv_AxesRecovered, app.convertOutputVectorFromTime('time', t_check, timeDD), C_out_check, ...
                         'r--', 'LineWidth', 1.5) ;
                     hold(app.Conv_AxesRecovered, 'off') ;
-                    xlabel(app.Conv_AxesRecovered, 't [s]') ;
+                    xlabel(app.Conv_AxesRecovered, app.axisLabelWithUnit('t', timeDD)) ;
                     title(app.Conv_AxesRecovered, sprintf( ...
                         'Verification (err=%.2e)', residual_norm)) ;
                     legend(app.Conv_AxesRecovered, 'C_{out} (data)', ...
                         'E_{rec} \otimes C_{in}', 'Location', 'best') ;
 
                     app.Conv_ResultLabel.Text = sprintf( ...
-                        'Deconvolution OK\nResidual: %.4e\nReconv. error: %.4e\nE: %d pts, t=[%.2f, %.2f] s', ...
-                        residual, residual_norm, length(E_rec), t_E(1), t_E(end)) ;
+                        'Deconvolution OK\nResidual: %.4e\nReconv. error: %.4e\nE: %d pts, t=[%.2f, %.2f] %s', ...
+                        residual, residual_norm, length(E_rec), t_E_display(1), t_E_display(end), timeDD.Value) ;
+
+                    app.DisplayCache.Convolution = struct( ...
+                        'mode', 'Deconvolution', ...
+                        't_Cin', t_Cin, ...
+                        'C_in', C_in, ...
+                        't_Cout', t_Cout, ...
+                        'C_out_data', C_out_data, ...
+                        't_E', t_E, ...
+                        'E_rec', E_rec, ...
+                        't_check', t_check, ...
+                        'C_out_check', C_out_check, ...
+                        'residual', residual, ...
+                        'residual_norm', residual_norm) ;
                 end
 
                 app.Conv_ExportButton.Enable = 'on' ;
@@ -2935,6 +3234,93 @@ classdef NonIdealReactorApp < handle
                 'Previous C_out loaded as C_in (%d pts)', ...
                 length(app.Conv_lastCout)) ;
             app.Conv_ImportLabel.FontColor = [0 0.5 0] ;
+        end
+
+        function Conv_refreshPlots(app)
+            if ~isfield(app.DisplayCache, 'Convolution') || isempty(app.DisplayCache.Convolution)
+                return
+            end
+
+            c = app.DisplayCache.Convolution ;
+            timeDD = app.DisplayControls.Convolution.time ;
+
+            switch c.mode
+                case 'Convolution'
+                    t_input_display = app.convertOutputVectorFromTime('time', c.t_input, timeDD) ;
+                    t_out_display = app.convertOutputVectorFromTime('time', c.t_out, timeDD) ;
+                    E_display = app.convertOutputVectorFromTime('timeInverse', c.E, timeDD) ;
+
+                    cla(app.Conv_AxesInput) ;
+                    yyaxis(app.Conv_AxesInput, 'left') ;
+                    plot(app.Conv_AxesInput, t_input_display, c.C_in, 'b-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, 'C_{in}(t)') ;
+                    yyaxis(app.Conv_AxesInput, 'right') ;
+                    plot(app.Conv_AxesInput, t_input_display, E_display, 'r-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+                    xlabel(app.Conv_AxesInput, app.axisLabelWithUnit('t', timeDD)) ;
+                    title(app.Conv_AxesInput, 'Input: C_{in}(t) and E(t)') ;
+                    legend(app.Conv_AxesInput, 'C_{in}', 'E(t)', 'Location', 'best') ;
+
+                    cla(app.Conv_AxesResult) ;
+                    plot(app.Conv_AxesResult, t_out_display, c.C_out, 'b-', 'LineWidth', 1.5) ;
+                    xlabel(app.Conv_AxesResult, app.axisLabelWithUnit('t', timeDD)) ;
+                    ylabel(app.Conv_AxesResult, 'C_{out}(t)') ;
+                    title(app.Conv_AxesResult, 'Result: C_{out} = E \otimes C_{in}') ;
+
+                    cla(app.Conv_AxesRecovered) ;
+                    plot(app.Conv_AxesRecovered, t_input_display, c.C_in, 'b--', 'LineWidth', 1) ;
+                    hold(app.Conv_AxesRecovered, 'on') ;
+                    plot(app.Conv_AxesRecovered, t_out_display, c.C_out, 'r-', 'LineWidth', 1.5) ;
+                    hold(app.Conv_AxesRecovered, 'off') ;
+                    xlabel(app.Conv_AxesRecovered, app.axisLabelWithUnit('t', timeDD)) ;
+                    title(app.Conv_AxesRecovered, 'Comparison: C_{in} vs C_{out}') ;
+                    legend(app.Conv_AxesRecovered, 'C_{in}(t)', 'C_{out}(t)', ...
+                        'Location', 'best') ;
+
+                    app.Conv_ResultLabel.Text = sprintf( ...
+                        'Convolution OK\nC_{out}: %d points, t=[%.2f, %.2f] %s\nSource: %s', ...
+                        length(c.C_out), t_out_display(1), t_out_display(end), timeDD.Value, c.source) ;
+
+                case 'Deconvolution'
+                    t_cin_display = app.convertOutputVectorFromTime('time', c.t_Cin, timeDD) ;
+                    t_cout_display = app.convertOutputVectorFromTime('time', c.t_Cout, timeDD) ;
+                    t_E_display = app.convertOutputVectorFromTime('time', c.t_E, timeDD) ;
+                    E_display = app.convertOutputVectorFromTime('timeInverse', c.E_rec, timeDD) ;
+                    t_check_display = app.convertOutputVectorFromTime('time', c.t_check, timeDD) ;
+
+                    cla(app.Conv_AxesInput) ;
+                    yyaxis(app.Conv_AxesInput, 'left') ;
+                    plot(app.Conv_AxesInput, t_cin_display, c.C_in, 'b-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, 'C_{in}(t)') ;
+                    yyaxis(app.Conv_AxesInput, 'right') ;
+                    plot(app.Conv_AxesInput, t_cout_display, c.C_out_data, 'r-', 'LineWidth', 1.5) ;
+                    ylabel(app.Conv_AxesInput, 'C_{out}(t)') ;
+                    xlabel(app.Conv_AxesInput, app.axisLabelWithUnit('t', timeDD)) ;
+                    title(app.Conv_AxesInput, 'Input: C_{in}(t) and C_{out}(t)') ;
+                    legend(app.Conv_AxesInput, 'C_{in}', 'C_{out}', 'Location', 'best') ;
+
+                    cla(app.Conv_AxesResult) ;
+                    plot(app.Conv_AxesResult, t_E_display, E_display, 'm-', 'LineWidth', 1.5) ;
+                    xlabel(app.Conv_AxesResult, app.axisLabelWithUnit('t', timeDD)) ;
+                    ylabel(app.Conv_AxesResult, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+                    title(app.Conv_AxesResult, sprintf('Recovered E(t) | area=%.4f', ...
+                        trapz(c.t_E, c.E_rec))) ;
+
+                    cla(app.Conv_AxesRecovered) ;
+                    plot(app.Conv_AxesRecovered, t_cout_display, c.C_out_data, 'b-', 'LineWidth', 1.5) ;
+                    hold(app.Conv_AxesRecovered, 'on') ;
+                    plot(app.Conv_AxesRecovered, t_check_display, c.C_out_check, 'r--', 'LineWidth', 1.5) ;
+                    hold(app.Conv_AxesRecovered, 'off') ;
+                    xlabel(app.Conv_AxesRecovered, app.axisLabelWithUnit('t', timeDD)) ;
+                    title(app.Conv_AxesRecovered, sprintf('Verification (err=%.2e)', c.residual_norm)) ;
+                    legend(app.Conv_AxesRecovered, 'C_{out} (data)', ...
+                        'E_{rec} \otimes C_{in}', 'Location', 'best') ;
+
+                    app.Conv_ResultLabel.Text = sprintf( ...
+                        'Deconvolution OK\nResidual: %.4e\nReconv. error: %.4e\nE: %d pts, t=[%.2f, %.2f] %s', ...
+                        c.residual, c.residual_norm, length(c.E_rec), ...
+                        t_E_display(1), t_E_display(end), timeDD.Value) ;
+            end
         end
 
         function Conv_export(app)
@@ -2975,8 +3361,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Combined Model Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [17 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 17) ;
+            leftGrid = uigridlayout(leftPanel, [18 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 18) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -3069,38 +3455,46 @@ classdef NonIdealReactorApp < handle
             app.Comb_ComputeButton.Layout.Row = 9 ;
             app.Comb_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 10: Results header
+            % Row 10: Display units
+            unitsGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {110, '1x'}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 10 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.Combined.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Combined')) ;
+
+            % Row 11: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 10 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 11: Model params info
+            % Row 12: Model params info
             lbl = uilabel(leftGrid, 'Text', 'Parameters:') ;
-            lbl.Layout.Row = 11 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultParams = uilabel(leftGrid, 'Text', '--') ;
-            app.Comb_ResultParams.Layout.Row = 11 ;
+            app.Comb_ResultParams.Layout.Row = 12 ;
             app.Comb_ResultParams.Layout.Column = 2 ;
 
-            % Row 12: X combined
+            % Row 13: X combined
             lbl = uilabel(leftGrid, 'Text', 'X<sub>model</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultX = uilabel(leftGrid, 'Text', '--') ;
-            app.Comb_ResultX.Layout.Row = 12 ;
+            app.Comb_ResultX.Layout.Row = 13 ;
             app.Comb_ResultX.Layout.Column = 2 ;
             app.Comb_ResultX.FontWeight = 'bold' ;
 
-            % Row 13: X_CSTR
+            % Row 14: X_CSTR
             lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> ideal:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
-            app.Comb_ResultXcstr.Layout.Row = 13 ;
+            app.Comb_ResultXcstr.Layout.Row = 14 ;
             app.Comb_ResultXcstr.Layout.Column = 2 ;
 
-            % Row 14: X_PFR
+            % Row 15: X_PFR
             lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> ideal:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
             app.Comb_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
-            app.Comb_ResultXpfr.Layout.Row = 14 ;
+            app.Comb_ResultXpfr.Layout.Row = 15 ;
             app.Comb_ResultXpfr.Layout.Column = 2 ;
 
             % ---- RIGHT PANEL (PLOTS) ----
@@ -3295,6 +3689,14 @@ classdef NonIdealReactorApp < handle
                 app.Comb_ResultXcstr.Text = sprintf('%.4f', X_cstr) ;
                 app.Comb_ResultXpfr.Text = sprintf('%.4f', X_pfr) ;
 
+                app.DisplayCache.Combined = struct( ...
+                    'rtd_comb', rtd_comb, ...
+                    'model', model, ...
+                    'X_model', X_model, ...
+                    'X_cstr', X_cstr, ...
+                    'X_pfr', X_pfr, ...
+                    'paramStr', paramStr) ;
+
                 % Update plots
                 app.Comb_updatePlots(rtd_comb, model, X_model, X_cstr, X_pfr, paramStr) ;
 
@@ -3314,18 +3716,24 @@ classdef NonIdealReactorApp < handle
             cla(app.Comb_AxesEt) ;
 
             % Plot combined model E(t)
-            plot(app.Comb_AxesEt, rtd_comb.t, rtd_comb.Et, 'b-', 'LineWidth', 1.5) ;
+            timeDD = app.DisplayControls.Combined.time ;
+            t_comb_display = app.convertOutputVectorFromTime('time', rtd_comb.t, timeDD) ;
+            Et_comb_display = app.convertOutputVectorFromTime('timeInverse', rtd_comb.Et, timeDD) ;
+            plot(app.Comb_AxesEt, t_comb_display, Et_comb_display, 'b-', 'LineWidth', 1.5) ;
             hold(app.Comb_AxesEt, 'on') ;
 
             % Overlay ideal CSTR for reference
             tau_val = app.readInputField(app.Comb_tauField) ;
             rtd_ideal = RTD.ideal_cstr(tau_val) ;
-            plot(app.Comb_AxesEt, rtd_ideal.t, rtd_ideal.Et, 'r--', 'LineWidth', 1) ;
+            plot(app.Comb_AxesEt, ...
+                app.convertOutputVectorFromTime('time', rtd_ideal.t, timeDD), ...
+                app.convertOutputVectorFromTime('timeInverse', rtd_ideal.Et, timeDD), ...
+                'r--', 'LineWidth', 1) ;
             hold(app.Comb_AxesEt, 'off') ;
 
             title(app.Comb_AxesEt, sprintf('E(t): %s', model)) ;
-            xlabel(app.Comb_AxesEt, 't [s]') ;
-            ylabel(app.Comb_AxesEt, 'E(t) [1/s]') ;
+            xlabel(app.Comb_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.Comb_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
             legend(app.Comb_AxesEt, model, 'CSTR ideal', 'Location', 'best') ;
 
             % Add parameters annotation
@@ -3565,26 +3973,34 @@ classdef NonIdealReactorApp < handle
             app.Opt_FitButton.Layout.Row = 15 ;
             app.Opt_FitButton.Layout.Column = [1 2] ;
 
-            % Row 16: Results header
+            % Row 16: Display units
+            unitsGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {110, '1x'}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 16 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.Optimization.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Optimization')) ;
+
+            % Row 17: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 16 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 17 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 17: Best model label
+            % Row 18: Best model label
             app.Opt_ResultBestLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Opt_ResultBestLabel.Layout.Row = 17 ;
+            app.Opt_ResultBestLabel.Layout.Row = 18 ;
             app.Opt_ResultBestLabel.Layout.Column = [1 2] ;
             app.Opt_ResultBestLabel.FontWeight = 'bold' ;
             app.Opt_ResultBestLabel.FontColor = [0 0.4 0.8] ;
             app.Opt_ResultBestLabel.WordWrap = 'on' ;
 
-            % Row 18-22: Results table
+            % Row 19-23: Results table
             app.Opt_ResultTable = uitable(leftGrid, ...
                 'ColumnName', {'Model', 'Params', 'SSE', 'R^2', 'AIC'}, ...
                 'ColumnWidth', {95, 80, 55, 50, 50}, ...
                 'RowName', {}, ...
                 'ColumnEditable', false) ;
-            app.Opt_ResultTable.Layout.Row = [18 22] ;
+            app.Opt_ResultTable.Layout.Row = [19 23] ;
             app.Opt_ResultTable.Layout.Column = [1 2] ;
 
             % ---- RIGHT PANEL (PLOTS) ----
@@ -3720,18 +4136,24 @@ classdef NonIdealReactorApp < handle
                 else
                     app.opt_exp_tau = app.opt_exp_t(end) / 2 ;
                 end
+                app.DisplayCache.Optimization = [] ;
 
-                app.Opt_tauLabel.Text = sprintf('%.4f s', app.opt_exp_tau) ;
+                app.Opt_tauLabel.Text = sprintf('%.4f %s', ...
+                    app.convertOutputFromTime('time', app.opt_exp_tau, ...
+                    app.DisplayControls.Optimization.time), ...
+                    app.DisplayControls.Optimization.time.Value) ;
                 app.Opt_ImportLabel.FontColor = [0 0.5 0] ;
                 app.Opt_FitButton.Enable = 'on' ;
 
                 % Preview plot of loaded data
                 cla(app.Opt_AxesDataFit) ;
-                plot(app.Opt_AxesDataFit, app.opt_exp_t, app.opt_exp_Et, ...
+                plot(app.Opt_AxesDataFit, ...
+                    app.convertOutputVectorFromTime('time', app.opt_exp_t, app.DisplayControls.Optimization.time), ...
+                    app.convertOutputVectorFromTime('timeInverse', app.opt_exp_Et, app.DisplayControls.Optimization.time), ...
                     'ko', 'MarkerSize', 5, 'MarkerFaceColor', [0.3 0.3 0.3]) ;
                 title(app.Opt_AxesDataFit, 'Loaded Experimental Data') ;
-                xlabel(app.Opt_AxesDataFit, 't [s]') ;
-                ylabel(app.Opt_AxesDataFit, 'E(t) [1/s]') ;
+                xlabel(app.Opt_AxesDataFit, app.axisLabelWithUnit('t', app.DisplayControls.Optimization.time)) ;
+                ylabel(app.Opt_AxesDataFit, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(app.DisplayControls.Optimization.time))) ;
                 legend(app.Opt_AxesDataFit, 'Exp. Data', 'Location', 'best') ;
 
             catch ME
@@ -3940,6 +4362,7 @@ classdef NonIdealReactorApp < handle
                 tableData{i,5} = sprintf('%.1f', results(i).AIC) ;
             end
             app.Opt_ResultTable.Data = tableData ;
+            app.DisplayCache.Optimization = struct('results', results) ;
 
             % Find best model (highest R^2)
             R2_vals = [results.R2] ;
@@ -3957,21 +4380,25 @@ classdef NonIdealReactorApp < handle
                       0.30 0.75 0.93] ;  % cyan
 
             % ---- Plot 1: Data vs fitted curves ----
+            timeDD = app.DisplayControls.Optimization.time ;
+            t_display = app.convertOutputVectorFromTime('time', t_exp, timeDD) ;
+            Et_exp_display = app.convertOutputVectorFromTime('timeInverse', Et_exp_norm, timeDD) ;
             cla(app.Opt_AxesDataFit) ;
-            plot(app.Opt_AxesDataFit, t_exp, Et_exp_norm, ...
+            plot(app.Opt_AxesDataFit, t_display, Et_exp_display, ...
                 'ko', 'MarkerSize', 5, 'MarkerFaceColor', [0.3 0.3 0.3]) ;
             hold(app.Opt_AxesDataFit, 'on') ;
             legendEntries = {'Exp. Data'} ;
             for i = 1:nModels
                 cidx = mod(i-1, size(colors,1)) + 1 ;
-                plot(app.Opt_AxesDataFit, t_exp, results(i).Et_fit, ...
+                plot(app.Opt_AxesDataFit, t_display, ...
+                    app.convertOutputVectorFromTime('timeInverse', results(i).Et_fit, timeDD), ...
                     '-', 'LineWidth', 1.5, 'Color', colors(cidx,:)) ;
                 legendEntries{end+1} = results(i).name ; %#ok<AGROW>
             end
             hold(app.Opt_AxesDataFit, 'off') ;
             title(app.Opt_AxesDataFit, 'Experimental Data vs Fitted Models') ;
-            xlabel(app.Opt_AxesDataFit, 't [s]') ;
-            ylabel(app.Opt_AxesDataFit, 'E(t) [1/s]') ;
+            xlabel(app.Opt_AxesDataFit, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.Opt_AxesDataFit, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
             legend(app.Opt_AxesDataFit, legendEntries, 'Location', 'best') ;
 
             % ---- Plot 2: Residuals ----
@@ -3980,14 +4407,15 @@ classdef NonIdealReactorApp < handle
             for i = 1:nModels
                 cidx = mod(i-1, size(colors,1)) + 1 ;
                 residuals = Et_exp_norm - results(i).Et_fit ;
-                plot(app.Opt_AxesResiduals, t_exp, residuals, ...
+                plot(app.Opt_AxesResiduals, t_display, ...
+                    app.convertOutputVectorFromTime('timeInverse', residuals, timeDD), ...
                     '-', 'LineWidth', 1, 'Color', colors(cidx,:)) ;
             end
             yline(app.Opt_AxesResiduals, 0, 'k--') ;
             hold(app.Opt_AxesResiduals, 'off') ;
             title(app.Opt_AxesResiduals, 'Residuals') ;
-            xlabel(app.Opt_AxesResiduals, 't [s]') ;
-            ylabel(app.Opt_AxesResiduals, 'E_{exp} - E_{mod} [1/s]') ;
+            xlabel(app.Opt_AxesResiduals, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.Opt_AxesResiduals, app.axisLabelWithUnitName('E_{exp} - E_{mod}', app.timeInverseUnitName(timeDD))) ;
 
             % ---- Plot 3: R^2 bar chart ----
             cla(app.Opt_AxesComparison) ;
@@ -4014,6 +4442,36 @@ classdef NonIdealReactorApp < handle
                     'FontWeight', 'bold', 'FontSize', 9) ;
             end
             hold(app.Opt_AxesComparison, 'off') ;
+        end
+
+        function Opt_refreshDisplayUnits(app)
+            timeDD = app.DisplayControls.Optimization.time ;
+
+            if ~isempty(app.opt_exp_tau)
+                app.Opt_tauLabel.Text = sprintf('%.4f %s', ...
+                    app.convertOutputFromTime('time', app.opt_exp_tau, timeDD), ...
+                    timeDD.Value) ;
+            end
+
+            if isfield(app.DisplayCache, 'Optimization') && ~isempty(app.DisplayCache.Optimization) && ...
+                    isfield(app.DisplayCache.Optimization, 'results')
+                app.Opt_displayResults(app.DisplayCache.Optimization.results) ;
+                return
+            end
+
+            if isempty(app.opt_exp_t) || isempty(app.opt_exp_Et)
+                return
+            end
+
+            cla(app.Opt_AxesDataFit) ;
+            plot(app.Opt_AxesDataFit, ...
+                app.convertOutputVectorFromTime('time', app.opt_exp_t, timeDD), ...
+                app.convertOutputVectorFromTime('timeInverse', app.opt_exp_Et, timeDD), ...
+                'ko', 'MarkerSize', 5, 'MarkerFaceColor', [0.3 0.3 0.3]) ;
+            title(app.Opt_AxesDataFit, 'Loaded Experimental Data') ;
+            xlabel(app.Opt_AxesDataFit, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.Opt_AxesDataFit, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+            legend(app.Opt_AxesDataFit, 'Exp. Data', 'Location', 'best') ;
         end
 
     end

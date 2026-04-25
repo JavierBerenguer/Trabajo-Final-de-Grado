@@ -390,6 +390,20 @@ classdef UnitConverterHelper < handle
             m('h')   = 3600 ;
             cats.Time.factors = m ;
 
+            % ----- Time squared -----
+            m = containers.Map() ;
+            m('s^2')   = 1 ;
+            m('min^2') = 60^2 ;
+            m('h^2')   = 3600^2 ;
+            cats.TimeSquared.factors = m ;
+
+            % ----- Time inverse -----
+            m = containers.Map() ;
+            m('1/s')   = 1 ;
+            m('1/min') = 1 / 60 ;
+            m('1/h')   = 1 / 3600 ;
+            cats.TimeInverse.factors = m ;
+
             % ----- Volume -----
             m = containers.Map() ;
             m('m^3')  = 1 ;
