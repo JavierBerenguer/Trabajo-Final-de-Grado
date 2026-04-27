@@ -1,7 +1,7 @@
-# Non-Ideal Reactor Analysis — User Guide
+# Non-Ideal Reactor Analysis - User Guide
 
-**Version 1.0 — March 2026**
-Javier Berenguer Sabater | TFG — Chemical Engineering
+**Version 1.3 - April 2026**  
+Javier Berenguer Sabater | TFG - Chemical Engineering
 
 ---
 
@@ -12,271 +12,238 @@ Javier Berenguer Sabater | TFG — Chemical Engineering
 app = NonIdealReactorApp ;
 ```
 
-The main window has **7 tabs** plus a **Help** button and a **Unit Converter** button (top-right). A status bar at the bottom shows the current operation state.
+The main window includes **7 tabs**, a **File** menu, a **Tools** menu, a **Help** menu, and a status bar at the bottom.
+
+### Working with Units
+
+- Most numeric inputs include a unit dropdown next to the field.
+- You can type values directly in your preferred units.
+- Several fields also accept simple expressions such as `10/60` or `2*5`.
+- Experimental RTD sources and `C(t)` equations include time-unit selectors.
+- Each main tab includes local **Display units** controls for plots and results.
+- When importing data from files or the workspace, make sure your vectors match the units selected in the app.
 
 ---
 
 ## Tab 1: RTD Analysis
 
-**Purpose**: Generate or import a Residence Time Distribution E(t) and compute its moments.
+**Purpose:** Generate or import a residence time distribution `E(t)` and calculate its main moments.
 
-### RTD Sources
+### Available RTD Sources
 
 | Source | Description |
 |--------|-------------|
-| CSTR | Ideal CSTR: E(t) = (1/tau) * exp(-t/tau) |
-| PFR | Ideal PFR: E(t) = delta(t - tau) |
-| Laminar Flow | E(t) = tau^2 / (2*t^3) for t >= tau/2 |
-| Tanks-in-Series | N equal CSTRs with parameter N |
-| Dispersion (open-open) | Axial dispersion with Bodenstein number Bo |
-| Dispersion (closed-closed) | Danckwerts boundary conditions |
-| Experimental (pulse) | Import pulse tracer data C(t) -> normalize to E(t) |
-| Experimental (step) | Import step tracer data F(t) -> differentiate to E(t) |
-| From Equation | Enter a custom E(t) equation |
-| Direct Data Entry | Type t and C(t) values in a table |
+| Ideal CSTR | Exponential RTD for a perfectly mixed reactor |
+| Ideal PFR | Ideal plug-flow reference |
+| Tanks-in-Series | RTD for `N` equal tanks in series |
+| Dispersion (open) | Axial dispersion model with open boundaries |
+| Dispersion (closed) | Axial dispersion model with closed boundaries |
+| Laminar Flow | Laminar-flow RTD |
+| Experimental Pulse | Build RTD from pulse tracer data |
+| Experimental Step | Build RTD from step tracer data |
+| C(t) Equation | Generate RTD from a custom `C(t)` expression |
+| Tabular Input | Enter time and signal values manually |
 
-### Steps
+### Basic Workflow
 
-1. Select an **RTD Source** from the dropdown.
-2. Enter the required parameters (tau, N, Bo, etc.).
-3. Click **Generate** to compute E(t), F(t), and moments.
-4. View results in the left panel: tau_m, sigma^2, sigma^2_theta, s^3, N_est, V_eff.
-5. (Optional) Enter Q_v and V_total to compute dead volume.
-6. (Optional) **Export RTD to Workspace** for use in MATLAB scripts or other tabs.
+1. Choose an **RTD Source**.
+2. Fill in the required inputs using the unit dropdowns next to each field.
+3. Click **Generate**.
+4. Review the plots and the calculated values: `tau_m`, `sigma^2`, `sigma^2_theta`, `s^3`, `N_est`, and `V_eff`.
+5. If needed, enter `Q_v` to estimate the effective volume `V_eff = tau * Q_v`.
+6. Use **Export RTD to Workspace** if you want to reuse the RTD in MATLAB or in other tabs.
 
 ### Importing Experimental Data
 
-- For **pulse** data: provide workspace variables with t [s] and C(t) [mol/m^3], plus C0.
-- For **step** data: provide t and F(t) (cumulative).
-- For **Direct Data Entry**: click "Add Row" to enter values manually in the table.
+- **From workspace:** provide the names of the time and signal variables in the corresponding fields.
+- **Pulse data:** use `t` in the selected time unit and keep `C(t)` and `C0` in the same concentration scale.
+- **Step data:** use `t` in the selected time unit and keep the measured outlet response consistent with `C0`.
+- **From file:** click **Import Experimental Data** and choose an `.xlsx`, `.xls`, `.csv`, or `.tsv` file.
+- For file imports, the first column must contain time and the second column must contain concentration or response.
+- In Excel files, keep the headers in row 1 and the data starting in row 2.
+- **Tabular Input:** click **Add Row** to enter values manually.
 
 ### Tips
 
-- The generated RTD is shared with Tabs 2-4 automatically.
-- E(t) plots in blue, F(t) in red, E(theta) in green.
-- The dimensionless variance sigma^2_theta = sigma^2 / tau^2 indicates deviation from ideal behavior.
+- The RTD generated here is shared automatically with Tabs 2, 3, and 4.
+- The **Display units** controls let you change how time-based plots and values are shown.
+- `E(t)`, `F(t)`, and `E(theta)` are plotted separately for easier comparison.
 
 ---
 
-## Tab 2: Prediction Models (Segregation & Max Mixedness)
+## Tab 2: Prediction Models
 
-**Purpose**: Compute conversion bounds using the Segregation Model (lower bound for n > 1) and Maximum Mixedness Model (upper bound for n > 1).
+**Purpose:** Estimate conversion limits using the **Segregation** and **Max Mixedness** models.
 
-### Supported Kinetics
+### Before You Compute
 
-| Kinetics | Rate Law |
-|----------|----------|
-| 1st Order | -r_A = k * C_A |
-| 2nd Order | -r_A = k * C_A^2 |
-| Michaelis-Menten | -r_A = a * C_A / (1 + b * C_A) |
-| Reversible 1st Order | -r_A = k_fwd * C_A - k_rev * (C_A0 - C_A) |
-| Parallel Reactions | -r_A = k1 * C_A^n1 + k2 * C_A^n2 |
-| Custom Rate Law | User-defined expression in C_A |
+- Generate an RTD first in **Tab 1**.
+- Create a reaction system with **New RS**, modify it with **Edit RS**, or load it with **Load from Workspace**.
+- Enter `C_A0` using the concentration unit you want.
 
-### Steps
+### Workflow
 
-1. Generate an RTD in Tab 1 first (status label shows "RTD loaded").
-2. Select kinetics type and enter parameters (k, C_A0, etc.).
-3. Click **Compute**.
-4. Results show X_seg (segregation), X_mm (max mixedness), and the conversion bounds.
+1. Confirm that the RTD status shows it was loaded from Tab 1.
+2. Prepare or load the reaction system.
+3. Enter `C_A0`.
+4. Click **Compute**.
+5. Review `X_seg`, `X_mm`, and the interpretation shown in the results area.
 
 ### Plots
 
-- **X_batch(t)**: Batch conversion vs time for the chosen kinetics.
-- **Integrand**: The integrand E(t)*X_batch(t) for the segregation model.
-- **X(lambda)**: Maximum mixedness conversion profile vs life expectancy.
-- **Comparison**: Bar chart comparing X_seg, X_mm, X_CSTR, X_PFR.
+- **X_batch(t):** batch conversion versus time
+- **Integrand:** contribution used by the segregation calculation
+- **X(lambda):** max-mixedness profile
+- **Comparison:** direct comparison of both model predictions
 
 ---
 
 ## Tab 3: Tanks-in-Series (TIS)
 
-**Purpose**: Model non-ideal behavior as N equal CSTRs in series.
+**Purpose:** Model non-ideal behavior as `N` equal CSTRs in series.
 
-### N Determination
+### Choosing `N`
 
-- **Manual**: Enter N directly.
-- **From Calculated Data**: Auto-compute N = tau^2 / sigma^2 from Tab 1 RTD.
+- **Manual:** type the number of tanks directly.
+- **From Calculated Data:** estimate `N` automatically from the RTD obtained in Tab 1.
 
-### Steps
+### Workflow
 
-1. Choose N method. If "From Calculated Data", an RTD must exist in Tab 1.
-2. Enter tau [s], kinetics, k, and C_A0.
-3. Click **Compute**.
-4. Results: X_TIS (N tanks), X_CSTR (N=1), X_PFR (N=inf).
+1. Choose how `N` will be defined.
+2. Enter `tau` and `C_A0` using the unit dropdowns.
+3. Create, edit, or load the reaction system.
+4. Click **Compute**.
+5. Review `X_TIS`, `X_CSTR`, and `X_PFR`.
 
 ### Notes
 
-- Non-integer N is rounded for sequential CSTR computation (a warning appears).
-- The E(t) for the TIS model is plotted alongside the RTD from Tab 1 for comparison.
+- If `N` is not an integer, the app rounds it and shows a warning.
+- The RTD of the TIS model is plotted together with the RTD from Tab 1.
 
 ---
 
 ## Tab 4: Dispersion Model
 
-**Purpose**: Model non-ideal behavior using axial dispersion with Bodenstein number (Bo = uL/D_e).
+**Purpose:** Model non-ideal behavior using axial dispersion.
 
-### Input Methods
+### Input Options
 
-- **Manual**: Enter Bo directly.
-- **From Calculated Data**: Estimate Bo from Tab 1 RTD variance.
+- **Manual:** enter `Bo` directly.
+- **From Calculated Data:** estimate `Bo` from the RTD in Tab 1.
 
 ### Boundary Conditions
 
-- **Open-Open**: Simpler, used when tracer can diffuse across boundaries.
-- **Closed-Closed**: Danckwerts BCs, more physically realistic for packed beds.
+- **Open-Open**
+- **Closed-Closed**
 
-### Steps
+### Workflow
 
-1. Choose input method and boundary condition.
-2. Enter Bo, tau, kinetics, k, C_A0.
-3. Click **Compute**.
-4. Results: X_disp, X_CSTR, X_PFR, effective Pe number.
-
-### Notes
-
-- Very small Bo (< 1e-6) automatically uses the PFR approximation.
-- Very large Pe (> 500) in closed-closed also falls back to PFR.
+1. Choose the input method and boundary condition.
+2. Enter `Bo`, `tau`, and `C_A0`.
+3. Create, edit, or load the reaction system.
+4. Click **Compute**.
+5. Review `X_disp`, `X_CSTR`, `X_PFR`, and the reported `Pe` value.
 
 ---
 
 ## Tab 5: Convolution / Deconvolution
 
-**Purpose**: Perform discrete convolution (C_out = E * C_in) or deconvolution (recover E from C_in and C_out).
+**Status:** still in progress
+
+**Purpose:** Predict an outlet signal from `E(t)` and `C_in(t)`, or estimate `E(t)` from input and output signals.
 
 ### Data Sources
 
-| Source | Description |
-|--------|-------------|
-| From Workspace | Read signals from MATLAB workspace variables |
-| From Equation | Define signals as MATLAB expressions of t |
-| From Tab 1 (RTD) | Use E(t) from Tab 1, define C_in as equation (convolution only) |
-| From File | Import from Excel/CSV/TSV file |
+- Workspace variables
+- Equations of `t`
+- RTD from Tab 1
+- File import
 
-### Convolution Workflow
+### Convolution
 
-1. Set Mode = **Convolution**.
-2. Choose data source.
-3. Provide C_in(t) and E(t):
-   - **Workspace**: enter variable names (t, C_in, E must exist in workspace).
-   - **Equation**: enter t_start, t_end, N points, then C_in(t) and E(t) as MATLAB expressions.
-     - Example: `C_in = 5*exp(-0.1*t)`, `E = (1/5)*exp(-t/5)`
-   - **Tab 1 (RTD)**: E(t) auto-loaded from Tab 1. Enter C_in(t) equation only.
-   - **File**: click Import, select file (col1=t, col2=C_in, col3=E).
+1. Set **Mode = Convolution**.
+2. Choose the data source.
+3. Enter or import `C_in(t)` and `E(t)`.
 4. Click **Compute**.
-5. Result: C_out(t) plotted and stored.
+5. Review the `C_out(t)` plot.
 
-### Deconvolution Workflow
+### Deconvolution
 
-1. Set Mode = **Deconvolution**.
-2. Choose source (Workspace, Equation, or File).
-3. Provide C_in(t) and C_out(t), plus N points for E(t) reconstruction.
+1. Set **Mode = Deconvolution**.
+2. Choose the data source.
+3. Provide `C_in(t)` and `C_out(t)`.
 4. Click **Compute**.
-5. Result: Recovered E(t) with verification plot (reconvolved C_out overlaid on original).
+5. Review the recovered `E(t)` and the verification plot.
 
 ### Chaining
 
-After a convolution, click **"Use Previous C_out as C_in"** to chain computations:
-- C_in -> E_1 -> C_mid -> E_2 -> C_out (sequential reactors).
-
-### Example: P4 Problem — CSTR with tau=5, C_in = 5*exp(-0.1*t)
-
-1. Tab 1: Generate CSTR RTD with tau = 5 s.
-2. Tab 5: Mode = Convolution, Source = From Tab 1 (RTD).
-3. Enter C_in equation: `5*exp(-0.1*t)`.
-4. Click Compute. C_out appears in the Result plot.
+Use **Use Previous C_out as C_in** to connect multiple convolution steps in sequence.
 
 ---
 
 ## Tab 6: Combined Models
 
-**Purpose**: Analyze non-ideal reactor models combining ideal elements.
+**Status:** still in progress
 
-### Available Models
+**Purpose:** Compare combined non-ideal reactor configurations such as bypass, dead volume, or mixed series arrangements.
 
-| Model | Parameters | Description |
-|-------|-----------|-------------|
-| CSTR + Dead Vol. | alpha | V_active = alpha * V_total |
-| CSTR + Bypass | beta | Fraction beta bypasses the reactor |
-| CSTR + Bypass + Dead Vol. | alpha, beta | Both dead volume and bypass |
-| CSTR + PFR in Series | alpha | Fraction alpha in PFR, rest in CSTR |
+### Workflow
 
-### Steps
-
-1. Select model and enter parameters (alpha, beta, tau, kinetics, k, C_A0).
-2. Click **Compute**.
-3. Results: X_model, X_CSTR, X_PFR.
-4. Plots: E(t) of the combined model, conversion comparison bar, parameter sensitivity curve.
+1. Choose a model.
+2. Enter the required parameters.
+3. Click **Compute**.
+4. Review the conversion results, RTD plot, and sensitivity plot.
 
 ---
 
-## Tab 7: Optimization (RTD Model Fitting)
+## Tab 7: Optimization
 
-**Purpose**: Fit analytical RTD models to experimental E(t) data using least-squares optimization.
+**Status:** still in progress
 
-### Models Available for Fitting
+**Purpose:** Fit analytical RTD models to experimental RTD data.
 
-- Tanks-in-Series (parameter: N)
-- Dispersion open-open (parameter: Bo)
-- Dispersion closed-closed (parameter: Bo)
-- CSTR + Dead Volume (parameter: alpha)
-- CSTR + Bypass (parameter: beta)
-- CSTR + Bypass + Dead Vol. (parameters: alpha, beta)
+### Workflow
 
-### Steps
-
-1. Load experimental E(t) data (from workspace or file).
-2. Check which models to fit.
+1. Load experimental `E(t)` data from the workspace, from a file, or from Tab 1 when available.
+2. Select the models you want to fit.
 3. Click **Fit Models**.
-4. Results table shows: Model, Parameters, SSE, R^2, AIC.
-5. Plots: data vs fitted curves, residuals, R^2 comparison.
-
-### Tips
-
-- The best model (highest R^2) is highlighted.
-- AIC penalizes model complexity — use it to compare models with different numbers of parameters.
+4. Review the fitted parameters and comparison metrics.
+5. Inspect the fit and residual plots.
 
 ---
 
 ## Unit Converter
 
-Click the **Unit Converter** button (top-right, blue) to open a floating window with conversions for:
-- Length, Area, Volume, Mass, Temperature, Pressure, Flow rate, Concentration, Energy.
+Open **Tools > Unit Converter** to convert values manually between common engineering units.
 
-All internal computations use SI units. Use the converter to translate between your data's units and SI.
+This tool is optional during normal use, because most scalar inputs in the app already support direct unit selection.
 
 ---
 
 ## Menu Bar
 
-- **File > Exit**: Close the application.
-- **Help > User Guide**: Open the in-app help dialog.
-- **Help > About**: Show version, author, and MATLAB info.
+- **File > Exit:** close the application
+- **Tools > Unit Converter:** open the unit converter
+- **Help > User Guide:** open this guide inside the app
+- **Help > About:** show version and author information
 
 ---
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| "RTD: not loaded" in Tabs 2-4 | Generate an RTD in Tab 1 first |
-| 2nd order kinetics gives wrong result | Ensure dropdown shows "2nd Order" (not "1st") |
-| Convolution equation error | Use valid MATLAB syntax with `t` as variable. Use `.*` for element-wise multiply |
-| Import file fails | Ensure file has numeric data, first column = time |
-| Status bar stuck on "Computing..." | Computation may be slow (deconvolution with many points). Wait or reduce N points |
-| Dispersion NaN for very small Bo | Fixed: uses PFR fallback for Bo < 1e-6 |
+| Problem | What to check |
+|---------|---------------|
+| Tabs 2-4 say the RTD is not loaded | Generate an RTD first in Tab 1 |
+| A model cannot compute | Check that all required inputs are filled in |
+| Reaction system is missing | Create one with **New RS** or load it from the workspace |
+| Imported data does not work | Check column order, headers, and unit consistency |
+| A `C(t)` or convolution equation fails | Use valid MATLAB syntax and element-wise operators such as `.*` |
+| Convolution or deconvolution is slow | Reduce the number of points and try again |
 
 ---
 
-## Internal Units (SI)
+## Practical Unit Tips
 
-| Quantity | Unit |
-|----------|------|
-| Time | s |
-| Volume | m^3 |
-| Concentration | mol/m^3 |
-| Flow rate | m^3/s |
-| Pressure | Pa |
-| Temperature | K |
-| k (1st order) | 1/s |
-| k (2nd order) | m^3/(mol*s) |
+- Keep `C0` in the same concentration scale as the imported tracer signal.
+- When using workspace or file imports, double-check that the selected unit in the app matches the data you are loading.
+- Use the local **Display units** controls when you want to inspect results without changing your original inputs.

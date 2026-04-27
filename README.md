@@ -35,17 +35,17 @@ Extiende la aplicación de reactores ideales de Isabela Fons con 7 módulos dedi
 
 Genera o importa distribuciones de tiempo de residencia E(t), F(t) y E(θ).
 
-* **Fuentes de datos:** expresión analítica (modelos ideales, tanques en serie y modelos dispersión), datos experimentales (pulso/escalón), importación desde archivo Excel o entrada manual en tabla (todavía en desarrollo).
+* **Fuentes de datos:** expresion analitica (modelos ideales, tanques en serie y dispersion), datos experimentales (pulso/escalon), ecuacion `C(t)` y entrada manual en tabla.
 * **Modelos analíticos:** CSTR ideal, PFR ideal, Tanques en Serie, Dispersión (open/closed), Flujo Laminar.
-* **Resultados:** gráficas E(t), F(t) y E(θ), tiempo medio de residencia (τ), varianza (σ<sup>2</sup>), varianza adimensional (σ<sub>θ</sub><sup>2</sup>), el tercer sesgo (skewness) (S<sup>3</sup>), número de tanques equivalente (N<sub>est</sub>) y volumen efectivo (V<sub>eff</sub>).
+* **Resultados:** graficas E(t), F(t) y E(θ), tiempo medio de residencia (τ), varianza (σ<sup>2</sup>), varianza adimensional (σ<sub>θ</sub><sup>2</sup>), sesgo (S<sup>3</sup>), numero de tanques equivalente (N<sub>est</sub>) y volumen efectivo (V<sub>eff</sub>).
 * **Exportación:** guarda la RTD calculada al workspace de MATLAB.
 
-### Tab 2 — Modelos de Predicción MODIFICAR
+### Tab 2 — Modelos de Prediccion
 Predice la conversión del modelo E(t), generado en la Tab 1, usando los modelos de Segregación y Máxima Mezcla.
 
-- **Cinéticas soportadas:** 1<sup>er</sup> y 2<sup>o</sup> orden
-- **Cinéticas en desarrollo:** Michaelis-Menten, reversible de 1<sup>er</sup> orden, reacciones paralelas y ecuación cinética personalizada.
-- **Resultados:** Estimación de la conversión de salida empleando los modelos de Segregación y Máxima Mezcla, que representan dos comportamientos límite de micromezcla en reactores no ideales.
+- **Backend actual:** ambos modelos trabajan via `ReactionSys` y su ruta numerica general, no mediante ramas analiticas separadas por tipo de cinetica dentro de las clases del modelo.
+- **Entrada cinetica:** el usuario define un `ReactionSys` en `defineReactionSysApp` y la tab construye `C0 = [CA0, 0, 0, ...]`.
+- **Resultados:** estimacion de la conversion de salida con los modelos de Segregacion y Maxima Mezcla, que representan dos comportamientos limite de micromezcla en reactores no ideales.
 - **Gráficas:** Conversión intrínseca e integrando del modelo de Segregación, la conversión de máxima mezcla y la comparativa entre las conversiones de ambos límites.
 
 ### Tab 3 — Tanques en Serie (TIS)
@@ -53,15 +53,15 @@ Modelo de N tanques CSTR iguales en serie.
 
 - **Cálculo de N:** automático desde la varianza de la RTD experimental, o entrada manual.
 - **RTD analítica:** E(t) = t^(N-1) / ((N-1)! * tau_i^N) * exp(-t/τ_i).
-- **Conversión:** solución analítica para 1er orden; resolución secuencial de N balances CSTR para otros ordenes.
-- **Importación:** reutiliza parámetros del Tab 2 (cinética, k, CA0).
+- **Conversion:** resolucion secuencial general de `N` balances CSTR via `ReactionSys`, con referencias `CSTR` y `PFR` calculadas con el mismo backend.
+- **Importacion:** puede reutilizar RTD, `ReactionSys` y `CA0` desde Tabs 1 y 2.
 
 ### Tab 4 — Modelo de Dispersión
 Reactor con dispersión axial, parametrizado por el número de Bodenstein (Bo = u*L/De).
 
 - **Condiciones de contorno:** open-open (Gaussiana) y closed-closed (Danckwerts).
 - **Limites:** Bo -> 0 reproduce CSTR; Bo -> infinito reproduce PFR.
-- **Conversión:** solución analítica (1er orden) o numérica (otros órdenes).
+- **Conversion:** ruta general numerica basada en `ReactionSys` y en la RTD de dispersion.
 
 ## Módulos (Tabs) en desarrollo
 
@@ -92,7 +92,7 @@ Ajusta datos experimentales de RTD a 6 modelos teoricos.
 
 Accesible desde el botón "Conversor de Unidades" en cualquier tab.
 
-**9 categorías:** Tiempo, Volumen, Concentración, Caudal, Presión, Temperatura, Constante cinética (1er y 2do orden), Energía, Difusividad, Viscosidad, Longitud, Área.
+Incluye categorias para tiempo, volumen, concentracion, caudal, presion, temperatura, constantes cineticas y otras magnitudes auxiliares del toolbox.
 
 ```matlab
 UnitConverterHelper.launch()   % Abre la ventana flotante
@@ -121,10 +121,10 @@ El conversor de unidades facilita la traducción entre las unidades del problema
 ReactorApp toolbox/
   NonIdealReactorApp.m    App principal (7 tabs, ~3500 líneas)
   RTD.m                   Clase RTD + 10 métodos factory estáticos
-  SegregationModel.m      Modelo de segregación (6 cinéticas)
-  MaxMixednessModel.m     Modelo de máxima mezcla (6 cinéticas)
-  DispersionReactor.m     Reactor dispersión axial (hereda de Reactor)
-  TanksInSeries.m         N tanques en serie (hereda de Reactor)
+  SegregationModel.m      Modelo de segregación via ReactionSys
+  MaxMixednessModel.m     Modelo de máxima mezcla via ReactionSys
+  DispersionReactor.m     Reactor de dispersión axial
+  TanksInSeries.m         N tanques en serie
   ConvolutionTool.m       Convolución/deconvolución matricial
   UnitConverterHelper.m   Conversor de unidades flotante (9 categorías)
   Reactor.m               Clase base (serie, paralelo, reciclo, coste)
@@ -133,8 +133,6 @@ ReactorApp toolbox/
   ReactionSys.m           Sistema de reacciones (Arrhenius, LH, custom)
   call_DataBase.m         Interfaz COM con Aspen HYSYS
   computeCost.m           TAC (Total Annual Cost)
-  Test_NonIdealReactors.m Tests de validación (15 casos)
-  Test_ReferenceProblems.m Verificación problemas 51-64
   Datos Problemas no ideales.xlsx   Datos experimentales
   +cmu/                   Librería de unidades CMU
   html/                   Ejemplos publicados
@@ -152,17 +150,15 @@ Todas las clases de reactores no ideales incluyen placeholders `[HYSYS]` para im
 
 La clase `Stream.m` ya implementa `defineStreamFromHysys()` para conectar con HYSYS.
 
-## Tests
+## Validacion
 
-Ejecutar los tests desde MATLAB:
+Actualmente no hay un harness de tests visible en el arbol principal con los nombres historicos `Test_NonIdealReactors` o `Test_ReferenceProblems`.
 
-```matlab
-% Tests de límites físicos (15 casos)
-results = runtests('Test_NonIdealReactors');
+La validacion reciente del bloque no ideal se esta haciendo mediante:
 
-% Verificación de problemas de referencia (problemas 51-64)
-results = runtests('Test_ReferenceProblems');
-```
+- problemas de referencia contrastados manualmente
+- smoke tests ejecutados via `matlab -batch`
+- documentacion tecnica en `Documentation/`
 
 ## Problemas de Referencia
 

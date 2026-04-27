@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Non-Ideal Reactor Analysis - User Guide</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f1ea;
+      --panel: #fffdf8;
+      --ink: #1f2933;
+      --muted: #52606d;
+      --line: #d9d2c3;
+      --accent: #a33b20;
+      --accent-soft: #f8e6df;
+      --code: #f1efe9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(180deg, #efe8dc 0%, #f8f5ee 100%);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    .page {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 28px 24px 40px;
+    }
+
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px 32px;
+      box-shadow: 0 12px 28px rgba(31, 41, 51, 0.08);
+      margin-bottom: 24px;
+    }
+
+    h1, h2, h3 {
+      margin-top: 0;
+      color: #12212f;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--accent-soft);
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      margin-bottom: 8px;
+    }
+
+    p, li {
+      font-size: 0.97rem;
+    }
+
+    .meta, .muted {
+      color: var(--muted);
+    }
+
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px 28px;
+      box-shadow: 0 12px 28px rgba(31, 41, 51, 0.05);
+      margin-bottom: 18px;
+    }
+
+    code, pre {
+      font-family: Consolas, "Courier New", monospace;
+      background: var(--code);
+      border-radius: 8px;
+    }
+
+    code {
+      padding: 0.1rem 0.3rem;
+    }
+
+    pre {
+      padding: 14px 16px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid #e6e0d5;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f7f1e6;
+      color: #22313f;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    ul, ol {
+      padding-left: 22px;
+      margin-top: 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>Non-Ideal Reactor Analysis - User Guide</h1>
+      <p class="meta"><strong>Version 1.3 - April 2026</strong><br>Javier Berenguer Sabater | TFG - Chemical Engineering</p>
+    </section>
+
+    <section class="section">
+      <h2>Quick Start</h2>
+      <pre><code>% Launch the application
+app = NonIdealReactorApp ;</code></pre>
+      <p>The main window includes <strong>7 tabs</strong>, a <strong>File</strong> menu, a <strong>Tools</strong> menu, a <strong>Help</strong> menu, and a status bar at the bottom.</p>
+      <h3>Working with Units</h3>
+      <ul>
+        <li>Most numeric inputs include a unit dropdown next to the field.</li>
+        <li>You can type values directly in your preferred units.</li>
+        <li>Several fields also accept simple expressions such as <code>10/60</code> or <code>2*5</code>.</li>
+        <li>Experimental RTD sources and <code>C(t)</code> equations include time-unit selectors.</li>
+        <li>Each main tab includes local <strong>Display units</strong> controls for plots and results.</li>
+        <li>When importing data from files or the workspace, make sure your vectors match the units selected in the app.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Tab 1: RTD Analysis</h2>
+      <p><strong>Purpose:</strong> Generate or import a residence time distribution <code>E(t)</code> and calculate its main moments.</p>
+      <h3>Available RTD Sources</h3>
+      <table>
+        <tr><th>Source</th><th>Description</th></tr>
+        <tr><td>Ideal CSTR</td><td>Exponential RTD for a perfectly mixed reactor</td></tr>
+        <tr><td>Ideal PFR</td><td>Ideal plug-flow reference</td></tr>
+        <tr><td>Tanks-in-Series</td><td>RTD for <code>N</code> equal tanks in series</td></tr>
+        <tr><td>Dispersion (open)</td><td>Axial dispersion model with open boundaries</td></tr>
+        <tr><td>Dispersion (closed)</td><td>Axial dispersion model with closed boundaries</td></tr>
+        <tr><td>Laminar Flow</td><td>Laminar-flow RTD</td></tr>
+        <tr><td>Experimental Pulse</td><td>Build RTD from pulse tracer data</td></tr>
+        <tr><td>Experimental Step</td><td>Build RTD from step tracer data</td></tr>
+        <tr><td>C(t) Equation</td><td>Generate RTD from a custom <code>C(t)</code> expression</td></tr>
+        <tr><td>Tabular Input</td><td>Enter time and signal values manually</td></tr>
+      </table>
+      <h3>Basic Workflow</h3>
+      <ol>
+        <li>Choose an <strong>RTD Source</strong>.</li>
+        <li>Fill in the required inputs using the unit dropdowns next to each field.</li>
+        <li>Click <strong>Generate</strong>.</li>
+        <li>Review the plots and the calculated values: <code>tau_m</code>, <code>sigma^2</code>, <code>sigma^2_theta</code>, <code>s^3</code>, <code>N_est</code>, and <code>V_eff</code>.</li>
+        <li>If needed, enter <code>Q_v</code> to estimate the effective volume <code>V_eff = tau * Q_v</code>.</li>
+        <li>Use <strong>Export RTD to Workspace</strong> if you want to reuse the RTD in MATLAB or in other tabs.</li>
+      </ol>
+      <h3>Importing Experimental Data</h3>
+      <ul>
+        <li><strong>From workspace:</strong> provide the names of the time and signal variables in the corresponding fields.</li>
+        <li><strong>Pulse data:</strong> use <code>t</code> in the selected time unit and keep <code>C(t)</code> and <code>C0</code> in the same concentration scale.</li>
+        <li><strong>Step data:</strong> use <code>t</code> in the selected time unit and keep the measured outlet response consistent with <code>C0</code>.</li>
+        <li><strong>From file:</strong> click <strong>Import Experimental Data</strong> and choose an <code>.xlsx</code>, <code>.xls</code>, <code>.csv</code>, or <code>.tsv</code> file.</li>
+        <li>For file imports, the first column must contain time and the second column must contain concentration or response.</li>
+        <li>In Excel files, keep the headers in row 1 and the data starting in row 2.</li>
+        <li><strong>Tabular Input:</strong> click <strong>Add Row</strong> to enter values manually.</li>
+      </ul>
+      <h3>Tips</h3>
+      <ul>
+        <li>The RTD generated here is shared automatically with Tabs 2, 3, and 4.</li>
+        <li>The <strong>Display units</strong> controls let you change how time-based plots and values are shown.</li>
+        <li><code>E(t)</code>, <code>F(t)</code>, and <code>E(theta)</code> are plotted separately for easier comparison.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Tab 2: Prediction Models</h2>
+      <p><strong>Purpose:</strong> Estimate conversion limits using the <strong>Segregation</strong> and <strong>Max Mixedness</strong> models.</p>
+      <h3>Before You Compute</h3>
+      <ul>
+        <li>Generate an RTD first in <strong>Tab 1</strong>.</li>
+        <li>Create a reaction system with <strong>New RS</strong>, modify it with <strong>Edit RS</strong>, or load it with <strong>Load from Workspace</strong>.</li>
+        <li>Enter <code>C_A0</code> using the concentration unit you want.</li>
+      </ul>
+      <h3>Workflow</h3>
+      <ol>
+        <li>Confirm that the RTD status shows it was loaded from Tab 1.</li>
+        <li>Prepare or load the reaction system.</li>
+        <li>Enter <code>C_A0</code>.</li>
+        <li>Click <strong>Compute</strong>.</li>
+        <li>Review <code>X_seg</code>, <code>X_mm</code>, and the interpretation shown in the results area.</li>
+      </ol>
+      <h3>Plots</h3>
+      <ul>
+        <li><strong>X_batch(t):</strong> batch conversion versus time</li>
+        <li><strong>Integrand:</strong> contribution used by the segregation calculation</li>
+        <li><strong>X(lambda):</strong> max-mixedness profile</li>
+        <li><strong>Comparison:</strong> direct comparison of both model predictions</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Tab 3: Tanks-in-Series (TIS)</h2>
+      <p><strong>Purpose:</strong> Model non-ideal behavior as <code>N</code> equal CSTRs in series.</p>
+      <h3>Choosing <code>N</code></h3>
+      <ul>
+        <li><strong>Manual:</strong> type the number of tanks directly.</li>
+        <li><strong>From Calculated Data:</strong> estimate <code>N</code> automatically from the RTD obtained in Tab 1.</li>
+      </ul>
+      <h3>Workflow</h3>
+      <ol>
+        <li>Choose how <code>N</code> will be defined.</li>
+        <li>Enter <code>tau</code> and <code>C_A0</code> using the unit dropdowns.</li>
+        <li>Create, edit, or load the reaction system.</li>
+        <li>Click <strong>Compute</strong>.</li>
+        <li>Review <code>X_TIS</code>, <code>X_CSTR</code>, and <code>X_PFR</code>.</li>
+      </ol>
+      <h3>Notes</h3>
+      <ul>
+        <li>If <code>N</code> is not an integer, the app rounds it and shows a warning.</li>
+        <li>The RTD of the TIS model is plotted together with the RTD from Tab 1.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Tab 4: Dispersion Model</h2>
+      <p><strong>Purpose:</strong> Model non-ideal behavior using axial dispersion.</p>
+      <h3>Input Options</h3>
+      <ul>
+        <li><strong>Manual:</strong> enter <code>Bo</code> directly.</li>
+        <li><strong>From Calculated Data:</strong> estimate <code>Bo</code> from the RTD in Tab 1.</li>
+      </ul>
+      <h3>Boundary Conditions</h3>
+      <ul>
+        <li><strong>Open-Open</strong></li>
+        <li><strong>Closed-Closed</strong></li>
+      </ul>
+      <h3>Workflow</h3>
+      <ol>
+        <li>Choose the input method and boundary condition.</li>
+        <li>Enter <code>Bo</code>, <code>tau</code>, and <code>C_A0</code>.</li>
+        <li>Create, edit, or load the reaction system.</li>
+        <li>Click <strong>Compute</strong>.</li>
+        <li>Review <code>X_disp</code>, <code>X_CSTR</code>, <code>X_PFR</code>, and the reported <code>Pe</code> value.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <span class="badge">Still in progress</span>
+      <h2>Tab 5: Convolution / Deconvolution</h2>
+      <p><strong>Purpose:</strong> Predict an outlet signal from <code>E(t)</code> and <code>C_in(t)</code>, or estimate <code>E(t)</code> from input and output signals.</p>
+      <h3>Data Sources</h3>
+      <ul>
+        <li>Workspace variables</li>
+        <li>Equations of <code>t</code></li>
+        <li>RTD from Tab 1</li>
+        <li>File import</li>
+      </ul>
+      <h3>Convolution</h3>
+      <ol>
+        <li>Set <strong>Mode = Convolution</strong>.</li>
+        <li>Choose the data source.</li>
+        <li>Enter or import <code>C_in(t)</code> and <code>E(t)</code>.</li>
+        <li>Click <strong>Compute</strong>.</li>
+        <li>Review the <code>C_out(t)</code> plot.</li>
+      </ol>
+      <h3>Deconvolution</h3>
+      <ol>
+        <li>Set <strong>Mode = Deconvolution</strong>.</li>
+        <li>Choose the data source.</li>
+        <li>Provide <code>C_in(t)</code> and <code>C_out(t)</code>.</li>
+        <li>Click <strong>Compute</strong>.</li>
+        <li>Review the recovered <code>E(t)</code> and the verification plot.</li>
+      </ol>
+      <h3>Chaining</h3>
+      <p>Use <strong>Use Previous C_out as C_in</strong> to connect multiple convolution steps in sequence.</p>
+    </section>
+
+    <section class="section">
+      <span class="badge">Still in progress</span>
+      <h2>Tab 6: Combined Models</h2>
+      <p><strong>Purpose:</strong> Compare combined non-ideal reactor configurations such as bypass, dead volume, or mixed series arrangements.</p>
+      <h3>Workflow</h3>
+      <ol>
+        <li>Choose a model.</li>
+        <li>Enter the required parameters.</li>
+        <li>Click <strong>Compute</strong>.</li>
+        <li>Review the conversion results, RTD plot, and sensitivity plot.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <span class="badge">Still in progress</span>
+      <h2>Tab 7: Optimization</h2>
+      <p><strong>Purpose:</strong> Fit analytical RTD models to experimental RTD data.</p>
+      <h3>Workflow</h3>
+      <ol>
+        <li>Load experimental <code>E(t)</code> data from the workspace, from a file, or from Tab 1 when available.</li>
+        <li>Select the models you want to fit.</li>
+        <li>Click <strong>Fit Models</strong>.</li>
+        <li>Review the fitted parameters and comparison metrics.</li>
+        <li>Inspect the fit and residual plots.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Unit Converter</h2>
+      <p>Open <strong>Tools &gt; Unit Converter</strong> to convert values manually between common engineering units.</p>
+      <p>This tool is optional during normal use, because most scalar inputs in the app already support direct unit selection.</p>
+    </section>
+
+    <section class="section">
+      <h2>Menu Bar</h2>
+      <ul>
+        <li><strong>File &gt; Exit:</strong> close the application</li>
+        <li><strong>Tools &gt; Unit Converter:</strong> open the unit converter</li>
+        <li><strong>Help &gt; User Guide:</strong> open this guide inside the app</li>
+        <li><strong>Help &gt; About:</strong> show version and author information</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Troubleshooting</h2>
+      <table>
+        <tr><th>Problem</th><th>What to check</th></tr>
+        <tr><td>Tabs 2-4 say the RTD is not loaded</td><td>Generate an RTD first in Tab 1.</td></tr>
+        <tr><td>A model cannot compute</td><td>Check that all required inputs are filled in.</td></tr>
+        <tr><td>Reaction system is missing</td><td>Create one with <strong>New RS</strong> or load it from the workspace.</td></tr>
+        <tr><td>Imported data does not work</td><td>Check column order, headers, and unit consistency.</td></tr>
+        <tr><td>A <code>C(t)</code> or convolution equation fails</td><td>Use valid MATLAB syntax and element-wise operators such as <code>.*</code>.</td></tr>
+        <tr><td>Convolution or deconvolution is slow</td><td>Reduce the number of points and try again.</td></tr>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>Practical Unit Tips</h2>
+      <ul>
+        <li>Keep <code>C0</code> in the same concentration scale as the imported tracer signal.</li>
+        <li>When using workspace or file imports, double-check that the selected unit in the app matches the data you are loading.</li>
+        <li>Use the local <strong>Display units</strong> controls when you want to inspect results without changing your original inputs.</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>
