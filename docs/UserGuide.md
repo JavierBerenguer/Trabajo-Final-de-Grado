@@ -12,7 +12,7 @@ Javier Berenguer Sabater | TFG - Chemical Engineering
 app = NonIdealReactorApp ;
 ```
 
-The main window includes **7 tabs**, a **File** menu, a **Tools** menu, a **Help** menu, and a status bar at the bottom.
+The main window includes **4 tabs**, a **File** menu, a **Tools** menu, a **Help** menu, and a status bar at the bottom.
 
 ### Working with Units
 
@@ -146,72 +146,6 @@ The main window includes **7 tabs**, a **File** menu, a **Tools** menu, a **Help
 
 ---
 
-## Tab 5: Convolution / Deconvolution
-
-**Status:** still in progress
-
-**Purpose:** Predict an outlet signal from `E(t)` and `C_in(t)`, or estimate `E(t)` from input and output signals.
-
-### Data Sources
-
-- Workspace variables
-- Equations of `t`
-- RTD from Tab 1
-- File import
-
-### Convolution
-
-1. Set **Mode = Convolution**.
-2. Choose the data source.
-3. Enter or import `C_in(t)` and `E(t)`.
-4. Click **Compute**.
-5. Review the `C_out(t)` plot.
-
-### Deconvolution
-
-1. Set **Mode = Deconvolution**.
-2. Choose the data source.
-3. Provide `C_in(t)` and `C_out(t)`.
-4. Click **Compute**.
-5. Review the recovered `E(t)` and the verification plot.
-
-### Chaining
-
-Use **Use Previous C_out as C_in** to connect multiple convolution steps in sequence.
-
----
-
-## Tab 6: Combined Models
-
-**Status:** still in progress
-
-**Purpose:** Compare combined non-ideal reactor configurations such as bypass, dead volume, or mixed series arrangements.
-
-### Workflow
-
-1. Choose a model.
-2. Enter the required parameters.
-3. Click **Compute**.
-4. Review the conversion results, RTD plot, and sensitivity plot.
-
----
-
-## Tab 7: Optimization
-
-**Status:** still in progress
-
-**Purpose:** Fit analytical RTD models to experimental RTD data.
-
-### Workflow
-
-1. Load experimental `E(t)` data from the workspace, from a file, or from Tab 1 when available.
-2. Select the models you want to fit.
-3. Click **Fit Models**.
-4. Review the fitted parameters and comparison metrics.
-5. Inspect the fit and residual plots.
-
----
-
 ## Unit Converter
 
 Open **Tools > Unit Converter** to convert values manually between common engineering units.
@@ -237,8 +171,7 @@ This tool is optional during normal use, because most scalar inputs in the app a
 | A model cannot compute | Check that all required inputs are filled in |
 | Reaction system is missing | Create one with **New RS** or load it from the workspace |
 | Imported data does not work | Check column order, headers, and unit consistency |
-| A `C(t)` or convolution equation fails | Use valid MATLAB syntax and element-wise operators such as `.*` |
-| Convolution or deconvolution is slow | Reduce the number of points and try again |
+| A `C(t)` equation fails | Use valid MATLAB syntax and element-wise operators such as `.*` |
 
 ---
 

@@ -153,7 +153,7 @@
       <h2>Quick Start</h2>
       <pre><code>% Launch the application
 app = NonIdealReactorApp ;</code></pre>
-      <p>The main window includes <strong>7 tabs</strong>, a <strong>File</strong> menu, a <strong>Tools</strong> menu, a <strong>Help</strong> menu, and a status bar at the bottom.</p>
+      <p>The main window includes <strong>4 tabs</strong>, a <strong>File</strong> menu, a <strong>Tools</strong> menu, a <strong>Help</strong> menu, and a status bar at the bottom.</p>
       <h3>Working with Units</h3>
       <ul>
         <li>Most numeric inputs include a unit dropdown next to the field.</li>
@@ -282,64 +282,6 @@ app = NonIdealReactorApp ;</code></pre>
     </section>
 
     <section class="section">
-      <span class="badge">Still in progress</span>
-      <h2>Tab 5: Convolution / Deconvolution</h2>
-      <p><strong>Purpose:</strong> Predict an outlet signal from <code>E(t)</code> and <code>C_in(t)</code>, or estimate <code>E(t)</code> from input and output signals.</p>
-      <h3>Data Sources</h3>
-      <ul>
-        <li>Workspace variables</li>
-        <li>Equations of <code>t</code></li>
-        <li>RTD from Tab 1</li>
-        <li>File import</li>
-      </ul>
-      <h3>Convolution</h3>
-      <ol>
-        <li>Set <strong>Mode = Convolution</strong>.</li>
-        <li>Choose the data source.</li>
-        <li>Enter or import <code>C_in(t)</code> and <code>E(t)</code>.</li>
-        <li>Click <strong>Compute</strong>.</li>
-        <li>Review the <code>C_out(t)</code> plot.</li>
-      </ol>
-      <h3>Deconvolution</h3>
-      <ol>
-        <li>Set <strong>Mode = Deconvolution</strong>.</li>
-        <li>Choose the data source.</li>
-        <li>Provide <code>C_in(t)</code> and <code>C_out(t)</code>.</li>
-        <li>Click <strong>Compute</strong>.</li>
-        <li>Review the recovered <code>E(t)</code> and the verification plot.</li>
-      </ol>
-      <h3>Chaining</h3>
-      <p>Use <strong>Use Previous C_out as C_in</strong> to connect multiple convolution steps in sequence.</p>
-    </section>
-
-    <section class="section">
-      <span class="badge">Still in progress</span>
-      <h2>Tab 6: Combined Models</h2>
-      <p><strong>Purpose:</strong> Compare combined non-ideal reactor configurations such as bypass, dead volume, or mixed series arrangements.</p>
-      <h3>Workflow</h3>
-      <ol>
-        <li>Choose a model.</li>
-        <li>Enter the required parameters.</li>
-        <li>Click <strong>Compute</strong>.</li>
-        <li>Review the conversion results, RTD plot, and sensitivity plot.</li>
-      </ol>
-    </section>
-
-    <section class="section">
-      <span class="badge">Still in progress</span>
-      <h2>Tab 7: Optimization</h2>
-      <p><strong>Purpose:</strong> Fit analytical RTD models to experimental RTD data.</p>
-      <h3>Workflow</h3>
-      <ol>
-        <li>Load experimental <code>E(t)</code> data from the workspace, from a file, or from Tab 1 when available.</li>
-        <li>Select the models you want to fit.</li>
-        <li>Click <strong>Fit Models</strong>.</li>
-        <li>Review the fitted parameters and comparison metrics.</li>
-        <li>Inspect the fit and residual plots.</li>
-      </ol>
-    </section>
-
-    <section class="section">
       <h2>Unit Converter</h2>
       <p>Open <strong>Tools &gt; Unit Converter</strong> to convert values manually between common engineering units.</p>
       <p>This tool is optional during normal use, because most scalar inputs in the app already support direct unit selection.</p>
@@ -363,8 +305,7 @@ app = NonIdealReactorApp ;</code></pre>
         <tr><td>A model cannot compute</td><td>Check that all required inputs are filled in.</td></tr>
         <tr><td>Reaction system is missing</td><td>Create one with <strong>New RS</strong> or load it from the workspace.</td></tr>
         <tr><td>Imported data does not work</td><td>Check column order, headers, and unit consistency.</td></tr>
-        <tr><td>A <code>C(t)</code> or convolution equation fails</td><td>Use valid MATLAB syntax and element-wise operators such as <code>.*</code>.</td></tr>
-        <tr><td>Convolution or deconvolution is slow</td><td>Reduce the number of points and try again.</td></tr>
+        <tr><td>A <code>C(t)</code> equation fails</td><td>Use valid MATLAB syntax and element-wise operators such as <code>.*</code>.</td></tr>
       </table>
     </section>
 
