@@ -33,6 +33,7 @@ classdef SegregationModel
 
     properties (SetAccess = private)
         X_mean              % Mean conversion (result)
+        C_exit              % [1 x nComp] Mean outlet concentrations from segregation
         X_batch             % [1 x N] Batch conversion profile X(t)
         integrand           % [1 x N] X(t)*E(t) - the integrand
         C_batch             % [N x nComp] Concentration profiles from batch
@@ -106,6 +107,12 @@ classdef SegregationModel
             % Integrate
             obj.integrand = obj.X_batch .* Et ;
             obj.X_mean = trapz(t_rtd, obj.integrand) ;
+
+            % Mean outlet concentrations: C_exit(j) = integral(C_batch(t,j) * E(t) dt)
+            obj.C_exit = zeros(1, nComp) ;
+            for j = 1:nComp
+                obj.C_exit(j) = trapz(t_rtd, obj.C_batch(:,j)' .* Et) ;
+            end
 
             % Selectivity and yield for multi-component systems
             if nComp >= 3

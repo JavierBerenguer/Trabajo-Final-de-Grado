@@ -25,6 +25,7 @@ classdef MaxMixednessModel
 
     properties (SetAccess = private)
         X_exit              % Exit conversion X(lambda=0) (result)
+        C_exit              % [1 x nComp] Exit concentrations at lambda=0
         lambda_profile      % [1 x M] life expectancy vector
         X_profile           % [1 x M] conversion profile X(lambda)
     end
@@ -65,7 +66,6 @@ classdef MaxMixednessModel
             Et = obj.rtd.Et ;
             Ft = obj.rtd.Ft ;
             stoich = RS.stochiometricMatrix ;
-            nComp = length(C0) ;
             T = 298.15 ;
             idx_key = obj.keyComponentIndex ;
             CA0 = C0(idx_key) ;
@@ -80,50 +80,38 @@ classdef MaxMixednessModel
                 lambda_max = t_rtd(valid_idx) ;
             end
 
+            % Backward integration in lambda cannot use NonNegative:
+            % it would freeze species at zero and block physically valid
+            % growth of products when stepping from lambda_max to 0.
             options = odeset('RelTol', 1e-10, 'AbsTol', 1e-12) ;
 
-            if nComp == 1
-                [lambda_sol, X_sol] = ode45(@ode_single, ...
-                    [lambda_max, 0], 0, options) ;
-            else
-                [lambda_sol, X_sol] = ode45(@ode_multi, ...
-                    [lambda_max, 0], 0, options) ;
-            end
+            % Unified vector-C ODE: state = full concentration vector C [nComp x 1]
+            % Backward integration from lambda_max (feed) to 0 (exit).
+            % Zwietering equation in concentration form using SPECIES rates.
+            % ReactionSys returns reaction-progress rates r_i, so the
+            % species-rate vector is (r * stoich). The maximum-mixedness
+            % ODE needs the opposite sign under backward lambda integration:
+            %   dC/dlambda = -(r(C)*stoich) + E(lambda)/(1-F(lambda))*(C - C0)
+            [lambda_sol, C_sol] = ode45(@ode_C, [lambda_max, 0], C0(:), options) ;
 
-            X_sol = max(min(X_sol, 1), 0) ;
+            C_sol = max(C_sol, 0) ;
+            obj.C_exit = C_sol(end, :) ;
+            obj.X_exit = (CA0 - C_sol(end, idx_key)) / max(CA0, 1e-12) ;
+            obj.X_exit = max(min(obj.X_exit, 1), 0) ;
 
             obj.lambda_profile = flip(lambda_sol') ;
-            obj.X_profile = flip(X_sol') ;
-            obj.X_exit = X_sol(end) ;
+            X_from_C = (CA0 - C_sol(:, idx_key)) / max(CA0, 1e-12) ;
+            obj.X_profile = flip(max(min(X_from_C, 1), 0)') ;
 
-            function dXdlambda = ode_single(lambda, X)
-                E_val = E_interp(lambda) ;
-                F_val = F_interp(lambda) ;
-                denom = max(1 - F_val, 1e-12) ;
-
-                CA = CA0 * (1 - X) ;
-                RS_local = RS.computeRate(CA, T) ;
-                nu_key = stoich(:, idx_key) ;
-                rA = RS_local.r_i * nu_key ;
-
-                dXdlambda = rA / CA0 + (E_val / denom) * X ;
-            end
-
-            function dXdlambda = ode_multi(lambda, X)
-                E_val = E_interp(lambda) ;
-                F_val = F_interp(lambda) ;
-                denom = max(1 - F_val, 1e-12) ;
-
-                % Current app workflow assumes C0 = [CA0, 0, ...] and
-                % reconstructs the state from the key-component conversion.
-                C = C0 ;
-                C(idx_key) = CA0 * (1 - X) ;
-
-                RS_local = RS.computeRate(C, T) ;
-                nu_key = stoich(:, idx_key) ;
-                rA = RS_local.r_i * nu_key ;
-
-                dXdlambda = rA / CA0 + (E_val / denom) * X ;
+            function dCdlambda = ode_C(lambda, C)
+                E_val  = E_interp(lambda) ;
+                F_val  = F_interp(lambda) ;
+                denom  = max(1 - F_val, 1e-12) ;
+                C_safe = max(C(:)', 0) ;
+                RS_local = RS.computeRate(C_safe, T) ;
+                r    = RS_local.r_i ;                    % [1 x nReactions]
+                speciesRate = (r * stoich)' ;            % [nComp x 1]
+                dCdlambda = -speciesRate + (E_val / denom) * (C(:) - C0(:)) ;
             end
         end
 

@@ -43,8 +43,6 @@ classdef dialogHysysStreamApp < matlab.apps.AppBase
             app.CallingApp.Y    = streamCopy ;
             
             displayStreamValues(app.CallingApp,streamCopy) ;
-            app.CallingApp.volumetricFlowUnitsEditField.Value = 'm^3/s' ;
-            app.CallingApp.MolarFlowunitsEditField.Value = 'moles/s' ;
             
             delete(app)
 

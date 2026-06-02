@@ -105,7 +105,7 @@ classdef DispersionReactor < Reactor
             end
         end
 
-        function [Bo_vec, X_vec] = sweep_Bo_general(obj, RS, C0, tau, n_points)
+        function [Bo_vec, X_vec, C_out_mat] = sweep_Bo_general(obj, RS, C0, tau, n_points)
             % Parametric sweep of conversion vs Bo for general kinetics.
 
             if nargin < 5
@@ -114,12 +114,19 @@ classdef DispersionReactor < Reactor
 
             Bo_vec = logspace(-3, 1, n_points) ;
             X_vec = zeros(size(Bo_vec)) ;
+            if nargout >= 3
+                C_out_mat = zeros(numel(Bo_vec), numel(C0)) ;
+            end
 
             saved_Bo = obj.Bo ;
 
             for i = 1:n_points
                 obj.Bo = Bo_vec(i) ;
-                X_vec(i) = obj.compute_conversion_general(RS, C0, tau) ;
+                if nargout >= 3
+                    [X_vec(i), C_out_mat(i, :)] = obj.compute_conversion_general(RS, C0, tau) ;
+                else
+                    X_vec(i) = obj.compute_conversion_general(RS, C0, tau) ;
+                end
             end
 
             obj.Bo = saved_Bo ;

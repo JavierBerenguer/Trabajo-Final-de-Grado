@@ -422,6 +422,17 @@ classdef UnitConverterHelper < handle
             m('mL/min') = 1e-6 / 60 ;
             cats.VolumetricFlow.factors = m ;
 
+            % ----- Molar Flow -----
+            m = containers.Map() ;
+            m('mol/s')   = 1 ;
+            m('mol/min') = 1 / 60 ;
+            m('mol/h')   = 1 / 3600 ;
+            m('kmol/h')  = 1e3 / 3600 ;
+            m('kmol/s')  = 1e3 ;
+            m('moles/s') = 1 ;
+            m('gmole/s') = 1 ;
+            cats.MolarFlow.factors = m ;
+
             % ----- Concentration -----
             m = containers.Map() ;
             m('mol/m^3')  = 1 ;
@@ -486,6 +497,14 @@ classdef UnitConverterHelper < handle
             m('mm^2/s')  = 1e-6 ;
             m('ft^2/s')  = 0.0929 ;
             cats.Diffusivity.factors = m ;
+
+            % ----- Density -----
+            m = containers.Map() ;
+            m('kg/m^3') = 1 ;
+            m('g/L')    = 1 ;
+            m('g/cm^3') = 1e3 ;
+            m('kg/L')   = 1e3 ;
+            cats.Density.factors = m ;
 
             % ----- Viscosity (dynamic) -----
             m = containers.Map() ;

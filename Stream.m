@@ -11,12 +11,17 @@ classdef Stream
         molarFlow
         molarFlow_Units
         concentration
+        concentration_Units
         volumetricFlow
         volumetricFlow_Units
         density
+        density_Units
         P = 101325 ; %Pa
+        P_Units
         T = 298.15 ; %K
+        T_Units
         viscosity
+        viscosity_Units
         phase
         streamMolarEnthalpy 
         streamHeatCapacity
@@ -65,12 +70,27 @@ classdef Stream
         end
         
         function F = set.molarFlow_Units(F,molarFlow_Units)
+            if isstring(molarFlow_Units)
+                molarFlow_Units = char(molarFlow_Units) ;
+            end
             if ischar(molarFlow_Units)
                 F.molarFlow_Units = molarFlow_Units;
             end
         end
+
+        function F = set.concentration_Units(F,concentration_Units)
+            if isstring(concentration_Units)
+                concentration_Units = char(concentration_Units) ;
+            end
+            if ischar(concentration_Units)
+                F.concentration_Units = concentration_Units;
+            end
+        end
         
         function F = set.volumetricFlow_Units(F,volumetricFlow_Units)
+            if isstring(volumetricFlow_Units)
+                volumetricFlow_Units = char(volumetricFlow_Units) ;
+            end
             if ischar(volumetricFlow_Units)
                 F.volumetricFlow_Units = volumetricFlow_Units;
             end
@@ -79,18 +99,54 @@ classdef Stream
         function F = set.P(F,P)
             F.P = P ;
         end
+
+        function F = set.P_Units(F,P_Units)
+            if isstring(P_Units)
+                P_Units = char(P_Units) ;
+            end
+            if ischar(P_Units)
+                F.P_Units = P_Units;
+            end
+        end
         
         function F = set.T(F,T)
             F.T = T ;
+        end
+
+        function F = set.T_Units(F,T_Units)
+            if isstring(T_Units)
+                T_Units = char(T_Units) ;
+            end
+            if ischar(T_Units)
+                F.T_Units = T_Units;
+            end
         end
         
         function F = set.density(F,density)
             F.density = density ;
         end
+
+        function F = set.density_Units(F,density_Units)
+            if isstring(density_Units)
+                density_Units = char(density_Units) ;
+            end
+            if ischar(density_Units)
+                F.density_Units = density_Units;
+            end
+        end
         
         
         function F = set.viscosity(F,viscosity)
             F.viscosity = viscosity ;
+        end
+
+        function F = set.viscosity_Units(F,viscosity_Units)
+            if isstring(viscosity_Units)
+                viscosity_Units = char(viscosity_Units) ;
+            end
+            if ischar(viscosity_Units)
+                F.viscosity_Units = viscosity_Units;
+            end
         end
         
         function F = set.phase(F,phase)
@@ -164,6 +220,13 @@ classdef Stream
             streamCopy.viscosity            = HyStream.Viscosity.GetValue(viscosityUnits) ;
             streamCopy.molarFlow            = HyStream.ComponentMolarFlow.GetValues(componentMolarFlowUnits) ;
             streamCopy.concentration        = streamCopy.molarFlow/streamCopy.volumetricFlow ;
+            streamCopy.molarFlow_Units      = 'mol/s' ;
+            streamCopy.concentration_Units  = 'mol/m^3' ;
+            streamCopy.volumetricFlow_Units = 'm^3/s' ;
+            streamCopy.P_Units              = 'Pa' ;
+            streamCopy.T_Units              = 'K' ;
+            streamCopy.density_Units        = 'kg/m^3' ;
+            streamCopy.viscosity_Units      = 'Pa*s' ;
             streamCopy.streamMolarEnthalpy  = HyStream.MolarEnthalpy.GetValue(molarEnthalpyUnits) ;
             streamCopy.streamHeatCapacity   = HyStream.MolarHeatCapacity.GetValue(molarHeatCapacityUnits) ;
             if HyStream.VapourFractionValue == 1

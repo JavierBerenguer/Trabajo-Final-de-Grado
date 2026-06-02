@@ -78,8 +78,11 @@ classdef NonIdealReactorApp < handle
         % ---- Tab 2: Prediction Models ----
         PredTab
         Pred_RTDStatusLabel
-        Pred_CA0Field
-        Pred_CA0Label
+        Pred_StreamNameField    % Name of feed Stream in workspace
+        Pred_StreamDefineButton % Launches defineStreamApp
+        Pred_StreamLoadButton   % Loads Stream from workspace
+        Pred_StreamStatusLabel  % Shows loaded Stream info
+        Pred_feedStream         % Loaded feed Stream object
         Pred_RSNameField        % Name of ReactionSys in workspace
         Pred_RSDefineButton     % Launches defineReactionSysApp (new)
         Pred_RSEditButton       % Launches defineReactionSysApp with loaded RS
@@ -90,9 +93,10 @@ classdef NonIdealReactorApp < handle
         Pred_ResultSegLabel
         Pred_ResultMMLabel
         Pred_ResultBoundsLabel
+        Pred_C_exitLabel
+        Pred_C_exitTable        % UITable: outlet concentrations per component
         Pred_AxesXbatch
         Pred_AxesIntegrand
-        Pred_AxesXlambda
         Pred_AxesComparison
 
         % Stored model objects
@@ -107,8 +111,11 @@ classdef NonIdealReactorApp < handle
         TIS_RTDStatusLabel
         TIS_tauField
         TIS_tauLabel
-        TIS_CA0Field
-        TIS_CA0Label
+        TIS_StreamNameField     % Name of feed Stream in workspace
+        TIS_StreamDefineButton  % Launches defineStreamApp
+        TIS_StreamLoadButton    % Loads Stream from workspace
+        TIS_StreamStatusLabel   % Shows loaded Stream info
+        TIS_feedStream          % Loaded feed Stream object
         TIS_RSNameField         % Name of ReactionSys in workspace
         TIS_RSDefineButton      % Launches defineReactionSysApp (new)
         TIS_RSEditButton        % Launches defineReactionSysApp with loaded RS
@@ -121,6 +128,8 @@ classdef NonIdealReactorApp < handle
         TIS_ResultXpfr
         TIS_ResultNused
         TIS_RefreshButton
+        TIS_C_exitLabel
+        TIS_C_exitTable         % UITable: outlet concentrations per component
         TIS_AxesEt
         TIS_AxesXvsN
         TIS_AxesComparison
@@ -142,8 +151,13 @@ classdef NonIdealReactorApp < handle
         Disp_RSLoadButton       % Loads RS from workspace
         Disp_RSStatusLabel      % Shows loaded RS info
         Disp_RS                 % Loaded ReactionSys object
-        Disp_CA0Field
-        Disp_CA0Label
+        Disp_StreamNameField    % Name of feed Stream in workspace
+        Disp_StreamDefineButton % Launches defineStreamApp
+        Disp_StreamLoadButton   % Loads Stream from workspace
+        Disp_StreamStatusLabel  % Shows loaded Stream info
+        Disp_feedStream         % Loaded feed Stream object
+        Disp_C_exitLabel
+        Disp_C_exitTable        % UITable: outlet concentrations per component
         Disp_ComputeButton
         Disp_ResultX
         Disp_ResultXcstr
@@ -302,7 +316,7 @@ classdef NonIdealReactorApp < handle
         function dropdown = createDisplayUnitControl(~, parentGrid, row, col, ...
                 labelText, category, defaultUnit, callbackFcn)
             subGrid = uigridlayout(parentGrid, [1 2], ...
-                'ColumnWidth', {'fit', '1x'}, ...
+                'ColumnWidth', {'fit', 110}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 4) ;
             subGrid.Layout.Row = row ;
@@ -312,6 +326,25 @@ classdef NonIdealReactorApp < handle
             dropdown = uidropdown(subGrid, ...
                 'Items', UnitConverterHelper.getUnits(category), ...
                 'Value', defaultUnit, ...
+                'FontSize', 11, ...
+                'ValueChangedFcn', callbackFcn) ;
+            dropdown.Layout.Row = 1 ;
+            dropdown.Layout.Column = 2 ;
+        end
+
+        function dropdown = createDisplayChoiceControl(~, parentGrid, row, col, ...
+                labelText, items, defaultValue, callbackFcn)
+            subGrid = uigridlayout(parentGrid, [1 2], ...
+                'ColumnWidth', {'fit', 110}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 4) ;
+            subGrid.Layout.Row = row ;
+            subGrid.Layout.Column = col ;
+
+            uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
+            dropdown = uidropdown(subGrid, ...
+                'Items', items, ...
+                'Value', defaultValue, ...
                 'FontSize', 11, ...
                 'ValueChangedFcn', callbackFcn) ;
             dropdown.Layout.Row = 1 ;
@@ -332,6 +365,10 @@ classdef NonIdealReactorApp < handle
                 return
             end
             values = UnitConverterHelper.convertFromSI(category, siValues, dropdown.Value) ;
+        end
+
+        function values = convertOutputConcentration(app, siValues, dropdown)
+            values = app.convertOutputVector('Concentration', siValues, dropdown) ;
         end
 
         function label = axisLabelWithUnit(~, baseText, dropdown)
@@ -406,15 +443,86 @@ classdef NonIdealReactorApp < handle
                     if isfield(app.DisplayCache, 'TIS') && ~isempty(app.DisplayCache.TIS)
                         c = app.DisplayCache.TIS ;
                         app.TIS_updatePlots(c.N_val, c.tau_val, c.RS, c.C0, ...
-                            c.X_tis, c.X_cstr, c.X_pfr) ;
+                            c.X_tis, c.X_cstr, c.X_pfr, ...
+                            c.C_out_tis, c.C_out_cstr, c.C_out_pfr) ;
                     end
                 case 'Dispersion'
                     if isfield(app.DisplayCache, 'Dispersion') && ~isempty(app.DisplayCache.Dispersion)
                         c = app.DisplayCache.Dispersion ;
                         app.Disp_updatePlots(c.Bo_val, c.tau_val, c.RS, c.C0, ...
-                            c.X_disp, c.X_cstr, c.X_pfr) ;
+                            c.X_disp, c.X_cstr, c.X_pfr, ...
+                            c.C_out_disp, c.C_out_cstr, c.C_out_pfr, c.bcType) ;
                     end
             end
+        end
+
+        function labels = getComponentLabels(~, nComp)
+            labels = arrayfun(@(i) sprintf('C%d', i), 1:nComp, 'UniformOutput', false) ;
+        end
+
+        function ensureComponentSelectorItems(app, dropdown, nComp)
+            if isempty(dropdown) || ~isvalid(dropdown)
+                return
+            end
+            items = [{'All'}, app.getComponentLabels(nComp)] ;
+            currentValue = dropdown.Value ;
+            dropdown.Items = items ;
+            if any(strcmp(items, currentValue))
+                dropdown.Value = currentValue ;
+            else
+                dropdown.Value = 'All' ;
+            end
+        end
+
+        function idx = getSelectedComponentIndices(~, dropdown, nComp)
+            if isempty(dropdown) || ~isvalid(dropdown) || strcmp(dropdown.Value, 'All')
+                idx = 1:nComp ;
+                return
+            end
+
+            token = regexp(dropdown.Value, '^C(\d+)$', 'tokens', 'once') ;
+            if isempty(token)
+                idx = 1:nComp ;
+                return
+            end
+
+            idx = str2double(token{1}) ;
+            if ~isfinite(idx) || idx < 1 || idx > nComp
+                idx = 1:nComp ;
+            end
+        end
+
+        function unitName = concentrationUnitName(~, dropdown)
+            if isempty(dropdown) || ~isvalid(dropdown)
+                unitName = 'mol/m^3' ;
+            else
+                unitName = dropdown.Value ;
+            end
+        end
+
+        function updateConcentrationHeader(app, labelHandle, concDropdown)
+            if isempty(labelHandle) || ~isvalid(labelHandle)
+                return
+            end
+            labelHandle.Text = sprintf('Outlet Conc. at Exit [%s]:', ...
+                app.concentrationUnitName(concDropdown)) ;
+        end
+
+        function updateConcentrationTable(app, tableHandle, seriesData, seriesNames, concDropdown)
+            nComp = size(seriesData, 1) ;
+            compLabels = app.getComponentLabels(nComp) ;
+            concDisplay = reshape(app.convertOutputConcentration(seriesData(:)', concDropdown), size(seriesData)) ;
+
+            tableData = cell(nComp, 1 + size(concDisplay, 2)) ;
+            for i = 1:nComp
+                tableData{i, 1} = compLabels{i} ;
+                for j = 1:size(concDisplay, 2)
+                    tableData{i, j + 1} = sprintf('%.4g', concDisplay(i, j)) ;
+                end
+            end
+
+            tableHandle.ColumnName = [{'Comp.'}, seriesNames] ;
+            tableHandle.Data = tableData ;
         end
 
         function htmlText = unitToHtml(~, unitText)
@@ -424,7 +532,7 @@ classdef NonIdealReactorApp < handle
 
         %% ============== ABOUT DIALOG (T7) ==============
 
-        function showAbout(app) 
+        function showAbout(~) 
             fig = uifigure('Name', 'About', ...
                 'Position', [400 300 380 220], 'Resize', 'off') ;
             g = uigridlayout(fig, [6 1]) ;
@@ -1266,12 +1374,13 @@ classdef NonIdealReactorApp < handle
 
             % Main grid: left panel (controls) + right panel (plots)
             mainGrid = uigridlayout(app.PredTab, [1 2]) ;
-            mainGrid.ColumnWidth = {320, '1x'} ;
+            mainGrid.ColumnWidth = {430, '1x'} ;
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Conversion Bounds') ;
-            leftGrid = uigridlayout(leftPanel, [15 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 15) ;
+            leftGrid = uigridlayout(leftPanel, [18 2]) ;
+            rowH = repmat({28}, 1, 18) ; rowH{11} = 56 ; rowH{18} = 80 ;
+            leftGrid.RowHeight = rowH ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -1323,58 +1432,105 @@ classdef NonIdealReactorApp < handle
             app.Pred_RSStatusLabel.Layout.Row = 5 ;
             app.Pred_RSStatusLabel.Layout.Column = [1 2] ;
 
-            % Row 6: CA0
-            app.Pred_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
-            app.Pred_CA0Label.Layout.Row = 6 ; app.Pred_CA0Label.Layout.Column = 1 ;
-            [app.Pred_CA0Field, ~] = app.createNumericWithConv( ...
-                leftGrid, 6, 2, 1000, 'Concentration', ...
-                'Limits', [0.001 Inf], ...
-                'Tooltip', 'Initial concentration of limiting reactant (component A) in the feed.') ;
+            % Row 6: Feed Stream header
+            lbl = uilabel(leftGrid, 'Text', 'Feed Stream:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 6 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 7: Compute button
+            % Row 7: New Stream button (full width)
+            app.Pred_StreamDefineButton = uibutton(leftGrid, 'push', ...
+                'Text', 'New Stream', ...
+                'BackgroundColor', [0.85 0.90 1.0], ...
+                'Tooltip', 'Create a new feed stream with defineStreamApp', ...
+                'ButtonPushedFcn', @(~,~) defineStreamApp()) ;
+            app.Pred_StreamDefineButton.Layout.Row = 7 ;
+            app.Pred_StreamDefineButton.Layout.Column = [1 2] ;
+
+            % Row 8: stream name + Load button
+            app.Pred_StreamNameField = uieditfield(leftGrid, 'text', ...
+                'Value', 'feed', ...
+                'Tooltip', 'Name of the feed Stream variable in the MATLAB workspace') ;
+            app.Pred_StreamNameField.Layout.Row = 8 ; app.Pred_StreamNameField.Layout.Column = 1 ;
+            app.Pred_StreamLoadButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Load from Workspace', ...
+                'BackgroundColor', [0.85 0.95 0.85], ...
+                'Tooltip', 'Load the feed Stream object from the workspace', ...
+                'ButtonPushedFcn', @(~,~) app.Pred_loadStream()) ;
+            app.Pred_StreamLoadButton.Layout.Row = 8 ; app.Pred_StreamLoadButton.Layout.Column = 2 ;
+
+            % Row 9: Stream status
+            app.Pred_StreamStatusLabel = uilabel(leftGrid, ...
+                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
+            app.Pred_StreamStatusLabel.Layout.Row = 9 ;
+            app.Pred_StreamStatusLabel.Layout.Column = [1 2] ;
+
+            % Row 10: Compute button
             app.Pred_ComputeButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
                 'ButtonPushedFcn', @(~,~) app.Pred_compute()) ;
-            app.Pred_ComputeButton.Layout.Row = 7 ;
+            app.Pred_ComputeButton.Layout.Row = 10 ;
             app.Pred_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 8: Display units
-            unitsGrid = uigridlayout(leftGrid, [1 2], ...
-                'ColumnWidth', {110, '1x'}, ...
+            % Row 11: Display units
+            unitsGrid = uigridlayout(leftGrid, [2 2], ...
+                'ColumnWidth', {'1x', '1x'}, ...
+                'RowHeight', {24, 24}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 4) ;
-            unitsGrid.Layout.Row = 8 ;
+            unitsGrid.Layout.Row = 11 ;
             unitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.Prediction.time = app.createDisplayUnitControl( ...
                 unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Prediction')) ;
+            app.DisplayControls.Prediction.concentration = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Prediction')) ;
+            app.DisplayControls.Prediction.component = app.createDisplayChoiceControl( ...
+                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('Prediction')) ;
 
-            % Row 9: Results header
+            % Row 12: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 9 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 12 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 10: Segregation result
+            % Row 13: Segregation result
             lbl = uilabel(leftGrid, 'Text', 'Segregation X<sub>seg</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 10 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
             app.Pred_ResultSegLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultSegLabel.Layout.Row = 10 ; app.Pred_ResultSegLabel.Layout.Column = 2 ;
+            app.Pred_ResultSegLabel.Layout.Row = 13 ; app.Pred_ResultSegLabel.Layout.Column = 2 ;
 
-            % Row 11: Max Mixedness result
+            % Row 14: Max Mixedness result
             lbl = uilabel(leftGrid, 'Text', 'Max Mixedness X<sub>MM</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 11 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
             app.Pred_ResultMMLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultMMLabel.Layout.Row = 11 ; app.Pred_ResultMMLabel.Layout.Column = 2 ;
+            app.Pred_ResultMMLabel.Layout.Row = 14 ; app.Pred_ResultMMLabel.Layout.Column = 2 ;
 
-            % Row 12: Interpretation
+            % Row 15: Interpretation
             lbl = uilabel(leftGrid, 'Text', 'Interpretation:') ;
-            lbl.Layout.Row = 12 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
             app.Pred_ResultBoundsLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultBoundsLabel.Layout.Row = 13 ;
+            app.Pred_ResultBoundsLabel.Layout.Row = 16 ;
             app.Pred_ResultBoundsLabel.Layout.Column = [1 2] ;
             app.Pred_ResultBoundsLabel.WordWrap = 'on' ;
+
+            % Row 17: Outlet concentrations header
+            app.Pred_C_exitLabel = uilabel(leftGrid, ...
+                'Text', 'Outlet Conc. at Exit [mol/m^3]:', ...
+                'FontWeight', 'bold') ;
+            app.Pred_C_exitLabel.Layout.Row = 17 ;
+            app.Pred_C_exitLabel.Layout.Column = [1 2] ;
+            app.Pred_C_exitLabel.Tooltip = ...
+                'Per-component outlet concentrations at the reactor exit predicted by each model.' ;
+
+            % Row 18: Per-component outlet concentration table (Segregation vs Max Mixedness)
+            app.Pred_C_exitTable = uitable(leftGrid, ...
+                'ColumnName', {'Comp.', 'Seg.', 'MM'}, ...
+                'ColumnEditable', [false false false], ...
+                'ColumnWidth', {70, 110, 110}) ;
+            app.Pred_C_exitTable.Layout.Row = 18 ;
+            app.Pred_C_exitTable.Layout.Column = [1 2] ;
+            app.Pred_C_exitTable.Tooltip = ...
+                'Seg.: segregation-model outlet concentration. MM: maximum-mixedness outlet concentration.' ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Model Results') ;
@@ -1384,30 +1540,72 @@ classdef NonIdealReactorApp < handle
 
             % X_batch(t) plot (Segregation)
             app.Pred_AxesXbatch = uiaxes(plotGrid) ;
-            title(app.Pred_AxesXbatch, 'Batch Conversion X(t)') ;
+            title(app.Pred_AxesXbatch, 'Batch Concentration Profiles') ;
             xlabel(app.Pred_AxesXbatch, 't [s]') ;
-            ylabel(app.Pred_AxesXbatch, 'X_{batch}(t)') ;
+            ylabel(app.Pred_AxesXbatch, 'C [mol/m^3]') ;
             grid(app.Pred_AxesXbatch, 'on') ;
 
             % Integrand plot (Segregation)
             app.Pred_AxesIntegrand = uiaxes(plotGrid) ;
-            title(app.Pred_AxesIntegrand, 'Integrand X(t)*E(t)') ;
+            title(app.Pred_AxesIntegrand, 'Segregation Integrand') ;
             xlabel(app.Pred_AxesIntegrand, 't [s]') ;
-            ylabel(app.Pred_AxesIntegrand, 'X(t)*E(t)') ;
+            ylabel(app.Pred_AxesIntegrand, 'C(t)E(t)') ;
             grid(app.Pred_AxesIntegrand, 'on') ;
-
-            % X(lambda) plot (Max Mixedness)
-            app.Pred_AxesXlambda = uiaxes(plotGrid) ;
-            title(app.Pred_AxesXlambda, 'X(lambda) - Max Mixedness') ;
-            xlabel(app.Pred_AxesXlambda, 'lambda') ;
-            ylabel(app.Pred_AxesXlambda, 'X(lambda)') ;
-            grid(app.Pred_AxesXlambda, 'on') ;
 
             % Comparison bar chart
             app.Pred_AxesComparison = uiaxes(plotGrid) ;
+            app.Pred_AxesComparison.Layout.Column = [1 2] ;
             title(app.Pred_AxesComparison, 'Conversion Bounds') ;
             ylabel(app.Pred_AxesComparison, 'Conversion X') ;
             grid(app.Pred_AxesComparison, 'on') ;
+        end
+
+        %% ============== STREAM LOADING HELPER + CALLBACKS ==============
+
+        function [S, ok] = loadStreamFromWorkspace(app, nameField, statusLabel, RS)
+            ok = false ; S = [] ;
+            streamName = nameField.Value ;
+            try
+                S = evalin('base', streamName) ;
+                if ~isa(S, 'Stream')
+                    error('Variable "%s" is not a Stream object.', streamName) ;
+                end
+                if ~isempty(RS) && length(S.concentration) ~= RS.nComponents
+                    error('Stream has %d components but RS has %d. They must match.', ...
+                        length(S.concentration), RS.nComponents) ;
+                end
+                C_str = sprintf('%.4g  ', S.concentration) ;
+                statusLabel.Text = sprintf('Loaded C0 (internal SI): [%s] mol/m^3', strtrim(C_str)) ;
+                statusLabel.FontColor = [0 0.5 0] ;
+                ok = true ;
+            catch ME
+                statusLabel.Text = ME.message ;
+                statusLabel.FontColor = [0.8 0 0] ;
+            end
+        end
+
+        function Pred_loadStream(app)
+            [S, ok] = app.loadStreamFromWorkspace( ...
+                app.Pred_StreamNameField, app.Pred_StreamStatusLabel, app.Pred_RS) ;
+            if ok
+                app.Pred_feedStream = S ;
+            end
+        end
+
+        function TIS_loadStream(app)
+            [S, ok] = app.loadStreamFromWorkspace( ...
+                app.TIS_StreamNameField, app.TIS_StreamStatusLabel, app.TIS_RS) ;
+            if ok
+                app.TIS_feedStream = S ;
+            end
+        end
+
+        function Disp_loadStream(app)
+            [S, ok] = app.loadStreamFromWorkspace( ...
+                app.Disp_StreamNameField, app.Disp_StreamStatusLabel, app.Disp_RS) ;
+            if ok
+                app.Disp_feedStream = S ;
+            end
         end
 
         %% ============== PREDICTION CALLBACKS ==============
@@ -1468,12 +1666,25 @@ classdef NonIdealReactorApp < handle
                     return ;
                 end
 
-                RS = app.Pred_RS ;
-                CA0_val = app.readInputField(app.Pred_CA0Field) ;
+                % Validate feed stream
+                if isempty(app.Pred_feedStream)
+                    uialert(app.UIFigure, ...
+                        'No feed stream loaded. Define a Stream with "New Stream" and load it.', ...
+                        'Missing Feed Stream') ;
+                    app.updateStatus('Ready') ;
+                    return ;
+                end
 
-                % Build initial concentration vector: [CA0, 0, 0, ...]
-                C0 = zeros(1, RS.nComponents) ;
-                C0(1) = CA0_val ;
+                RS = app.Pred_RS ;
+                C0 = app.Pred_feedStream.concentration(:)' ;
+
+                if length(C0) ~= RS.nComponents
+                    uialert(app.UIFigure, ...
+                        sprintf('Feed stream has %d components but RS has %d. They must match.', ...
+                        length(C0), RS.nComponents), 'Component Mismatch') ;
+                    app.updateStatus('Ready') ;
+                    return ;
+                end
 
                 % Create model objects with RTD
                 app.seg_model = SegregationModel ;
@@ -1492,6 +1703,8 @@ classdef NonIdealReactorApp < handle
 
                 app.Pred_ResultSegLabel.Text = sprintf('%.4f', X_seg) ;
                 app.Pred_ResultMMLabel.Text = sprintf('%.4f', X_mm) ;
+
+                app.ensureComponentSelectorItems(app.DisplayControls.Prediction.component, RS.nComponents) ;
 
                 % Interpretation text
                 if abs(X_seg - X_mm) < 0.001
@@ -1531,45 +1744,68 @@ classdef NonIdealReactorApp < handle
             end
 
             timeDD = app.DisplayControls.Prediction.time ;
+            concDD = app.DisplayControls.Prediction.concentration ;
             t_display = app.convertOutputVectorFromTime('time', app.seg_model.rtd.t, timeDD) ;
-            lambda_display = app.convertOutputVectorFromTime('time', app.mm_model.lambda_profile, timeDD) ;
-            integrand_display = app.convertOutputVectorFromTime('timeInverse', app.seg_model.integrand, timeDD) ;
+            Et_display = app.convertOutputVectorFromTime('timeInverse', app.seg_model.rtd.Et, timeDD) ;
 
-            % Segregation plots (X_batch and integrand)
+            % Segregation: concentration profiles for all components
             cla(app.Pred_AxesXbatch) ;
-            plot(app.Pred_AxesXbatch, t_display, app.seg_model.X_batch, ...
-                'b-', 'LineWidth', 1.5) ;
+            nC = size(app.seg_model.C_batch, 2) ;
+            app.ensureComponentSelectorItems(app.DisplayControls.Prediction.component, nC) ;
+            app.updateConcentrationHeader(app.Pred_C_exitLabel, concDD) ;
+            app.updateConcentrationTable(app.Pred_C_exitTable, ...
+                [app.seg_model.C_exit(:), app.mm_model.C_exit(:)], ...
+                {'Seg.', 'MM'}, concDD) ;
+            C_batch_display = app.convertOutputConcentration(app.seg_model.C_batch, concDD) ;
+            selectedIdx = app.getSelectedComponentIndices(app.DisplayControls.Prediction.component, nC) ;
+            colors = lines(nC) ;
+            for i = selectedIdx
+                plot(app.Pred_AxesXbatch, t_display, C_batch_display(:,i)', ...
+                    'Color', colors(i,:), 'LineWidth', 1.5, 'DisplayName', sprintf('C%d', i)) ;
+                hold(app.Pred_AxesXbatch, 'on') ;
+            end
+            hold(app.Pred_AxesXbatch, 'off') ;
+            if isscalar(selectedIdx)
+                legend(app.Pred_AxesXbatch, 'off') ;
+            else
+                legend(app.Pred_AxesXbatch, 'Location', 'best') ;
+            end
             xlabel(app.Pred_AxesXbatch, app.axisLabelWithUnit('t', timeDD)) ;
-            ylabel(app.Pred_AxesXbatch, 'X_{batch}(t)') ;
-            title(app.Pred_AxesXbatch, 'Intrinsic Conversion X(t)') ;
+            ylabel(app.Pred_AxesXbatch, app.axisLabelWithUnit('C', concDD)) ;
+            if isscalar(selectedIdx)
+                title(app.Pred_AxesXbatch, sprintf('Batch Concentration Profile - C%d', selectedIdx)) ;
+            else
+                title(app.Pred_AxesXbatch, 'Batch Concentration Profiles') ;
+            end
             grid(app.Pred_AxesXbatch, 'on') ;
-            ylim(app.Pred_AxesXbatch, [0 1]) ;
 
             cla(app.Pred_AxesIntegrand) ;
-            area(app.Pred_AxesIntegrand, t_display, integrand_display, ...
-                'FaceColor', [0.3 0.6 0.9], 'FaceAlpha', 0.5, 'EdgeColor', 'b') ;
+            integrand_display = C_batch_display .* Et_display(:) ;
+            hold(app.Pred_AxesIntegrand, 'on') ;
+            if isscalar(selectedIdx)
+                i = selectedIdx ;
+                area(app.Pred_AxesIntegrand, t_display, integrand_display(:, i), ...
+                    'FaceColor', colors(i,:), 'FaceAlpha', 0.45, ...
+                    'EdgeColor', colors(i,:)) ;
+                title(app.Pred_AxesIntegrand, sprintf('Segregation Integrand - C%d', i)) ;
+            else
+                for i = selectedIdx
+                    plot(app.Pred_AxesIntegrand, t_display, integrand_display(:, i), ...
+                        'Color', colors(i,:), 'LineWidth', 1.5, ...
+                        'DisplayName', sprintf('C%d', i)) ;
+                end
+                title(app.Pred_AxesIntegrand, 'Segregation Integrands') ;
+            end
+            hold(app.Pred_AxesIntegrand, 'off') ;
             xlabel(app.Pred_AxesIntegrand, app.axisLabelWithUnit('t', timeDD)) ;
-            ylabel(app.Pred_AxesIntegrand, app.axisLabelWithUnitName('X(t)*E(t)', app.timeInverseUnitName(timeDD))) ;
-            title(app.Pred_AxesIntegrand, sprintf('Segregation Integrand | X_{seg} = %.4f', ...
-                app.seg_model.X_mean)) ;
+            ylabel(app.Pred_AxesIntegrand, sprintf('C(t)E(t) [%s*%s]', ...
+                app.concentrationUnitName(concDD), app.timeInverseUnitName(timeDD))) ;
+            if isscalar(selectedIdx)
+                legend(app.Pred_AxesIntegrand, 'off') ;
+            else
+                legend(app.Pred_AxesIntegrand, 'Location', 'best') ;
+            end
             grid(app.Pred_AxesIntegrand, 'on') ;
-
-            % Max mixedness plot (X(lambda))
-            cla(app.Pred_AxesXlambda) ;
-            plot(app.Pred_AxesXlambda, lambda_display, app.mm_model.X_profile, ...
-                'm-', 'LineWidth', 1.5) ;
-            hold(app.Pred_AxesXlambda, 'on') ;
-            plot(app.Pred_AxesXlambda, 0, app.mm_model.X_exit, ...
-                'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r') ;
-            hold(app.Pred_AxesXlambda, 'off') ;
-            xlabel(app.Pred_AxesXlambda, app.axisLabelWithUnit('\lambda', timeDD)) ;
-            ylabel(app.Pred_AxesXlambda, 'X(\lambda)') ;
-            title(app.Pred_AxesXlambda, sprintf('Maximum Mixedness Conversion | X_{MM} = %.4f', ...
-                app.mm_model.X_exit)) ;
-            grid(app.Pred_AxesXlambda, 'on') ;
-            ylim(app.Pred_AxesXlambda, [0 1]) ;
-            legend(app.Pred_AxesXlambda, 'X(\lambda)', ...
-                sprintf('X_{MM} = %.4f', app.mm_model.X_exit), 'Location', 'best') ;
 
             % Comparison bar chart
             cla(app.Pred_AxesComparison) ;
@@ -1612,12 +1848,13 @@ classdef NonIdealReactorApp < handle
 
             % Main grid: left panel (controls) + right panel (plots)
             mainGrid = uigridlayout(app.TISTab, [1 2]) ;
-            mainGrid.ColumnWidth = {320, '1x'} ;
+            mainGrid.ColumnWidth = {430, '1x'} ;
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'TIS Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [15 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 15) ;
+            leftGrid = uigridlayout(leftPanel, [20 2]) ;
+            rowH = repmat({28}, 1, 20) ; rowH{14} = 56 ; rowH{20} = 80 ;
+            leftGrid.RowHeight = rowH ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -1665,7 +1902,7 @@ classdef NonIdealReactorApp < handle
             lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 5 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 6: Define RS button + Load from workspace
+            % Row 6: Define RS button + Edit RS button
             app.TIS_RSDefineButton = uibutton(leftGrid, 'push', ...
                 'Text', 'New RS', ...
                 'BackgroundColor', [0.85 0.90 1.0], ...
@@ -1701,57 +1938,103 @@ classdef NonIdealReactorApp < handle
             app.TIS_RSStatusLabel.Layout.Row = 8 ;
             app.TIS_RSStatusLabel.Layout.Column = [1 2] ;
 
-            % Row 9: CA0
-            app.TIS_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
-            app.TIS_CA0Label.Layout.Row = 9 ; app.TIS_CA0Label.Layout.Column = 1 ;
-            [app.TIS_CA0Field, ~] = app.createNumericWithConv( ...
-                leftGrid, 9, 2, 1000, 'Concentration', ...
-                'Limits', [0.001 Inf], ...
-                'Tooltip', 'Initial concentration of limiting reactant (component A) in the feed.') ;
+            % Row 9: Feed Stream header
+            lbl = uilabel(leftGrid, 'Text', 'Feed Stream:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 9 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 10: Compute button
+            % Row 10: New Stream button (full width)
+            app.TIS_StreamDefineButton = uibutton(leftGrid, 'push', ...
+                'Text', 'New Stream', ...
+                'BackgroundColor', [0.85 0.90 1.0], ...
+                'Tooltip', 'Create a new feed stream with defineStreamApp', ...
+                'ButtonPushedFcn', @(~,~) defineStreamApp()) ;
+            app.TIS_StreamDefineButton.Layout.Row = 10 ;
+            app.TIS_StreamDefineButton.Layout.Column = [1 2] ;
+
+            % Row 11: stream name + Load button
+            app.TIS_StreamNameField = uieditfield(leftGrid, 'text', ...
+                'Value', 'feed', ...
+                'Tooltip', 'Name of the feed Stream variable in the MATLAB workspace') ;
+            app.TIS_StreamNameField.Layout.Row = 11 ; app.TIS_StreamNameField.Layout.Column = 1 ;
+            app.TIS_StreamLoadButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Load from Workspace', ...
+                'BackgroundColor', [0.85 0.95 0.85], ...
+                'Tooltip', 'Load the feed Stream object from the workspace', ...
+                'ButtonPushedFcn', @(~,~) app.TIS_loadStream()) ;
+            app.TIS_StreamLoadButton.Layout.Row = 11 ; app.TIS_StreamLoadButton.Layout.Column = 2 ;
+
+            % Row 12: Stream status
+            app.TIS_StreamStatusLabel = uilabel(leftGrid, ...
+                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
+            app.TIS_StreamStatusLabel.Layout.Row = 12 ;
+            app.TIS_StreamStatusLabel.Layout.Column = [1 2] ;
+
+            % Row 13: Compute button
             app.TIS_ComputeButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
                 'ButtonPushedFcn', @(~,~) app.TIS_compute()) ;
-            app.TIS_ComputeButton.Layout.Row = 10 ;
+            app.TIS_ComputeButton.Layout.Row = 13 ;
             app.TIS_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 11: Display units
-            unitsGrid = uigridlayout(leftGrid, [1 2], ...
-                'ColumnWidth', {110, '1x'}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
-            unitsGrid.Layout.Row = 11 ;
+            % Row 14: Display units
+            unitsGrid = uigridlayout(leftGrid, [2 2], ...
+                'ColumnWidth', {'1x', '1x'}, 'RowHeight', {24, 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 14 ;
             unitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.TIS.time = app.createDisplayUnitControl( ...
                 unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('TIS')) ;
+            app.DisplayControls.TIS.concentration = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('TIS')) ;
+            app.DisplayControls.TIS.component = app.createDisplayChoiceControl( ...
+                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('TIS')) ;
 
-            % Row 12: Results header
+            % Row 15: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 12 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 15 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 13: N used
+            % Row 16: N used
             lbl = uilabel(leftGrid, 'Text', 'N used:') ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
             app.TIS_ResultNused = uilabel(leftGrid, 'Text', '--') ;
-            app.TIS_ResultNused.Layout.Row = 13 ;
+            app.TIS_ResultNused.Layout.Row = 16 ;
             app.TIS_ResultNused.Layout.Column = 2 ;
 
-            % Row 14: X_TIS
+            % Row 17: X_TIS
             lbl = uilabel(leftGrid, 'Text', 'X<sub>TIS</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
             app.TIS_ResultXtis = uilabel(leftGrid, 'Text', '--') ;
-            app.TIS_ResultXtis.Layout.Row = 14 ;
+            app.TIS_ResultXtis.Layout.Row = 17 ;
             app.TIS_ResultXtis.Layout.Column = 2 ;
             app.TIS_ResultXtis.FontWeight = 'bold' ;
 
-            % Row 15: X_CSTR + X_PFR on same row
+            % Row 18: X_CSTR + X_PFR on same row
             app.TIS_ResultXcstr = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub>: --', 'Interpreter', 'html') ;
-            app.TIS_ResultXcstr.Layout.Row = 15 ; app.TIS_ResultXcstr.Layout.Column = 1 ;
+            app.TIS_ResultXcstr.Layout.Row = 18 ; app.TIS_ResultXcstr.Layout.Column = 1 ;
             app.TIS_ResultXpfr = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub>: --', 'Interpreter', 'html') ;
-            app.TIS_ResultXpfr.Layout.Row = 15 ; app.TIS_ResultXpfr.Layout.Column = 2 ;
+            app.TIS_ResultXpfr.Layout.Row = 18 ; app.TIS_ResultXpfr.Layout.Column = 2 ;
+
+            % Row 19: Outlet concentrations header
+            app.TIS_C_exitLabel = uilabel(leftGrid, ...
+                'Text', 'Outlet Conc. at Exit [mol/m^3]:', ...
+                'FontWeight', 'bold') ;
+            app.TIS_C_exitLabel.Layout.Row = 19 ;
+            app.TIS_C_exitLabel.Layout.Column = [1 2] ;
+            app.TIS_C_exitLabel.Tooltip = ...
+                'Per-component outlet concentrations at the reactor exit for TIS and its CSTR/PFR limits.' ;
+
+            % Row 20: Per-component outlet concentration table
+            app.TIS_C_exitTable = uitable(leftGrid, ...
+                'ColumnName', {'Comp.', 'TIS', 'CSTR', 'PFR'}, ...
+                'ColumnEditable', [false false false false], ...
+                'ColumnWidth', {70, 80, 80, 80}) ;
+            app.TIS_C_exitTable.Layout.Row = 20 ;
+            app.TIS_C_exitTable.Layout.Column = [1 2] ;
+            app.TIS_C_exitTable.Tooltip = ...
+                'Outlet concentrations by component at the reactor exit for the selected TIS model and its CSTR/PFR references.' ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'TIS Results') ;
@@ -1768,9 +2051,9 @@ classdef NonIdealReactorApp < handle
 
             % X vs N sweep plot
             app.TIS_AxesXvsN = uiaxes(plotGrid) ;
-            title(app.TIS_AxesXvsN, 'Conversion vs N') ;
+            title(app.TIS_AxesXvsN, 'Outlet Concentration vs N') ;
             xlabel(app.TIS_AxesXvsN, 'N [number of tanks]') ;
-            ylabel(app.TIS_AxesXvsN, 'X_A') ;
+            ylabel(app.TIS_AxesXvsN, 'C [mol/m^3]') ;
             grid(app.TIS_AxesXvsN, 'on') ;
 
             % Comparison bar chart
@@ -1818,11 +2101,15 @@ classdef NonIdealReactorApp < handle
                     infoLines{end+1} = 'RS: not loaded' ;
                 end
 
-                % Import CA0 from Prediction Models tab
-                if ~isempty(app.Pred_CA0Field)
-                    app.TIS_CA0Field.Value = app.Pred_CA0Field.Value ;
-                    app.TIS_CA0Field.UserData.unitDropdown.Value = app.Pred_CA0Field.UserData.unitDropdown.Value ;
-                    infoLines{end+1} = sprintf('CA0=%.4g', app.readInputField(app.Pred_CA0Field)) ;
+                % Import feed Stream from Prediction Models tab
+                if ~isempty(app.Pred_feedStream)
+                    app.TIS_feedStream = app.Pred_feedStream ;
+                    C_str = sprintf('%.4g  ', app.Pred_feedStream.concentration) ;
+                    app.TIS_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                    app.TIS_StreamStatusLabel.FontColor = [0 0.5 0] ;
+                    infoLines{end+1} = 'Stream: from Prediction' ;
+                else
+                    infoLines{end+1} = 'Stream: not loaded' ;
                 end
 
                 if any(contains(infoLines, 'not loaded'))
@@ -1883,29 +2170,44 @@ classdef NonIdealReactorApp < handle
                     return ;
                 end
 
+                % Validate feed stream
+                if isempty(app.TIS_feedStream)
+                    uialert(app.UIFigure, ...
+                        'No feed stream loaded. Define a Stream with "New Stream" and load it.', ...
+                        'Missing Feed Stream') ;
+                    app.updateStatus('Ready') ;
+                    return ;
+                end
+
                 N_val = app.TIS_NField.Value ;
                 tau_val = app.readInputField(app.TIS_tauField) ;
                 RS = app.TIS_RS ;
-                CA0_val = app.readInputField(app.TIS_CA0Field) ;
+                C0 = app.TIS_feedStream.concentration(:)' ;
 
-                % Build initial concentration vector: [CA0, 0, 0, ...]
-                C0 = zeros(1, RS.nComponents) ;
-                C0(1) = CA0_val ;
+                if length(C0) ~= RS.nComponents
+                    uialert(app.UIFigure, ...
+                        sprintf('Feed stream has %d components but RS has %d. They must match.', ...
+                        length(C0), RS.nComponents), 'Component Mismatch') ;
+                    app.updateStatus('Ready') ;
+                    return ;
+                end
 
                 % --- Compute X_TIS for selected N ---
-                [~, X_tis] = TanksInSeries.solve_sequential(N_val, RS, C0, tau_val) ;
+                [C_out_tis,  X_tis]  = TanksInSeries.solve_sequential(N_val, RS, C0, tau_val) ;
 
                 % --- Reference: CSTR (N=1) ---
-                [~, X_cstr] = TanksInSeries.solve_sequential(1, RS, C0, tau_val) ;
+                [C_out_cstr, X_cstr] = TanksInSeries.solve_sequential(1, RS, C0, tau_val) ;
 
                 % --- Reference: PFR (N→inf) ---
-                [~, X_pfr] = TanksInSeries.solve_PFR(RS, C0, tau_val) ;
+                [C_out_pfr,  X_pfr]  = TanksInSeries.solve_PFR(RS, C0, tau_val) ;
 
                 % --- Update results ---
                 app.TIS_ResultNused.Text = sprintf('%.2f', N_val) ;
                 app.TIS_ResultXtis.Text = sprintf('%.4f', X_tis) ;
                 app.TIS_ResultXcstr.Text = sprintf('X_{CSTR}: %.4f', X_cstr) ;
                 app.TIS_ResultXpfr.Text = sprintf('X_{PFR}: %.4f', X_pfr) ;
+
+                app.ensureComponentSelectorItems(app.DisplayControls.TIS.component, RS.nComponents) ;
 
                 app.DisplayCache.TIS = struct( ...
                     'N_val', N_val, ...
@@ -1914,11 +2216,15 @@ classdef NonIdealReactorApp < handle
                     'C0', C0, ...
                     'X_tis', X_tis, ...
                     'X_cstr', X_cstr, ...
-                    'X_pfr', X_pfr) ;
+                    'X_pfr', X_pfr, ...
+                    'C_out_tis', C_out_tis, ...
+                    'C_out_cstr', C_out_cstr, ...
+                    'C_out_pfr', C_out_pfr) ;
 
                 % --- Update plots ---
                 app.TIS_updatePlots(N_val, tau_val, RS, C0, ...
-                    X_tis, X_cstr, X_pfr) ;
+                    X_tis, X_cstr, X_pfr, ...
+                    C_out_tis, C_out_cstr, C_out_pfr) ;
 
                 app.updateStatus('Ready') ;
 
@@ -1929,12 +2235,14 @@ classdef NonIdealReactorApp < handle
         end
 
         function TIS_updatePlots(app, N_val, tau_val, RS, C0, ...
-                                 X_tis, X_cstr, X_pfr)
+                                 X_tis, X_cstr, X_pfr, ...
+                                 C_out_tis, C_out_cstr, C_out_pfr)
 
             % ---- Plot 1: E(t) for current N ----
             cla(app.TIS_AxesEt) ;
             rtd_tis = RTD.tanks_in_series(N_val, tau_val) ;
             timeDD = app.DisplayControls.TIS.time ;
+            concDD = app.DisplayControls.TIS.concentration ;
             t_display = app.convertOutputVectorFromTime('time', rtd_tis.t, timeDD) ;
             Et_display = app.convertOutputVectorFromTime('timeInverse', rtd_tis.Et, timeDD) ;
             plot(app.TIS_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
@@ -1942,37 +2250,61 @@ classdef NonIdealReactorApp < handle
             xlabel(app.TIS_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.TIS_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
-            % ---- Plot 2: X vs N sweep ----
+            app.updateConcentrationHeader(app.TIS_C_exitLabel, concDD) ;
+            app.updateConcentrationTable(app.TIS_C_exitTable, ...
+                [C_out_tis(:), C_out_cstr(:), C_out_pfr(:)], ...
+                {'TIS', 'CSTR', 'PFR'}, concDD) ;
+
+            % ---- Plot 2: Outlet concentration vs N sweep ----
             cla(app.TIS_AxesXvsN) ;
             N_sweep = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100] ;
-            X_sweep = zeros(size(N_sweep)) ;
+            C_sweep = zeros(numel(N_sweep), RS.nComponents) ;
 
             for idx = 1:length(N_sweep)
-                [~, X_sweep(idx)] = TanksInSeries.solve_sequential( ...
+                [C_sweep(idx, :), ~] = TanksInSeries.solve_sequential( ...
                     N_sweep(idx), RS, C0, tau_val) ;
             end
 
-            plot(app.TIS_AxesXvsN, N_sweep, X_sweep, 'bo-', ...
-                 'LineWidth', 1.5, 'MarkerFaceColor', [0.3 0.6 0.9]) ;
+            app.ensureComponentSelectorItems(app.DisplayControls.TIS.component, RS.nComponents) ;
+            selectedIdx = app.getSelectedComponentIndices(app.DisplayControls.TIS.component, RS.nComponents) ;
+            C_sweep_display = app.convertOutputConcentration(C_sweep, concDD) ;
+            C_tis_display = app.convertOutputConcentration(C_out_tis, concDD) ;
+            C_cstr_display = app.convertOutputConcentration(C_out_cstr, concDD) ;
+            C_pfr_display = app.convertOutputConcentration(C_out_pfr, concDD) ;
+            colors = lines(RS.nComponents) ;
             hold(app.TIS_AxesXvsN, 'on') ;
-
-            % Mark current N
-            plot(app.TIS_AxesXvsN, N_val, X_tis, 'r*', 'MarkerSize', 15, ...
-                 'LineWidth', 2) ;
-
-            % Reference lines
-            yline(app.TIS_AxesXvsN, X_cstr, '--r', 'CSTR', ...
-                  'LineWidth', 1, 'LabelHorizontalAlignment', 'left') ;
-            yline(app.TIS_AxesXvsN, X_pfr, '--g', 'PFR', ...
-                  'LineWidth', 1, 'LabelHorizontalAlignment', 'left') ;
+            for i = selectedIdx
+                plot(app.TIS_AxesXvsN, N_sweep, C_sweep_display(:, i), 'o-', ...
+                    'Color', colors(i,:), 'LineWidth', 1.5, ...
+                    'MarkerFaceColor', colors(i,:), ...
+                    'DisplayName', sprintf('C%d', i)) ;
+                plot(app.TIS_AxesXvsN, N_val, C_tis_display(i), 'p', ...
+                    'Color', colors(i,:), 'MarkerSize', 11, ...
+                    'MarkerFaceColor', colors(i,:), ...
+                    'HandleVisibility', 'off') ;
+                if isscalar(selectedIdx)
+                    yline(app.TIS_AxesXvsN, C_cstr_display(i), '--', 'CSTR', ...
+                        'Color', [0.8 0 0], 'LineWidth', 1, ...
+                        'LabelHorizontalAlignment', 'left') ;
+                    yline(app.TIS_AxesXvsN, C_pfr_display(i), '--', 'PFR', ...
+                        'Color', [0 0.6 0], 'LineWidth', 1, ...
+                        'LabelHorizontalAlignment', 'left') ;
+                end
+            end
             hold(app.TIS_AxesXvsN, 'off') ;
 
-            title(app.TIS_AxesXvsN, 'Conversion vs N') ;
+            if isscalar(selectedIdx)
+                title(app.TIS_AxesXvsN, sprintf('Outlet Concentration vs N - C%d', selectedIdx)) ;
+            else
+                title(app.TIS_AxesXvsN, 'Outlet Concentration vs N') ;
+            end
             xlabel(app.TIS_AxesXvsN, 'N [number of tanks]') ;
-            ylabel(app.TIS_AxesXvsN, 'X_A') ;
-            ylim(app.TIS_AxesXvsN, [0 1]) ;
-            legend(app.TIS_AxesXvsN, 'TIS', sprintf('N=%.1f', N_val), ...
-                   'Location', 'southeast') ;
+            ylabel(app.TIS_AxesXvsN, app.axisLabelWithUnit('C', concDD)) ;
+            if isscalar(selectedIdx)
+                legend(app.TIS_AxesXvsN, 'off') ;
+            else
+                legend(app.TIS_AxesXvsN, 'Location', 'best') ;
+            end
 
             % ---- Plot 3: Comparison bar chart (spanning both columns) ----
             cla(app.TIS_AxesComparison) ;
@@ -2013,12 +2345,13 @@ classdef NonIdealReactorApp < handle
             app.DispTab = uitab(app.TabGroup, 'Title', 'Dispersion Model') ;
 
             mainGrid = uigridlayout(app.DispTab, [1 2]) ;
-            mainGrid.ColumnWidth = {320, '1x'} ;
+            mainGrid.ColumnWidth = {430, '1x'} ;
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Dispersion Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [18 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 18) ;
+            leftGrid = uigridlayout(leftPanel, [23 2]) ;
+            rowHD = repmat({28}, 1, 23) ; rowHD{16} = 56 ; rowHD{23} = 80 ;
+            leftGrid.RowHeight = rowHD ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -2119,61 +2452,107 @@ classdef NonIdealReactorApp < handle
             app.Disp_RSStatusLabel.Layout.Row = 10 ;
             app.Disp_RSStatusLabel.Layout.Column = [1 2] ;
 
-            % Row 11: CA0
-            app.Disp_CA0Label = uilabel(leftGrid, 'Text', 'C<sub>A0</sub>:', 'Interpreter', 'html') ;
-            app.Disp_CA0Label.Layout.Row = 11 ; app.Disp_CA0Label.Layout.Column = 1 ;
-            [app.Disp_CA0Field, ~] = app.createNumericWithConv( ...
-                leftGrid, 11, 2, 1000, 'Concentration', ...
-                'Limits', [0.001 Inf], ...
-                'Tooltip', 'Initial concentration of limiting reactant in the feed.') ;
+            % Row 11: Feed Stream header
+            lbl = uilabel(leftGrid, 'Text', 'Feed Stream:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 12: Compute button
+            % Row 12: New Stream button (full width)
+            app.Disp_StreamDefineButton = uibutton(leftGrid, 'push', ...
+                'Text', 'New Stream', ...
+                'BackgroundColor', [0.85 0.90 1.0], ...
+                'Tooltip', 'Create a new feed stream with defineStreamApp', ...
+                'ButtonPushedFcn', @(~,~) defineStreamApp()) ;
+            app.Disp_StreamDefineButton.Layout.Row = 12 ;
+            app.Disp_StreamDefineButton.Layout.Column = [1 2] ;
+
+            % Row 13: stream name + Load button
+            app.Disp_StreamNameField = uieditfield(leftGrid, 'text', ...
+                'Value', 'feed', ...
+                'Tooltip', 'Name of the feed Stream variable in the MATLAB workspace') ;
+            app.Disp_StreamNameField.Layout.Row = 13 ; app.Disp_StreamNameField.Layout.Column = 1 ;
+            app.Disp_StreamLoadButton = uibutton(leftGrid, 'push', ...
+                'Text', 'Load from Workspace', ...
+                'BackgroundColor', [0.85 0.95 0.85], ...
+                'Tooltip', 'Load the feed Stream object from the workspace', ...
+                'ButtonPushedFcn', @(~,~) app.Disp_loadStream()) ;
+            app.Disp_StreamLoadButton.Layout.Row = 13 ; app.Disp_StreamLoadButton.Layout.Column = 2 ;
+
+            % Row 14: Stream status
+            app.Disp_StreamStatusLabel = uilabel(leftGrid, ...
+                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
+            app.Disp_StreamStatusLabel.Layout.Row = 14 ;
+            app.Disp_StreamStatusLabel.Layout.Column = [1 2] ;
+
+            % Row 15: Compute button
             app.Disp_ComputeButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
                 'ButtonPushedFcn', @(~,~) app.Disp_compute()) ;
-            app.Disp_ComputeButton.Layout.Row = 12 ;
+            app.Disp_ComputeButton.Layout.Row = 15 ;
             app.Disp_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 13: Display units
-            unitsGrid = uigridlayout(leftGrid, [1 2], ...
-                'ColumnWidth', {110, '1x'}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
-            unitsGrid.Layout.Row = 13 ;
+            % Row 16: Display units
+            unitsGrid = uigridlayout(leftGrid, [2 2], ...
+                'ColumnWidth', {'1x', '1x'}, 'RowHeight', {24, 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
+            unitsGrid.Layout.Row = 16 ;
             unitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.Dispersion.time = app.createDisplayUnitControl( ...
                 unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Dispersion')) ;
+            app.DisplayControls.Dispersion.concentration = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Dispersion')) ;
+            app.DisplayControls.Dispersion.component = app.createDisplayChoiceControl( ...
+                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('Dispersion')) ;
 
-            % Row 14: Results header
+            % Row 17: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 17 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 15: Bo info
+            % Row 18: Bo info
             lbl = uilabel(leftGrid, 'Text', 'Bo:') ;
-            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultBo = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultBo.Layout.Row = 15 ; app.Disp_ResultBo.Layout.Column = 2 ;
+            app.Disp_ResultBo.Layout.Row = 18 ; app.Disp_ResultBo.Layout.Column = 2 ;
 
-            % Row 16: X_dispersion
+            % Row 19: X_dispersion
             lbl = uilabel(leftGrid, 'Text', 'X<sub>dispersion</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 19 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultX = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultX.Layout.Row = 16 ; app.Disp_ResultX.Layout.Column = 2 ;
+            app.Disp_ResultX.Layout.Row = 19 ; app.Disp_ResultX.Layout.Column = 2 ;
             app.Disp_ResultX.FontWeight = 'bold' ;
 
-            % Row 17: X_CSTR
+            % Row 20: X_CSTR
             lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> [Bo&#8594;&#8734;]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 20 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXcstr.Layout.Row = 17 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
+            app.Disp_ResultXcstr.Layout.Row = 20 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
 
-            % Row 18: X_PFR
+            % Row 21: X_PFR
             lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> [Bo&#8594;0]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
+            lbl.Layout.Row = 21 ; lbl.Layout.Column = 1 ;
             app.Disp_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXpfr.Layout.Row = 18 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
+            app.Disp_ResultXpfr.Layout.Row = 21 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
+
+            % Row 22: Outlet concentrations header
+            app.Disp_C_exitLabel = uilabel(leftGrid, ...
+                'Text', 'Outlet Conc. at Exit [mol/m^3]:', ...
+                'FontWeight', 'bold') ;
+            app.Disp_C_exitLabel.Layout.Row = 22 ;
+            app.Disp_C_exitLabel.Layout.Column = [1 2] ;
+            app.Disp_C_exitLabel.Tooltip = ...
+                'Per-component outlet concentrations at the reactor exit for dispersion and its CSTR/PFR limits.' ;
+
+            % Row 23: Per-component outlet concentration table
+            app.Disp_C_exitTable = uitable(leftGrid, ...
+                'ColumnName', {'Comp.', 'Disp.', 'CSTR', 'PFR'}, ...
+                'ColumnEditable', [false false false false], ...
+                'ColumnWidth', {70, 80, 80, 80}) ;
+            app.Disp_C_exitTable.Layout.Row = 23 ;
+            app.Disp_C_exitTable.Layout.Column = [1 2] ;
+            app.Disp_C_exitTable.Tooltip = ...
+                'Outlet concentrations by component at the reactor exit for the selected dispersion model and its CSTR/PFR references.' ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Dispersion Results') ;
@@ -2190,9 +2569,9 @@ classdef NonIdealReactorApp < handle
 
             % X vs Bo sweep
             app.Disp_AxesXvsBo = uiaxes(plotGrid) ;
-            title(app.Disp_AxesXvsBo, 'X vs Bo') ;
+            title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
             xlabel(app.Disp_AxesXvsBo, 'Bo [dispersion number]') ;
-            ylabel(app.Disp_AxesXvsBo, 'X_A') ;
+            ylabel(app.Disp_AxesXvsBo, 'C [mol/m^3]') ;
             grid(app.Disp_AxesXvsBo, 'on') ;
 
             % Comparison bar chart (spans 2 columns)
@@ -2249,7 +2628,6 @@ classdef NonIdealReactorApp < handle
                 % Disable manual fields and import data
                 app.Disp_BoField.Enable = 'off' ;
                 app.Disp_tauField.Enable = 'off' ;
-                app.Disp_CA0Field.Enable = 'off' ;
                 app.Disp_RTDStatusLabel.Visible = 'on' ;
                 app.Disp_RefreshButton.Visible = 'on' ;
 
@@ -2297,11 +2675,15 @@ classdef NonIdealReactorApp < handle
                     infoLines{end+1} = 'RS: not loaded' ;
                 end
 
-                % Import CA0 from Prediction Models tab
-                if ~isempty(app.Pred_CA0Field)
-                    app.Disp_CA0Field.Value = app.Pred_CA0Field.Value ;
-                    app.Disp_CA0Field.UserData.unitDropdown.Value = app.Pred_CA0Field.UserData.unitDropdown.Value ;
-                    infoLines{end+1} = sprintf('CA0=%.4g', app.readInputField(app.Pred_CA0Field)) ;
+                % Import feed Stream from Prediction Models tab
+                if ~isempty(app.Pred_feedStream)
+                    app.Disp_feedStream = app.Pred_feedStream ;
+                    C_str = sprintf('%.4g  ', app.Pred_feedStream.concentration) ;
+                    app.Disp_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                    app.Disp_StreamStatusLabel.FontColor = [0 0.5 0] ;
+                    infoLines{end+1} = 'Stream: from Prediction' ;
+                else
+                    infoLines{end+1} = 'Stream: not loaded' ;
                 end
 
                 if any(contains(infoLines, 'not loaded'))
@@ -2314,7 +2696,6 @@ classdef NonIdealReactorApp < handle
                 % Manual mode: re-enable all fields
                 app.Disp_BoField.Enable = 'on' ;
                 app.Disp_tauField.Enable = 'on' ;
-                app.Disp_CA0Field.Enable = 'on' ;
                 app.Disp_RTDStatusLabel.Visible = 'off' ;
                 app.Disp_RefreshButton.Visible = 'off' ;
             end
@@ -2334,25 +2715,39 @@ classdef NonIdealReactorApp < handle
                     return ;
                 end
 
+                % Validate feed stream
+                if isempty(app.Disp_feedStream)
+                    uialert(app.UIFigure, ...
+                        'No feed stream loaded. Define a Stream with "New Stream" and load it.', ...
+                        'Missing Feed Stream') ;
+                    app.updateStatus('Ready') ;
+                    return ;
+                end
+
+                RS = app.Disp_RS ;
+                C0 = app.Disp_feedStream.concentration(:)' ;
+
+                if length(C0) ~= RS.nComponents
+                    uialert(app.UIFigure, ...
+                        sprintf('Feed stream has %d components but RS has %d. They must match.', ...
+                        length(C0), RS.nComponents), 'Component Mismatch') ;
+                    app.updateStatus('Ready') ;
+                    return ;
+                end
+
                 Bo_val = app.Disp_BoField.Value ;
                 bcType = app.Disp_BCDropdown.Value ;
                 tau_val = app.readInputField(app.Disp_tauField) ;
-                CA0_val = app.readInputField(app.Disp_CA0Field) ;
-                RS = app.Disp_RS ;
-
-                % Build initial concentration vector
-                C0 = zeros(1, RS.nComponents) ;
-                C0(1) = CA0_val ;
 
                 % Create DispersionReactor
                 app.disp_reactor = DispersionReactor(Bo_val, bcType) ;
 
                 % Compute dispersion conversion via general method
-                X_disp = app.disp_reactor.compute_conversion_general(RS, C0, tau_val) ;
+                [X_disp, C_out_disp] = app.disp_reactor.compute_conversion_general(RS, C0, tau_val) ;
 
                 % Reference: CSTR and PFR via TanksInSeries module
-                [~, X_cstr] = TanksInSeries.solve_sequential(1, RS, C0, tau_val) ;
-                [~, X_pfr]  = TanksInSeries.solve_PFR(RS, C0, tau_val) ;
+                [C_out_cstr, X_cstr] = TanksInSeries.solve_sequential(1, RS, C0, tau_val) ;
+                [C_out_pfr,  X_pfr]  = TanksInSeries.solve_PFR(RS, C0, tau_val) ;
 
                 X_cstr = max(0, min(1, X_cstr)) ;
                 X_pfr  = max(0, min(1, X_pfr)) ;
@@ -2363,6 +2758,8 @@ classdef NonIdealReactorApp < handle
                 app.Disp_ResultXcstr.Text = sprintf('%.4f', X_cstr) ;
                 app.Disp_ResultXpfr.Text = sprintf('%.4f', X_pfr) ;
 
+                app.ensureComponentSelectorItems(app.DisplayControls.Dispersion.component, RS.nComponents) ;
+
                 app.DisplayCache.Dispersion = struct( ...
                     'Bo_val', Bo_val, ...
                     'tau_val', tau_val, ...
@@ -2370,11 +2767,16 @@ classdef NonIdealReactorApp < handle
                     'C0', C0, ...
                     'X_disp', X_disp, ...
                     'X_cstr', X_cstr, ...
-                    'X_pfr', X_pfr) ;
+                    'X_pfr', X_pfr, ...
+                    'C_out_disp', C_out_disp, ...
+                    'C_out_cstr', C_out_cstr, ...
+                    'C_out_pfr', C_out_pfr, ...
+                    'bcType', bcType) ;
 
                 % Update plots
                 app.Disp_updatePlots(Bo_val, tau_val, RS, C0, ...
-                                     X_disp, X_cstr, X_pfr) ;
+                                     X_disp, X_cstr, X_pfr, ...
+                                     C_out_disp, C_out_cstr, C_out_pfr, bcType) ;
 
                 app.updateStatus('Ready') ;
 
@@ -2385,17 +2787,19 @@ classdef NonIdealReactorApp < handle
         end
 
         function Disp_updatePlots(app, Bo_val, tau_val, RS, C0, ...
-                                  X_disp, X_cstr, X_pfr)
+                                  X_disp, X_cstr, X_pfr, ...
+                                  C_out_disp, C_out_cstr, C_out_pfr, bcType)
 
             % ---- Plot 1: E(t) ----
             cla(app.Disp_AxesEt) ;
             rtd_obj = app.disp_reactor.generate_RTD(tau_val) ;
             timeDD = app.DisplayControls.Dispersion.time ;
+            concDD = app.DisplayControls.Dispersion.concentration ;
             t_display = app.convertOutputVectorFromTime('time', rtd_obj.t, timeDD) ;
             Et_display = app.convertOutputVectorFromTime('timeInverse', rtd_obj.Et, timeDD) ;
             plot(app.Disp_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
             title(app.Disp_AxesEt, sprintf('E(t) - %s, Bo=%.4g', ...
-                  app.Disp_BCDropdown.Value, Bo_val)) ;
+                  bcType, Bo_val)) ;
             xlabel(app.Disp_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.Disp_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
@@ -2409,29 +2813,53 @@ classdef NonIdealReactorApp < handle
                 'Interpreter', 'tex', ...
                 'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
 
-            % ---- Plot 2: X vs Bo sweep ----
+            app.updateConcentrationHeader(app.Disp_C_exitLabel, concDD) ;
+            app.updateConcentrationTable(app.Disp_C_exitTable, ...
+                [C_out_disp(:), C_out_cstr(:), C_out_pfr(:)], ...
+                {'Disp.', 'CSTR', 'PFR'}, concDD) ;
+
+            % ---- Plot 2: Outlet concentration vs Bo sweep ----
             cla(app.Disp_AxesXvsBo) ;
-            [Bo_sweep, X_sweep] = app.disp_reactor.sweep_Bo_general(RS, C0, tau_val) ;
-            semilogx(app.Disp_AxesXvsBo, Bo_sweep, X_sweep, 'b-', 'LineWidth', 1.5) ;
+            [Bo_sweep, ~, C_sweep] = app.disp_reactor.sweep_Bo_general(RS, C0, tau_val) ;
+            app.ensureComponentSelectorItems(app.DisplayControls.Dispersion.component, RS.nComponents) ;
+            selectedIdx = app.getSelectedComponentIndices(app.DisplayControls.Dispersion.component, RS.nComponents) ;
+            C_sweep_display = app.convertOutputConcentration(C_sweep, concDD) ;
+            C_disp_display = app.convertOutputConcentration(C_out_disp, concDD) ;
+            C_cstr_display = app.convertOutputConcentration(C_out_cstr, concDD) ;
+            C_pfr_display = app.convertOutputConcentration(C_out_pfr, concDD) ;
+            colors = lines(RS.nComponents) ;
             hold(app.Disp_AxesXvsBo, 'on') ;
-
-            % Mark current Bo
-            semilogx(app.Disp_AxesXvsBo, Bo_val, X_disp, 'rp', ...
-                     'MarkerSize', 12, 'MarkerFaceColor', 'r') ;
-
-            % Reference lines
-            yline(app.Disp_AxesXvsBo, X_pfr, '--', 'PFR', ...
-                  'Color', [0 0.6 0], 'LineWidth', 1, 'LabelHorizontalAlignment', 'left') ;
-            yline(app.Disp_AxesXvsBo, X_cstr, '--', 'CSTR', ...
-                  'Color', [0.8 0 0], 'LineWidth', 1, 'LabelHorizontalAlignment', 'left') ;
+            for i = selectedIdx
+                semilogx(app.Disp_AxesXvsBo, Bo_sweep, C_sweep_display(:, i), '-', ...
+                    'Color', colors(i,:), 'LineWidth', 1.5, ...
+                    'DisplayName', sprintf('C%d', i)) ;
+                semilogx(app.Disp_AxesXvsBo, Bo_val, C_disp_display(i), 'p', ...
+                    'Color', colors(i,:), 'MarkerSize', 12, ...
+                    'MarkerFaceColor', colors(i,:), ...
+                    'HandleVisibility', 'off') ;
+                if isscalar(selectedIdx)
+                    yline(app.Disp_AxesXvsBo, C_pfr_display(i), '--', 'PFR', ...
+                        'Color', [0 0.6 0], 'LineWidth', 1, ...
+                        'LabelHorizontalAlignment', 'left') ;
+                    yline(app.Disp_AxesXvsBo, C_cstr_display(i), '--', 'CSTR', ...
+                        'Color', [0.8 0 0], 'LineWidth', 1, ...
+                        'LabelHorizontalAlignment', 'left') ;
+                end
+            end
             hold(app.Disp_AxesXvsBo, 'off') ;
 
-            title(app.Disp_AxesXvsBo, 'Conversion vs Bo') ;
+            if isscalar(selectedIdx)
+                title(app.Disp_AxesXvsBo, sprintf('Outlet Concentration vs Bo - C%d', selectedIdx)) ;
+            else
+                title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
+            end
             xlabel(app.Disp_AxesXvsBo, 'Bo [dispersion number]') ;
-            ylabel(app.Disp_AxesXvsBo, 'X_A') ;
-            ylim(app.Disp_AxesXvsBo, [0 1]) ;
-            legend(app.Disp_AxesXvsBo, 'X(Bo)', sprintf('Bo=%.4g', Bo_val), ...
-                   'Location', 'best') ;
+            ylabel(app.Disp_AxesXvsBo, app.axisLabelWithUnit('C', concDD)) ;
+            if isscalar(selectedIdx)
+                legend(app.Disp_AxesXvsBo, 'off') ;
+            else
+                legend(app.Disp_AxesXvsBo, 'Location', 'best') ;
+            end
 
             % ---- Plot 3: Comparison bar chart (CSTR → Disp → PFR) ----
             cla(app.Disp_AxesComparison) ;
