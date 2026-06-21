@@ -46,6 +46,7 @@ classdef defineStreamApp < matlab.apps.AppBase
 
     properties (Access = private)
         IsReadOnlyDisplay logical = false
+        IsEditMode logical = false
         DisplayedStream = []
     end
 
@@ -74,31 +75,54 @@ classdef defineStreamApp < matlab.apps.AppBase
             app.applyTemperatureFieldState() ;
 
             if ~isempty(varargin)
-                Product = varargin{1} ;
-
-                app.IsReadOnlyDisplay = true ;
-                app.NumberofcomponentsSpinner.Visible = 'off' ;
-                app.NumberofcomponentsSpinnerLabel.Visible = 'off' ;
-                app.CreateStreamButton.Visible = 'off' ;
-                app.TextArea.Value = { ...
-                    'This window shows the product stream for the selected problem.' ; ...
-                    'Numeric fields are locked, but unit selectors remain active so you can change the display units.'} ;
-                app.TextArea.HorizontalAlignment = 'center' ;
-                app.CheckBoxP.Visible = 'off' ;
-                app.CheckBoxT.Visible = 'off' ;
-                app.NameEditField.Value = 'Product' ;
-                app.NameEditField.Editable = 'off' ;
-                app.PhaseDropDown.Enable = 'off' ;
-                app.setNumericInputsEditable(false) ;
-                app.UITableStreamData.ColumnEditable = [false false] ;
-
-                if ~isempty(Product.phase)
-                    app.PhaseDropDown.Value = Product.phase ;
+                materialStream = varargin{1} ;
+                mode = '' ;
+                streamName = '' ;
+                if numel(varargin) >= 2
+                    mode = string(varargin{2}) ;
                 end
-                app.displayStreamValues(Product) ;
+                if numel(varargin) >= 3
+                    streamName = string(varargin{3}) ;
+                end
 
-                if exist("solutionVariablesFile.mat", "file") == 2
-                    delete("solutionVariablesFile.mat")
+                if strcmpi(mode, "edit") && isa(materialStream, 'Stream')
+                    app.IsEditMode = true ;
+                    app.TextArea.Value = { ...
+                        'Edit the selected feed stream.' ; ...
+                        'Modify the fields and press "Save Stream" to update or save it in the workspace.'} ;
+                    app.TextArea.HorizontalAlignment = 'center' ;
+                    app.CreateStreamButton.Text = 'Save Stream' ;
+                    if strlength(streamName) > 0
+                        app.NameEditField.Value = char(streamName) ;
+                    end
+                    app.displayStreamValues(materialStream) ;
+                else
+                    Product = materialStream ;
+
+                    app.IsReadOnlyDisplay = true ;
+                    app.NumberofcomponentsSpinner.Visible = 'off' ;
+                    app.NumberofcomponentsSpinnerLabel.Visible = 'off' ;
+                    app.CreateStreamButton.Visible = 'off' ;
+                    app.TextArea.Value = { ...
+                        'This window shows the product stream for the selected problem.' ; ...
+                        'Numeric fields are locked, but unit selectors remain active so you can change the display units.'} ;
+                    app.TextArea.HorizontalAlignment = 'center' ;
+                    app.CheckBoxP.Visible = 'off' ;
+                    app.CheckBoxT.Visible = 'off' ;
+                    app.NameEditField.Value = 'Product' ;
+                    app.NameEditField.Editable = 'off' ;
+                    app.PhaseDropDown.Enable = 'off' ;
+                    app.setNumericInputsEditable(false) ;
+                    app.UITableStreamData.ColumnEditable = [false false] ;
+
+                    if ~isempty(Product.phase)
+                        app.PhaseDropDown.Value = Product.phase ;
+                    end
+                    app.displayStreamValues(Product) ;
+
+                    if exist("solutionVariablesFile.mat", "file") == 2
+                        delete("solutionVariablesFile.mat")
+                    end
                 end
             end
         end
