@@ -120,6 +120,7 @@ classdef NonIdealReactorApp < handle
         Pred_C_exitTable        % UITable: outlet concentrations per component
         Pred_AxesXbatch
         Pred_AxesIntegrand
+        Pred_SharedLegend
 
         % Stored model objects
         seg_model               % SegregationModel object
@@ -383,6 +384,29 @@ classdef NonIdealReactorApp < handle
             dropdown.Layout.Column = 2 ;
         end
 
+        function listbox = createDisplayMultiSelectControl(~, parentGrid, row, col, ...
+                labelText, callbackFcn, listHeight)
+            if nargin < 7 || isempty(listHeight)
+                listHeight = 88 ;
+            end
+            subGrid = uigridlayout(parentGrid, [2 1], ...
+                'RowHeight', {18, listHeight}, ...
+                'ColumnWidth', {'1x'}, ...
+                'Padding', [0 0 0 0], ...
+                'RowSpacing', 4) ;
+            subGrid.Layout.Row = row ;
+            subGrid.Layout.Column = col ;
+
+            uilabel(subGrid, 'Text', labelText, 'FontSize', 11, ...
+                'FontWeight', 'bold') ;
+            listbox = uilistbox(subGrid, ...
+                'Multiselect', 'on', ...
+                'FontSize', 11, ...
+                'ValueChangedFcn', callbackFcn) ;
+            listbox.Layout.Row = 2 ;
+            listbox.Layout.Column = 1 ;
+        end
+
         function value = convertOutputScalar(~, category, siValue, dropdown)
             if isempty(dropdown) || ~isvalid(dropdown)
                 value = siValue ;
@@ -519,150 +543,143 @@ classdef NonIdealReactorApp < handle
             reactantMask = any(RS.stochiometricMatrix < 0, 1) ;
             reactantIdx = find(reactantMask & (C0(:)' > 1e-12)) ;
             reactantLabels = compLabels(reactantIdx) ;
-            selectorItems = [{'All reactants'}, reactantLabels] ;
-            selectorKeys = [{'ALL'}, arrayfun(@(k) sprintf('R%d', k), ...
-                1:numel(reactantIdx), 'UniformOutput', false)] ;
             info = struct( ...
                 'componentLabels', {compLabels}, ...
                 'reactantIndices', reactantIdx, ...
-                'reactantLabels', {reactantLabels}, ...
-                'selectorItems', {selectorItems}, ...
-                'selectorKeys', {selectorKeys}) ;
+                'reactantLabels', {reactantLabels}) ;
         end
 
-        function ensurePredictionReactantSelector(~, dropdown, reactantInfo)
-            if isempty(dropdown) || ~isvalid(dropdown)
+        function ensurePredictionReactantSelector(~, listbox, reactantInfo)
+            if isempty(listbox) || ~isvalid(listbox)
                 return
             end
 
             if isempty(reactantInfo.reactantIndices)
-                dropdown.Items = {'No reactants'} ;
-                dropdown.Value = 'No reactants' ;
-                dropdown.Enable = 'off' ;
-                dropdown.UserData = struct('selectedKey', 'NONE', 'selectorKeys', {{'NONE'}}) ;
+                listbox.Items = {'No reactants'} ;
+                listbox.ItemsData = [] ;
+                listbox.Value = {'No reactants'} ;
+                listbox.Enable = 'off' ;
                 return
             end
 
-            dropdown.Enable = 'on' ;
-            currentValue = dropdown.Value ;
-            dropdown.Items = reactantInfo.selectorItems ;
-            if any(strcmp(reactantInfo.selectorItems, currentValue))
-                selectedPos = find(strcmp(reactantInfo.selectorItems, currentValue), 1) ;
-            else
-                selectedPos = 1 ;
+            currentValue = [] ;
+            if isnumeric(listbox.Value)
+                currentValue = reshape(listbox.Value, 1, []) ;
             end
-            dropdown.Value = reactantInfo.selectorItems{selectedPos} ;
-            dropdown.UserData = struct( ...
-                'selectedKey', reactantInfo.selectorKeys{selectedPos}, ...
-                'selectorKeys', {reactantInfo.selectorKeys}) ;
+            listbox.Enable = 'on' ;
+            listbox.Items = reactantInfo.reactantLabels ;
+            listbox.ItemsData = reactantInfo.reactantIndices ;
+            selectedValues = intersect(reactantInfo.reactantIndices, currentValue, 'stable') ;
+            if isempty(selectedValues)
+                selectedValues = reactantInfo.reactantIndices ;
+            end
+            listbox.Value = selectedValues ;
         end
 
-        function [idx, selectedLabel, selectedKey] = getPredictionSelectedReactants(~, dropdown, reactantInfo)
-            idx = reactantInfo.reactantIndices ;
-            selectedLabel = 'All reactants' ;
-            selectedKey = '' ;
-
-            if isempty(idx) || isempty(dropdown) || ~isvalid(dropdown)
+        function idx = getPredictionSelectedReactants(~, listbox, reactantInfo)
+            if isempty(reactantInfo.reactantIndices) || isempty(listbox) || ~isvalid(listbox) || ...
+                    strcmp(listbox.Enable, 'off')
                 idx = [] ;
-                selectedLabel = 'No reactants' ;
-                selectedKey = 'NONE' ;
                 return
             end
 
-            if ~isstruct(dropdown.UserData) || ~isfield(dropdown.UserData, 'selectedKey')
-                dropdown.UserData = struct( ...
-                    'selectedKey', reactantInfo.selectorKeys{1}, ...
-                    'selectorKeys', {reactantInfo.selectorKeys}) ;
+            if isnumeric(listbox.Value)
+                idx = reshape(listbox.Value, 1, []) ;
+            else
+                idx = [] ;
             end
-
-            selectorPos = find(strcmp(reactantInfo.selectorItems, dropdown.Value), 1) ;
-            if isempty(selectorPos)
-                selectorPos = 1 ;
-            end
-
-            selectedKey = reactantInfo.selectorKeys{selectorPos} ;
-            dropdown.UserData.selectedKey = selectedKey ;
-
-            if selectorPos == 1
-                return
-            end
-
-            idx = reactantInfo.reactantIndices(selectorPos - 1) ;
-            selectedLabel = reactantInfo.reactantLabels{selectorPos - 1} ;
         end
 
         function info = getPredictionSpeciesInfo(app, RS)
             compLabels = app.getReactionComponentLabels(RS) ;
             speciesIdx = 1:RS.nComponents ;
-            selectorItems = [{'All species'}, compLabels] ;
-            selectorKeys = [{'ALL'}, arrayfun(@(k) sprintf('S%d', k), ...
-                speciesIdx, 'UniformOutput', false)] ;
             info = struct( ...
                 'componentLabels', {compLabels}, ...
-                'speciesIndices', speciesIdx, ...
-                'selectorItems', {selectorItems}, ...
-                'selectorKeys', {selectorKeys}) ;
+                'speciesIndices', speciesIdx) ;
         end
 
-        function ensurePredictionSpeciesSelector(~, dropdown, speciesInfo)
-            if isempty(dropdown) || ~isvalid(dropdown)
+        function ensurePredictionSpeciesSelector(~, listbox, speciesInfo)
+            if isempty(listbox) || ~isvalid(listbox)
                 return
             end
 
             if isempty(speciesInfo.speciesIndices)
-                dropdown.Items = {'No species'} ;
-                dropdown.Value = 'No species' ;
-                dropdown.Enable = 'off' ;
-                dropdown.UserData = struct('selectedKey', 'NONE', 'selectorKeys', {{'NONE'}}) ;
+                listbox.Items = {'No species'} ;
+                listbox.ItemsData = [] ;
+                listbox.Value = {'No species'} ;
+                listbox.Enable = 'off' ;
                 return
             end
 
-            dropdown.Enable = 'on' ;
-            currentValue = dropdown.Value ;
-            dropdown.Items = speciesInfo.selectorItems ;
-            if any(strcmp(speciesInfo.selectorItems, currentValue))
-                selectedPos = find(strcmp(speciesInfo.selectorItems, currentValue), 1) ;
-            else
-                selectedPos = 1 ;
+            currentValue = [] ;
+            if isnumeric(listbox.Value)
+                currentValue = reshape(listbox.Value, 1, []) ;
             end
-            dropdown.Value = speciesInfo.selectorItems{selectedPos} ;
-            dropdown.UserData = struct( ...
-                'selectedKey', speciesInfo.selectorKeys{selectedPos}, ...
-                'selectorKeys', {speciesInfo.selectorKeys}) ;
+            listbox.Enable = 'on' ;
+            listbox.Items = speciesInfo.componentLabels ;
+            listbox.ItemsData = speciesInfo.speciesIndices ;
+            selectedValues = intersect(speciesInfo.speciesIndices, currentValue, 'stable') ;
+            if isempty(selectedValues)
+                selectedValues = speciesInfo.speciesIndices ;
+            end
+            listbox.Value = selectedValues ;
         end
 
-        function [idx, selectedLabel, selectedKey] = getPredictionSelectedSpecies(~, dropdown, speciesInfo)
-            idx = speciesInfo.speciesIndices ;
-            selectedLabel = 'All species' ;
-            selectedKey = '' ;
-
-            if isempty(idx) || isempty(dropdown) || ~isvalid(dropdown)
+        function idx = getPredictionSelectedSpecies(~, listbox, speciesInfo)
+            if isempty(speciesInfo.speciesIndices) || isempty(listbox) || ~isvalid(listbox) || ...
+                    strcmp(listbox.Enable, 'off')
                 idx = [] ;
-                selectedLabel = 'No species' ;
-                selectedKey = 'NONE' ;
                 return
             end
 
-            if ~isstruct(dropdown.UserData) || ~isfield(dropdown.UserData, 'selectedKey')
-                dropdown.UserData = struct( ...
-                    'selectedKey', speciesInfo.selectorKeys{1}, ...
-                    'selectorKeys', {speciesInfo.selectorKeys}) ;
+            if isnumeric(listbox.Value)
+                idx = reshape(listbox.Value, 1, []) ;
+            else
+                idx = [] ;
             end
+        end
 
-            selectorPos = find(strcmp(speciesInfo.selectorItems, dropdown.Value), 1) ;
-            if isempty(selectorPos)
-                selectorPos = 1 ;
+        function [labels, colors] = getPredictionModelLegendSpec(~)
+            labels = {'Segregation', 'Max Mixedness', 'Ideal CSTR', 'Ideal PFR'} ;
+            colors = [ ...
+                0.18 0.45 0.78
+                0.85 0.33 0.10
+                0.29 0.64 0.25
+                0.49 0.18 0.56] ;
+        end
+
+        function applyPredictionBarStyles(app, barHandles)
+            [labels, colors] = app.getPredictionModelLegendSpec() ;
+            for i = 1:min(numel(barHandles), size(colors, 1))
+                barHandles(i).FaceColor = colors(i, :) ;
+                barHandles(i).DisplayName = labels{i} ;
             end
+        end
 
-            selectedKey = speciesInfo.selectorKeys{selectorPos} ;
-            dropdown.UserData.selectedKey = selectedKey ;
-
-            if selectorPos == 1
-                return
+        function legendHandles = createPredictionLegendPlaceholders(app, ax)
+            [labels, colors] = app.getPredictionModelLegendSpec() ;
+            legendHandles = gobjects(1, numel(labels)) ;
+            hold(ax, 'on') ;
+            for i = 1:numel(labels)
+                legendHandles(i) = plot(ax, nan, nan, 's', ...
+                    'MarkerSize', 8, ...
+                    'MarkerFaceColor', colors(i, :), ...
+                    'MarkerEdgeColor', colors(i, :), ...
+                    'LineStyle', 'none', ...
+                    'DisplayName', labels{i}) ;
             end
+            hold(ax, 'off') ;
+        end
 
-            idx = speciesInfo.speciesIndices(selectorPos - 1) ;
-            selectedLabel = speciesInfo.componentLabels{selectorPos - 1} ;
+        function updatePredictionSharedLegend(app, legendHandles)
+            if ~isempty(app.Pred_SharedLegend) && isvalid(app.Pred_SharedLegend)
+                delete(app.Pred_SharedLegend) ;
+            end
+            [labels, ~] = app.getPredictionModelLegendSpec() ;
+            app.Pred_SharedLegend = legend(app.Pred_AxesXbatch, legendHandles, labels, ...
+                'Orientation', 'horizontal', ...
+                'Location', 'southoutside') ;
+            app.Pred_SharedLegend.Layout.Tile = 'south' ;
         end
 
         function X = computeSpeciesConversion(~, C0, C_exit, indices)
@@ -697,7 +714,7 @@ classdef NonIdealReactorApp < handle
                 compLabels, roles, C0, ...
                 C_seg, C_mm, C_cstr, C_pfr, ...
                 reactantIndices, X_seg, X_mm, X_cstr, X_pfr, ...
-                selectedIdx, selectedKey, concDropdown)
+                selectedIdx, concDropdown)
 
             nComp = numel(compLabels) ;
             summaryRows = cell(nComp, 11) ;
@@ -730,8 +747,7 @@ classdef NonIdealReactorApp < handle
                 end
             end
 
-            rowOrder = 1:nComp ;
-            if ~isempty(selectedIdx) && strcmp(selectedKey, 'ALL')
+            if isempty(selectedIdx) || isequal(selectedIdx, reactantIndices)
                 rolePriority = zeros(1, nComp) ;
                 for i = 1:nComp
                     switch roles{i}
@@ -747,9 +763,9 @@ classdef NonIdealReactorApp < handle
                 end
                 [~, rowOrder] = sortrows([rolePriority(:), (1:nComp)']) ;
                 rowOrder = rowOrder(:)' ;
-            elseif ~isempty(selectedIdx) && ~strcmp(selectedKey, 'ALL')
-                remaining = setdiff(1:nComp, selectedIdx(1), 'stable') ;
-                rowOrder = [selectedIdx(1), remaining] ;
+            else
+                remaining = setdiff(1:nComp, selectedIdx, 'stable') ;
+                rowOrder = [selectedIdx, remaining] ;
             end
 
             app.Pred_C_exitTable.ColumnName = { ...
@@ -2015,7 +2031,7 @@ classdef NonIdealReactorApp < handle
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Prediction Configuration') ;
             leftGrid = uigridlayout(leftPanel, [13 2]) ;
-            rowH = repmat({28}, 1, 13) ; rowH{13} = 84 ;
+            rowH = repmat({28}, 1, 13) ; rowH{13} = 190 ;
             leftGrid.RowHeight = rowH ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
@@ -2142,54 +2158,68 @@ classdef NonIdealReactorApp < handle
             lbl.Layout.Row = 12 ; lbl.Layout.Column = [1 2] ;
 
             % Row 13: Display units
-            unitsGrid = uigridlayout(leftGrid, [3 2], ...
+            unitsGrid = uigridlayout(leftGrid, [1 2], ...
                 'ColumnWidth', {'1x', '1x'}, ...
-                'RowHeight', {24, 24, 24}, ...
+                'RowHeight', {'1x'}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 4, ...
                 'RowSpacing', 4) ;
             unitsGrid.Layout.Row = 13 ;
             unitsGrid.Layout.Column = [1 2] ;
-            app.DisplayControls.Prediction.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Prediction'), 84) ;
+            conversionPanel = uipanel(unitsGrid, 'Title', 'Conversion Comparison') ;
+            conversionPanel.Layout.Row = 1 ;
+            conversionPanel.Layout.Column = 1 ;
+            conversionGrid = uigridlayout(conversionPanel, [1 1], ...
+                'Padding', [6 6 6 6]) ;
+            app.DisplayControls.Prediction.reactant = app.createDisplayMultiSelectControl( ...
+                conversionGrid, 1, 1, 'Reactants:', @(~,~) app.refreshDisplayUnits('Prediction'), 120) ;
+
+            concentrationPanel = uipanel(unitsGrid, 'Title', 'Outlet Concentration') ;
+            concentrationPanel.Layout.Row = 1 ;
+            concentrationPanel.Layout.Column = 2 ;
+            concentrationGrid = uigridlayout(concentrationPanel, [2 1], ...
+                'RowHeight', {'fit', '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 6) ;
             app.DisplayControls.Prediction.concentration = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Prediction'), 92) ;
-            app.DisplayControls.Prediction.reactant = app.createDisplayChoiceControl( ...
-                unitsGrid, 2, [1 2], 'Reactants:', {'All reactants'}, 'All reactants', @(~,~) app.refreshDisplayUnits('Prediction'), 118) ;
-            app.DisplayControls.Prediction.species = app.createDisplayChoiceControl( ...
-                unitsGrid, 3, [1 2], 'Species:', {'All species'}, 'All species', @(~,~) app.refreshDisplayUnits('Prediction'), 118) ;
+                concentrationGrid, 1, 1, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Prediction'), 92) ;
+            app.DisplayControls.Prediction.species = app.createDisplayMultiSelectControl( ...
+                concentrationGrid, 2, 1, 'Species:', @(~,~) app.refreshDisplayUnits('Prediction'), 90) ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Model Results') ;
-            plotGrid = uigridlayout(rightPanel, [2 2]) ;
-            plotGrid.RowHeight = {'1x', '1x'} ;
-            plotGrid.ColumnWidth = {'1x', '1x'} ;
+            rightGrid = uigridlayout(rightPanel, [2 1]) ;
+            rightGrid.RowHeight = {'1x', '1x'} ;
+            rightGrid.ColumnWidth = {'1x'} ;
+            rightGrid.Padding = [0 0 0 0] ;
+            rightGrid.RowSpacing = 6 ;
+
+            plotPanel = uipanel(rightGrid, 'BorderType', 'none') ;
+            plotPanel.Layout.Row = 1 ;
+            plotPanel.Layout.Column = 1 ;
+            plotLayout = tiledlayout(plotPanel, 1, 2, ...
+                'Padding', 'compact', ...
+                'TileSpacing', 'compact') ;
 
             % Conversion comparison bar chart (all models, per reactant)
-            app.Pred_AxesXbatch = uiaxes(plotGrid) ;
+            app.Pred_AxesXbatch = nexttile(plotLayout, 1) ;
             title(app.Pred_AxesXbatch, 'Conversion Comparison') ;
             xlabel(app.Pred_AxesXbatch, 'Reactant') ;
             ylabel(app.Pred_AxesXbatch, 'Conversion X (-)') ;
             grid(app.Pred_AxesXbatch, 'on') ;
 
             % Outlet concentration bar chart for all species
-            app.Pred_AxesIntegrand = uiaxes(plotGrid) ;
-            title(app.Pred_AxesIntegrand, 'Outlet Concentration - All Species') ;
+            app.Pred_AxesIntegrand = nexttile(plotLayout, 2) ;
+            title(app.Pred_AxesIntegrand, 'Outlet Concentration') ;
             xlabel(app.Pred_AxesIntegrand, 'Species') ;
             ylabel(app.Pred_AxesIntegrand, 'C [mol/m^3]') ;
             grid(app.Pred_AxesIntegrand, 'on') ;
 
-            % Bottom area: combined exit summary table
-            bottomGrid = uigridlayout(plotGrid, [1 1], ...
-                'ColumnWidth', {'1x'}, ...
-                'Padding', [0 0 0 0], ...
-                'ColumnSpacing', 0) ;
-            bottomGrid.Layout.Row = 2 ;
-            bottomGrid.Layout.Column = [1 2] ;
-
             % Exit summary table
-            app.Pred_C_exitPanel = uipanel(bottomGrid, ...
+            app.Pred_C_exitPanel = uipanel(rightGrid, ...
                 'Title', 'Exit Summary - Concentration [mol/m^3]') ;
+            app.Pred_C_exitPanel.Layout.Row = 2 ;
+            app.Pred_C_exitPanel.Layout.Column = 1 ;
             app.Pred_C_exitPanel.Tooltip = ...
                 'Per-species summary of feed concentration, outlet concentration and reactant conversion for each prediction model.' ;
             tableGrid = uigridlayout(app.Pred_C_exitPanel, [1 1], ...
@@ -2209,7 +2239,7 @@ classdef NonIdealReactorApp < handle
 
         %% ============== STREAM LOADING HELPER + CALLBACKS ==============
 
-        function [S, ok] = loadStreamFromWorkspace(app, nameField, statusLabel, RS)
+        function [S, ok] = loadStreamFromWorkspace(~, nameField, statusLabel, RS)
             ok = false ; S = [] ;
             streamName = nameField.Value ;
             try
@@ -2493,10 +2523,10 @@ classdef NonIdealReactorApp < handle
             speciesInfo = app.getPredictionSpeciesInfo(RS) ;
             speciesRoles = app.classifySpeciesRoles(RS) ;
             app.ensurePredictionReactantSelector(app.DisplayControls.Prediction.reactant, reactantInfo) ;
-            [selectedIdx, selectedLabel, selectedKey] = app.getPredictionSelectedReactants( ...
+            selectedIdx = app.getPredictionSelectedReactants( ...
                 app.DisplayControls.Prediction.reactant, reactantInfo) ;
             app.ensurePredictionSpeciesSelector(app.DisplayControls.Prediction.species, speciesInfo) ;
-            [selectedSpeciesIdx, selectedSpeciesLabel, selectedSpeciesKey] = app.getPredictionSelectedSpecies( ...
+            selectedSpeciesIdx = app.getPredictionSelectedSpecies( ...
                 app.DisplayControls.Prediction.species, speciesInfo) ;
             [C_out_cstr_ref, ~] = TanksInSeries.solve_sequential(1, RS, C0, app.rtd.tau) ;
             [C_out_pfr_ref, ~] = TanksInSeries.solve_PFR(RS, C0, app.rtd.tau) ;
@@ -2518,7 +2548,9 @@ classdef NonIdealReactorApp < handle
             if nR == 0
                 text(app.Pred_AxesXbatch, 0.5, 0.5, 'No reactants with C_0 > 0', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
-                legend(app.Pred_AxesXbatch, 'off') ;
+            elseif isempty(selectedIdx)
+                text(app.Pred_AxesXbatch, 0.5, 0.5, 'No reactants selected', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
             else
                 reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedIdx) ;
                 X_matrix = [X_seg_all(reactantPlotPos)', X_mm_all(reactantPlotPos)', ...
@@ -2526,18 +2558,12 @@ classdef NonIdealReactorApp < handle
                 reactantLabels = reactantInfo.componentLabels(selectedIdx) ;
                 nSelectedReactants = numel(selectedIdx) ;
                 b = bar(app.Pred_AxesXbatch, 1:nSelectedReactants, X_matrix, 'grouped') ;
+                app.applyPredictionBarStyles(b) ;
                 app.Pred_AxesXbatch.XTick = 1:nSelectedReactants ;
                 app.Pred_AxesXbatch.XTickLabel = reactantLabels ;
                 ylim(app.Pred_AxesXbatch, [0, max(1, max(X_matrix(:)) * 1.1)]) ;
-                legendLabels = {'Segregation', 'Max Mixedness', 'Ideal CSTR', 'Ideal PFR'} ;
-                legend(app.Pred_AxesXbatch, b(1:min(numel(b), numel(legendLabels))), ...
-                    legendLabels(1:min(numel(b), numel(legendLabels))), 'Location', 'best') ;
             end
-            if strcmp(selectedKey, 'ALL')
-                title(app.Pred_AxesXbatch, 'Conversion Comparison - All Reactants') ;
-            else
-                title(app.Pred_AxesXbatch, sprintf('Conversion Comparison - %s', selectedLabel)) ;
-            end
+            title(app.Pred_AxesXbatch, 'Conversion Comparison') ;
             xlabel(app.Pred_AxesXbatch, 'Reactant') ;
             ylabel(app.Pred_AxesXbatch, 'Conversion X (-)') ;
             grid(app.Pred_AxesXbatch, 'on') ;
@@ -2545,9 +2571,8 @@ classdef NonIdealReactorApp < handle
             % --- PLOT 2: Outlet concentration for selected species ---
             cla(app.Pred_AxesIntegrand) ;
             if isempty(selectedSpeciesIdx)
-                text(app.Pred_AxesIntegrand, 0.5, 0.5, 'No species available', ...
+                text(app.Pred_AxesIntegrand, 0.5, 0.5, 'No species selected', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
-                legend(app.Pred_AxesIntegrand, 'off') ;
             else
                 concMatrix = [app.seg_model.C_exit(:), app.mm_model.C_exit(:), ...
                               C_out_cstr_ref(:), C_out_pfr_ref(:)] ;  % nComp x 4
@@ -2556,17 +2581,13 @@ classdef NonIdealReactorApp < handle
                 speciesLabels = speciesInfo.componentLabels(selectedSpeciesIdx) ;
                 nSelectedSpecies = numel(selectedSpeciesIdx) ;
                 b = bar(app.Pred_AxesIntegrand, 1:nSelectedSpecies, C_species, 'grouped') ;
+                app.applyPredictionBarStyles(b) ;
                 app.Pred_AxesIntegrand.XTick = 1:nSelectedSpecies ;
                 app.Pred_AxesIntegrand.XTickLabel = speciesLabels ;
-                legendLabels = {'Segregation', 'Max Mixedness', 'Ideal CSTR', 'Ideal PFR'} ;
-                legend(app.Pred_AxesIntegrand, b(1:min(numel(b), numel(legendLabels))), ...
-                    legendLabels(1:min(numel(b), numel(legendLabels))), 'Location', 'best') ;
             end
-            if strcmp(selectedSpeciesKey, 'ALL')
-                title(app.Pred_AxesIntegrand, 'Outlet Concentration - All Species') ;
-            else
-                title(app.Pred_AxesIntegrand, sprintf('Outlet Concentration - %s', selectedSpeciesLabel)) ;
-            end
+            legendHandles = app.createPredictionLegendPlaceholders(app.Pred_AxesXbatch) ;
+            app.updatePredictionSharedLegend(legendHandles) ;
+            title(app.Pred_AxesIntegrand, 'Outlet Concentration') ;
             xlabel(app.Pred_AxesIntegrand, 'Species') ;
             ylabel(app.Pred_AxesIntegrand, app.axisLabelWithUnit('C', concDD)) ;
             grid(app.Pred_AxesIntegrand, 'on') ;
@@ -2576,7 +2597,7 @@ classdef NonIdealReactorApp < handle
                 reactantInfo.componentLabels, speciesRoles, C0, ...
                 app.seg_model.C_exit, app.mm_model.C_exit, C_out_cstr_ref, C_out_pfr_ref, ...
                 reactantInfo.reactantIndices, X_seg_all, X_mm_all, X_cstr_all, X_pfr_all, ...
-                selectedIdx, selectedKey, concDD) ;
+                selectedIdx, concDD) ;
         end
 
         %% ============== TAB 3: TANKS-IN-SERIES ==============

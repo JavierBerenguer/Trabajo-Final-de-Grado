@@ -41,8 +41,10 @@ app = ReactorApp;
 
 - Prediccion de conversion con `SegregationModel` y `MaxMixednessModel`.
 - Uso de `ReactionSys` definido desde la UI o cargado desde workspace.
+- `Display units` en este tab se centra en concentracion y seleccion de especies/reactivos; no incluye `Time base`.
 - Comparacion de conversion por reactivo entre `Segregation`, `Max Mixedness`, `CSTR` y `PFR`.
-- Comparacion de concentracion de salida para todas las especies, con selectores independientes de reactivos y especies.
+- Comparacion de concentracion de salida para todas las especies, con multiseleccion independiente de reactivos y especies.
+- Leyenda compartida entre ambas graficas para los cuatro modelos comparados.
 
 ### Tab 3 - Tanks-in-Series
 

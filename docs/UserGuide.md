@@ -88,13 +88,14 @@ The main window includes **4 tabs**, a **File** menu, a **Tools** menu, a **Help
 3. Prepare or load the feed stream with the full inlet concentration vector.
 4. Click **Compute**.
 5. Review the conversion comparison and outlet concentration plots, together with the exit summary table.
+6. Use the Tab 2 display controls to choose reactants and species; this tab no longer includes a `Time base` selector.
 
 ### Plots
 
-- **Conversion Comparison:** compares reactant conversion for `Segregation`, `Max Mixedness`, `Ideal CSTR`, and `Ideal PFR`. The reactant selector lets you view one reactant or **All reactants**.
-- **Outlet Concentration:** compares outlet concentration for every species across the same four models. The species selector lets you view one species or **All species**.
+- **Conversion Comparison:** compares reactant conversion for `Segregation`, `Max Mixedness`, `Ideal CSTR`, and `Ideal PFR`. The `Reactants` list allows multiselection, so you can display any subset of reactants.
+- **Outlet Concentration:** compares outlet concentration for every species across the same four models. The `Species` list allows multiselection, and the `Concentration` control only affects this plot and its displayed units.
 - **Exit Summary:** table with inlet concentration, outlet concentration, and reactant conversion per species.
-- **Comparison:** direct comparison of both model predictions
+- **Shared Legend:** both plots use the same model colors and a single legend below the charts.
 
 ---
 
