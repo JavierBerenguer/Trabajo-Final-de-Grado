@@ -85,15 +85,15 @@ The main window includes **4 tabs**, a **File** menu, a **Tools** menu, a **Help
 
 1. Confirm that the RTD status shows it was loaded from Tab 1.
 2. Prepare or load the reaction system.
-3. Enter `C_A0`.
+3. Prepare or load the feed stream with the full inlet concentration vector.
 4. Click **Compute**.
-5. Review `X_seg`, `X_mm`, and the interpretation shown in the results area.
+5. Review the conversion comparison and outlet concentration plots, together with the exit summary table.
 
 ### Plots
 
-- **X_batch(t):** batch conversion versus time
-- **Integrand:** contribution used by the segregation calculation
-- **X(lambda):** max-mixedness profile
+- **Conversion Comparison:** compares reactant conversion for `Segregation`, `Max Mixedness`, `Ideal CSTR`, and `Ideal PFR`. The reactant selector lets you view one reactant or **All reactants**.
+- **Outlet Concentration:** compares outlet concentration for every species across the same four models. The species selector lets you view one species or **All species**.
+- **Exit Summary:** table with inlet concentration, outlet concentration, and reactant conversion per species.
 - **Comparison:** direct comparison of both model predictions
 
 ---

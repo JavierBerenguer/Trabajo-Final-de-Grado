@@ -48,6 +48,8 @@ classdef defineStreamApp < matlab.apps.AppBase
         IsReadOnlyDisplay logical = false
         IsEditMode logical = false
         DisplayedStream = []
+        TableDirtyColumns logical = [false false]
+        LastEditedTableColumn double = NaN
     end
 
     methods (Access = public)
@@ -71,6 +73,7 @@ classdef defineStreamApp < matlab.apps.AppBase
             app.configureUnitControls() ;
             app.NumberofcomponentsSpinner.Value = 1 ;
             app.setComponentCount(1, false) ;
+            app.resetTableDirtyTracking() ;
             app.applyPressureFieldState() ;
             app.applyTemperatureFieldState() ;
 
@@ -146,8 +149,10 @@ classdef defineStreamApp < matlab.apps.AppBase
                 newStream = Stream ;
                 newStream.phase = app.PhaseDropDown.Value ;
 
-                newStream.molarFlow = app.readTableColumnToSI(1, 'MolarFlow') ;
-                newStream.concentration = app.readTableColumnToSI(2, 'Concentration') ;
+                molarFlow = app.readTableColumnToSI(1, 'MolarFlow') ;
+                concentration = app.readTableColumnToSI(2, 'Concentration') ;
+                newStream.molarFlow = molarFlow ;
+                newStream.concentration = concentration ;
 
                 volumetricFlow = app.readOptionalFieldToSI(app.VolumetricFlowmsEditField) ;
                 if ~isempty(volumetricFlow)
@@ -190,6 +195,31 @@ classdef defineStreamApp < matlab.apps.AppBase
                 newStream.density_Units = char(app.DensityUnitsDropDown.Value) ;
                 newStream.viscosity_Units = char(app.ViscosityUnitsDropDown.Value) ;
 
+                hasMolar = ~isempty(molarFlow) ;
+                hasConc = ~isempty(concentration) ;
+                hasVol = ~isempty(volumetricFlow) ;
+                volDirty = app.isFieldDirty(app.VolumetricFlowmsEditField) ;
+                molarDirty = app.TableDirtyColumns(1) ;
+                concDirty = app.TableDirtyColumns(2) ;
+
+                if hasVol && hasMolar && hasConc
+                    if molarDirty && concDirty
+                        if app.LastEditedTableColumn == 1
+                            newStream.concentration = [] ;
+                        else
+                            newStream.molarFlow = [] ;
+                        end
+                    elseif molarDirty
+                        newStream.concentration = [] ;
+                    elseif concDirty || volDirty
+                        newStream.molarFlow = [] ;
+                    end
+                elseif hasVol && hasConc && ~hasMolar
+                    newStream.molarFlow = [] ;
+                elseif hasVol && hasMolar && ~hasConc
+                    newStream.concentration = [] ;
+                end
+
                 app.Y = newStream ;
                 app.DisplayedStream = newStream ;
                 assignin("base", app.NameEditField.Value, app.Y)
@@ -220,6 +250,7 @@ classdef defineStreamApp < matlab.apps.AppBase
         function UITableStreamDataCellEdit(app, event)
             indices = event.Indices ;
             newData = event.NewData ;
+            app.markTableColumnDirty(indices(2)) ;
 
             if isstring(newData)
                 newData = char(newData) ;
@@ -340,6 +371,7 @@ classdef defineStreamApp < matlab.apps.AppBase
             if ~isempty(materialStream.phase)
                 app.PhaseDropDown.Value = materialStream.phase ;
             end
+            app.resetTableDirtyTracking() ;
         end
 
         function configureDropdown(app, dropdown, category, kind, target)
@@ -361,6 +393,31 @@ classdef defineStreamApp < matlab.apps.AppBase
             dropdown.UserData = userData ;
         end
 
+        function resetTableDirtyTracking(app)
+            app.TableDirtyColumns = [false false] ;
+            app.LastEditedTableColumn = NaN ;
+            app.UITableStreamData.UserData = struct( ...
+                'dirtyColumns', app.TableDirtyColumns, ...
+                'lastEditedColumn', app.LastEditedTableColumn) ;
+        end
+
+        function markTableColumnDirty(app, columnIndex)
+            if columnIndex < 1 || columnIndex > 2
+                return
+            end
+            app.TableDirtyColumns(columnIndex) = true ;
+            app.LastEditedTableColumn = columnIndex ;
+            app.UITableStreamData.UserData = struct( ...
+                'dirtyColumns', app.TableDirtyColumns, ...
+                'lastEditedColumn', app.LastEditedTableColumn) ;
+        end
+
+        function tf = isFieldDirty(~, field)
+            tf = isstruct(field.UserData) && ...
+                isfield(field.UserData, 'isDirty') && ...
+                field.UserData.isDirty ;
+        end
+
         function setComponentCount(app, components, preserveData)
             components = max(1, round(components)) ;
             oldData = app.ensureTableCellData() ;
@@ -373,6 +430,9 @@ classdef defineStreamApp < matlab.apps.AppBase
 
             app.UITableStreamData.Data = newData ;
             app.UITableStreamData.RowName = app.buildRowNames(components) ;
+            if ~preserveData
+                app.resetTableDirtyTracking() ;
+            end
         end
 
         function rowNames = buildRowNames(app, components)
@@ -466,7 +526,7 @@ classdef defineStreamApp < matlab.apps.AppBase
                 InputLayerHelper.setFieldFromSI(field, siValue) ;
             end
             if isstruct(userData)
-                userData.isDirty = true ;
+                userData.isDirty = false ;
                 field.UserData = userData ;
             end
         end

@@ -55,6 +55,25 @@ classdef NonIdealReactorApp < handle
         RTD_ExportButton
         RTD_ExportNameField
         RTD_ExportCounter = 1    % Auto-increment counter for export names
+        RTD_RSNameField
+        RTD_RSDefineButton
+        RTD_RSEditButton
+        RTD_RSLoadButton
+        RTD_RSStatusLabel
+        RTD_RS
+        RTD_StreamNameField
+        RTD_StreamDefineButton
+        RTD_StreamEditButton
+        RTD_StreamLoadButton
+        RTD_StreamStatusLabel
+        RTD_feedStream
+        RTD_FQueryPanel
+        RTD_FQueryInputField
+        RTD_FQueryValueLabel
+        RTD_FQueryComplementLabel
+        RTD_FQueryPointHandle = []
+        RTD_FQueryVerticalHandle = []
+        RTD_FQueryHorizontalHandle = []
         RTD_QvLabel
         RTD_QvField
         RTD_ResultTau
@@ -77,6 +96,8 @@ classdef NonIdealReactorApp < handle
 
         % ---- Tab 2: Prediction Models ----
         PredTab
+        Pred_InputMethodDropdown
+        Pred_RefreshButton
         Pred_RTDStatusLabel
         Pred_StreamNameField    % Name of feed Stream in workspace
         Pred_StreamDefineButton % Launches defineStreamApp
@@ -99,7 +120,6 @@ classdef NonIdealReactorApp < handle
         Pred_C_exitTable        % UITable: outlet concentrations per component
         Pred_AxesXbatch
         Pred_AxesIntegrand
-        Pred_AxesComparison
 
         % Stored model objects
         seg_model               % SegregationModel object
@@ -219,6 +239,8 @@ classdef NonIdealReactorApp < handle
             app.createPredictionTab() ;
             app.createTISTab() ;
             app.createDispersionTab() ;
+            app.RTD_updateFQuery() ;
+            app.Pred_inputMethodChanged() ;
 
             % Assign resize callback AFTER all UI components exist
             app.UIFigure.SizeChangedFcn = @(~,~) app.onFigureResize() ;
@@ -318,9 +340,12 @@ classdef NonIdealReactorApp < handle
         end
 
         function dropdown = createDisplayUnitControl(~, parentGrid, row, col, ...
-                labelText, category, defaultUnit, callbackFcn)
+                labelText, category, defaultUnit, callbackFcn, dropdownWidth)
+            if nargin < 9 || isempty(dropdownWidth)
+                dropdownWidth = 110 ;
+            end
             subGrid = uigridlayout(parentGrid, [1 2], ...
-                'ColumnWidth', {'fit', 110}, ...
+                'ColumnWidth', {'fit', dropdownWidth}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 4) ;
             subGrid.Layout.Row = row ;
@@ -337,9 +362,12 @@ classdef NonIdealReactorApp < handle
         end
 
         function dropdown = createDisplayChoiceControl(~, parentGrid, row, col, ...
-                labelText, items, defaultValue, callbackFcn)
+                labelText, items, defaultValue, callbackFcn, dropdownWidth)
+            if nargin < 9 || isempty(dropdownWidth)
+                dropdownWidth = 110 ;
+            end
             subGrid = uigridlayout(parentGrid, [1 2], ...
-                'ColumnWidth', {'fit', 110}, ...
+                'ColumnWidth', {'fit', dropdownWidth}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 4) ;
             subGrid.Layout.Row = row ;
@@ -441,6 +469,8 @@ classdef NonIdealReactorApp < handle
                 case 'RTD'
                     app.RTD_updateResults() ;
                     app.RTD_updatePlots() ;
+                    app.RTD_syncQueryFieldToDisplayUnit() ;
+                    app.RTD_updateFQuery() ;
                 case 'Prediction'
                     app.Pred_updatePlots() ;
                 case 'TIS'
@@ -561,6 +591,80 @@ classdef NonIdealReactorApp < handle
             selectedLabel = reactantInfo.reactantLabels{selectorPos - 1} ;
         end
 
+        function info = getPredictionSpeciesInfo(app, RS)
+            compLabels = app.getReactionComponentLabels(RS) ;
+            speciesIdx = 1:RS.nComponents ;
+            selectorItems = [{'All species'}, compLabels] ;
+            selectorKeys = [{'ALL'}, arrayfun(@(k) sprintf('S%d', k), ...
+                speciesIdx, 'UniformOutput', false)] ;
+            info = struct( ...
+                'componentLabels', {compLabels}, ...
+                'speciesIndices', speciesIdx, ...
+                'selectorItems', {selectorItems}, ...
+                'selectorKeys', {selectorKeys}) ;
+        end
+
+        function ensurePredictionSpeciesSelector(~, dropdown, speciesInfo)
+            if isempty(dropdown) || ~isvalid(dropdown)
+                return
+            end
+
+            if isempty(speciesInfo.speciesIndices)
+                dropdown.Items = {'No species'} ;
+                dropdown.Value = 'No species' ;
+                dropdown.Enable = 'off' ;
+                dropdown.UserData = struct('selectedKey', 'NONE', 'selectorKeys', {{'NONE'}}) ;
+                return
+            end
+
+            dropdown.Enable = 'on' ;
+            currentValue = dropdown.Value ;
+            dropdown.Items = speciesInfo.selectorItems ;
+            if any(strcmp(speciesInfo.selectorItems, currentValue))
+                selectedPos = find(strcmp(speciesInfo.selectorItems, currentValue), 1) ;
+            else
+                selectedPos = 1 ;
+            end
+            dropdown.Value = speciesInfo.selectorItems{selectedPos} ;
+            dropdown.UserData = struct( ...
+                'selectedKey', speciesInfo.selectorKeys{selectedPos}, ...
+                'selectorKeys', {speciesInfo.selectorKeys}) ;
+        end
+
+        function [idx, selectedLabel, selectedKey] = getPredictionSelectedSpecies(~, dropdown, speciesInfo)
+            idx = speciesInfo.speciesIndices ;
+            selectedLabel = 'All species' ;
+            selectedKey = '' ;
+
+            if isempty(idx) || isempty(dropdown) || ~isvalid(dropdown)
+                idx = [] ;
+                selectedLabel = 'No species' ;
+                selectedKey = 'NONE' ;
+                return
+            end
+
+            if ~isstruct(dropdown.UserData) || ~isfield(dropdown.UserData, 'selectedKey')
+                dropdown.UserData = struct( ...
+                    'selectedKey', speciesInfo.selectorKeys{1}, ...
+                    'selectorKeys', {speciesInfo.selectorKeys}) ;
+            end
+
+            selectorPos = find(strcmp(speciesInfo.selectorItems, dropdown.Value), 1) ;
+            if isempty(selectorPos)
+                selectorPos = 1 ;
+            end
+
+            selectedKey = speciesInfo.selectorKeys{selectorPos} ;
+            dropdown.UserData.selectedKey = selectedKey ;
+
+            if selectorPos == 1
+                return
+            end
+
+            idx = speciesInfo.speciesIndices(selectorPos - 1) ;
+            selectedLabel = speciesInfo.componentLabels{selectorPos - 1} ;
+        end
+
         function X = computeSpeciesConversion(~, C0, C_exit, indices)
             X = zeros(1, numel(indices)) ;
             for k = 1:numel(indices)
@@ -569,6 +673,91 @@ classdef NonIdealReactorApp < handle
                 X(k) = (C0(i) - C_exit(i)) / denom ;
             end
             X = max(min(X, 1), 0) ;
+        end
+
+        function roles = classifySpeciesRoles(~, RS)
+            nComp = RS.nComponents ;
+            roles = cell(1, nComp) ;
+            for i = 1:nComp
+                hasNeg = any(RS.stochiometricMatrix(:, i) < 0) ;
+                hasPos = any(RS.stochiometricMatrix(:, i) > 0) ;
+                if hasNeg && ~hasPos
+                    roles{i} = 'Reactant' ;
+                elseif ~hasNeg && hasPos
+                    roles{i} = 'Product' ;
+                elseif hasNeg && hasPos
+                    roles{i} = 'Intermediate' ;
+                else
+                    roles{i} = 'Inert' ;
+                end
+            end
+        end
+
+        function updatePredictionSummaryTable(app, ...
+                compLabels, roles, C0, ...
+                C_seg, C_mm, C_cstr, C_pfr, ...
+                reactantIndices, X_seg, X_mm, X_cstr, X_pfr, ...
+                selectedIdx, selectedKey, concDropdown)
+
+            nComp = numel(compLabels) ;
+            summaryRows = cell(nComp, 11) ;
+            concMatrix = [C0(:), C_seg(:), C_mm(:), C_cstr(:), C_pfr(:)] ;
+            concDisplay = reshape(app.convertOutputConcentration(concMatrix(:)', concDropdown), size(concMatrix)) ;
+
+            reactantPosMap = containers.Map('KeyType', 'double', 'ValueType', 'double') ;
+            for k = 1:numel(reactantIndices)
+                reactantPosMap(reactantIndices(k)) = k ;
+            end
+
+            for i = 1:nComp
+                summaryRows{i, 1} = compLabels{i} ;
+                summaryRows{i, 2} = roles{i} ;
+                for j = 1:5
+                    summaryRows{i, j + 2} = sprintf('%.4g', concDisplay(i, j)) ;
+                end
+
+                if isKey(reactantPosMap, i) && strcmp(roles{i}, 'Reactant')
+                    pos = reactantPosMap(i) ;
+                    summaryRows{i, 8} = sprintf('%.4f', X_seg(pos)) ;
+                    summaryRows{i, 9} = sprintf('%.4f', X_mm(pos)) ;
+                    summaryRows{i, 10} = sprintf('%.4f', X_cstr(pos)) ;
+                    summaryRows{i, 11} = sprintf('%.4f', X_pfr(pos)) ;
+                else
+                    summaryRows{i, 8} = '--' ;
+                    summaryRows{i, 9} = '--' ;
+                    summaryRows{i, 10} = '--' ;
+                    summaryRows{i, 11} = '--' ;
+                end
+            end
+
+            rowOrder = 1:nComp ;
+            if ~isempty(selectedIdx) && strcmp(selectedKey, 'ALL')
+                rolePriority = zeros(1, nComp) ;
+                for i = 1:nComp
+                    switch roles{i}
+                        case 'Reactant'
+                            rolePriority(i) = 1 ;
+                        case 'Intermediate'
+                            rolePriority(i) = 2 ;
+                        case 'Product'
+                            rolePriority(i) = 3 ;
+                        otherwise
+                            rolePriority(i) = 4 ;
+                    end
+                end
+                [~, rowOrder] = sortrows([rolePriority(:), (1:nComp)']) ;
+                rowOrder = rowOrder(:)' ;
+            elseif ~isempty(selectedIdx) && ~strcmp(selectedKey, 'ALL')
+                remaining = setdiff(1:nComp, selectedIdx(1), 'stable') ;
+                rowOrder = [selectedIdx(1), remaining] ;
+            end
+
+            app.Pred_C_exitTable.ColumnName = { ...
+                'Component', 'Role', 'C0', 'Seg. C_exit', 'MM C_exit', ...
+                'CSTR C_exit', 'PFR C_exit', ...
+                'X_seg', 'X_MM', 'X_CSTR', 'X_PFR'} ;
+            app.Pred_C_exitTable.ColumnWidth = {100, 90, 80, 85, 85, 95, 95, 75, 75, 85, 85} ;
+            app.Pred_C_exitTable.Data = summaryRows(rowOrder, :) ;
         end
 
         function ensureComponentSelectorItems(app, dropdown, nComp)
@@ -695,12 +884,12 @@ classdef NonIdealReactorApp < handle
 
             % Main grid: left panel (controls) + right panel (plots)
             mainGrid = uigridlayout(app.RTDTab, [1 2]) ;
-            mainGrid.ColumnWidth = {320, '1x'} ;
+            mainGrid.ColumnWidth = {350, '1x'} ;
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'RTD Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [30 2]) ;
-            leftGrid.RowHeight = repmat({28}, 1, 30) ;
+            leftGrid = uigridlayout(leftPanel, [24 2]) ;
+            leftGrid.RowHeight = repmat({28}, 1, 24) ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
@@ -913,16 +1102,16 @@ classdef NonIdealReactorApp < handle
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 11 ; lbl.Layout.Column = [1 2] ;
             unitsGrid = uigridlayout(leftGrid, [2 2], ...
-                'ColumnWidth', {'1x', '1x'}, ...
+                'ColumnWidth', {'1.15x', '0.9x'}, ...
                 'RowHeight', {28, 28}, ...
                 'Padding', [0 0 0 0], ...
                 'ColumnSpacing', 6) ;
             unitsGrid.Layout.Row = 12 ;
             unitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.RTD.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('RTD')) ;
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('RTD'), 92) ;
             app.DisplayControls.RTD.volume = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Volume:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('RTD')) ;
+                unitsGrid, 1, 2, 'Volume:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('RTD'), 78) ;
 
             % Row 13: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
@@ -1012,6 +1201,8 @@ classdef NonIdealReactorApp < handle
 
             % E(t) plot
             app.RTD_AxesEt = uiaxes(plotGrid) ;
+            app.RTD_AxesEt.Layout.Row = 1 ;
+            app.RTD_AxesEt.Layout.Column = 1 ;
             title(app.RTD_AxesEt, 'E(t)') ;
             xlabel(app.RTD_AxesEt, 't [s]') ;
             ylabel(app.RTD_AxesEt, 'E(t) [1/s]') ;
@@ -1019,6 +1210,8 @@ classdef NonIdealReactorApp < handle
 
             % F(t) plot
             app.RTD_AxesFt = uiaxes(plotGrid) ;
+            app.RTD_AxesFt.Layout.Row = 1 ;
+            app.RTD_AxesFt.Layout.Column = 2 ;
             title(app.RTD_AxesFt, 'F(t)') ;
             xlabel(app.RTD_AxesFt, 't [s]') ;
             ylabel(app.RTD_AxesFt, 'F(t)') ;
@@ -1026,10 +1219,131 @@ classdef NonIdealReactorApp < handle
 
             % E(theta) plot
             app.RTD_AxesEtheta = uiaxes(plotGrid) ;
+            app.RTD_AxesEtheta.Layout.Row = 2 ;
+            app.RTD_AxesEtheta.Layout.Column = 1 ;
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
             xlabel(app.RTD_AxesEtheta, '\Theta = t/\tau') ;
             ylabel(app.RTD_AxesEtheta, 'E(\Theta)') ;
             grid(app.RTD_AxesEtheta, 'on') ;
+
+            % RTD utilities panel
+            app.RTD_FQueryPanel = uipanel(plotGrid, 'Title', 'RTD Utilities') ;
+            app.RTD_FQueryPanel.Layout.Row = 2 ;
+            app.RTD_FQueryPanel.Layout.Column = 2 ;
+            queryGrid = uigridlayout(app.RTD_FQueryPanel, [12 2]) ;
+            queryGrid.RowHeight = {22, 28, 24, 22, 28, 28, 38, 22, 28, 28, 38, '1x'} ;
+            queryGrid.ColumnWidth = {'1x', '1x'} ;
+            queryGrid.Padding = [8 8 8 8] ;
+            queryGrid.RowSpacing = 4 ;
+            queryGrid.ColumnSpacing = 6 ;
+
+            lbl = uilabel(queryGrid, 'Text', 'F(t) Query', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 1 ;
+            lbl.Layout.Column = [1 2] ;
+            lbl.Tooltip = ['Interpret F(t) as in exercise 51(c): x is elapsed time, ' ...
+                'y = F(t) is the fraction of effluent that has already left, ' ...
+                'and 1-y is the fraction that still remains inside the reactor.'] ;
+
+            lbl = uilabel(queryGrid, 'Text', 'x = elapsed time:') ;
+            lbl.Tooltip = 'Elapsed time since the tracer entered the reactor, expressed in the selected display time unit.' ;
+            app.RTD_FQueryInputField = uieditfield(queryGrid, 'text', ...
+                'Value', '0', ...
+                'Tooltip', 'Elapsed time x in the selected RTD display time unit.', ...
+                'ValueChangedFcn', @(~,~) app.RTD_queryValueChanged()) ;
+            app.RTD_FQueryInputField.Layout.Row = 2 ;
+            app.RTD_FQueryInputField.Layout.Column = 2 ;
+            app.setTooltip('Elapsed time x in the selected RTD display time unit.', ...
+                lbl, app.RTD_FQueryInputField) ;
+
+            lbl = uilabel(queryGrid, 'Text', 'y = F(t):') ;
+            app.RTD_FQueryValueLabel = uilabel(queryGrid, 'Text', '--') ;
+            app.RTD_FQueryValueLabel.Layout.Row = 3 ;
+            app.RTD_FQueryValueLabel.Layout.Column = 2 ;
+            app.setTooltip(['Fraction of the effluent that has already left the reactor ' ...
+                'by elapsed time x.'], lbl, app.RTD_FQueryValueLabel) ;
+
+            lbl = uilabel(queryGrid, 'Text', '1 - y:') ;
+            app.RTD_FQueryComplementLabel = uilabel(queryGrid, 'Text', '--') ;
+            app.RTD_FQueryComplementLabel.Layout.Row = 4 ;
+            app.RTD_FQueryComplementLabel.Layout.Column = 2 ;
+            app.setTooltip(['Fraction of the effluent that still remains inside the reactor ' ...
+                'at elapsed time x.'], lbl, app.RTD_FQueryComplementLabel) ;
+
+            lbl = uilabel(queryGrid, 'Text', 'Reaction System', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 5 ;
+            lbl.Layout.Column = [1 2] ;
+
+            app.RTD_RSDefineButton = uibutton(queryGrid, 'push', ...
+                'Text', 'New RS', ...
+                'BackgroundColor', [0.85 0.90 1.0], ...
+                'Tooltip', 'Create a new Reaction System from scratch', ...
+                'ButtonPushedFcn', @(~,~) defineReactionSysApp()) ;
+            app.RTD_RSDefineButton.Layout.Row = 6 ;
+            app.RTD_RSDefineButton.Layout.Column = 1 ;
+            app.RTD_RSEditButton = uibutton(queryGrid, 'push', ...
+                'Text', 'Edit RS', ...
+                'BackgroundColor', [1.0 0.95 0.80], ...
+                'Tooltip', 'Edit the currently loaded Reaction System', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.RTD_editRS()) ;
+            app.RTD_RSEditButton.Layout.Row = 6 ;
+            app.RTD_RSEditButton.Layout.Column = 2 ;
+            app.RTD_RSNameField = uieditfield(queryGrid, 'text', ...
+                'Value', 'RS', ...
+                'Tooltip', 'Name of the ReactionSys variable in the MATLAB workspace') ;
+            app.RTD_RSNameField.Layout.Row = 7 ;
+            app.RTD_RSNameField.Layout.Column = 1 ;
+            app.RTD_RSLoadButton = uibutton(queryGrid, 'push', ...
+                'Text', 'Load', ...
+                'BackgroundColor', [0.85 0.95 0.85], ...
+                'Tooltip', 'Load the ReactionSys object from the workspace', ...
+                'ButtonPushedFcn', @(~,~) app.RTD_loadRS()) ;
+            app.RTD_RSLoadButton.Layout.Row = 7 ;
+            app.RTD_RSLoadButton.Layout.Column = 2 ;
+            app.RTD_RSStatusLabel = uilabel(queryGrid, ...
+                'Text', 'No Reaction System loaded', ...
+                'FontColor', [0.6 0 0], ...
+                'WordWrap', 'on') ;
+            app.RTD_RSStatusLabel.Layout.Row = 8 ;
+            app.RTD_RSStatusLabel.Layout.Column = [1 2] ;
+
+            lbl = uilabel(queryGrid, 'Text', 'Feed Stream', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 9 ;
+            lbl.Layout.Column = [1 2] ;
+
+            app.RTD_StreamDefineButton = uibutton(queryGrid, 'push', ...
+                'Text', 'New Stream', ...
+                'BackgroundColor', [0.85 0.90 1.0], ...
+                'Tooltip', 'Create a new feed stream with defineStreamApp', ...
+                'ButtonPushedFcn', @(~,~) defineStreamApp()) ;
+            app.RTD_StreamDefineButton.Layout.Row = 10 ;
+            app.RTD_StreamDefineButton.Layout.Column = 1 ;
+            app.RTD_StreamEditButton = uibutton(queryGrid, 'push', ...
+                'Text', 'Edit Stream', ...
+                'BackgroundColor', [1.0 0.95 0.80], ...
+                'Tooltip', 'Edit the currently loaded feed stream', ...
+                'Enable', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.RTD_editStream()) ;
+            app.RTD_StreamEditButton.Layout.Row = 10 ;
+            app.RTD_StreamEditButton.Layout.Column = 2 ;
+            app.RTD_StreamNameField = uieditfield(queryGrid, 'text', ...
+                'Value', 'feed', ...
+                'Tooltip', 'Name of the feed Stream variable in the MATLAB workspace') ;
+            app.RTD_StreamNameField.Layout.Row = 11 ;
+            app.RTD_StreamNameField.Layout.Column = 1 ;
+            app.RTD_StreamLoadButton = uibutton(queryGrid, 'push', ...
+                'Text', 'Load', ...
+                'BackgroundColor', [0.85 0.95 0.85], ...
+                'Tooltip', 'Load the feed Stream object from the workspace', ...
+                'ButtonPushedFcn', @(~,~) app.RTD_loadStream()) ;
+            app.RTD_StreamLoadButton.Layout.Row = 11 ;
+            app.RTD_StreamLoadButton.Layout.Column = 2 ;
+            app.RTD_StreamStatusLabel = uilabel(queryGrid, ...
+                'Text', 'No feed stream loaded', ...
+                'FontColor', [0.6 0 0], ...
+                'WordWrap', 'on') ;
+            app.RTD_StreamStatusLabel.Layout.Row = 12 ;
+            app.RTD_StreamStatusLabel.Layout.Column = [1 2] ;
 
         end
 
@@ -1318,6 +1632,7 @@ classdef NonIdealReactorApp < handle
 
                 % Update plots
                 app.RTD_updatePlots() ;
+                app.RTD_updateFQuery() ;
 
                 % Enable export button
                 app.RTD_ExportButton.Enable = 'on' ;
@@ -1327,6 +1642,10 @@ classdef NonIdealReactorApp < handle
                     app.Pred_RTDStatusLabel.Text = sprintf('%s | tau=%.2f, sigma2=%.2f', ...
                         source, app.rtd.tau, app.rtd.sigma2) ;
                     app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
+                end
+                if ~isempty(app.Pred_InputMethodDropdown) && ...
+                        contains(app.Pred_InputMethodDropdown.Value, 'From Calculated')
+                    app.Pred_syncFromRTDTab() ;
                 end
 
                 app.updateStatus('Ready') ;
@@ -1412,6 +1731,127 @@ classdef NonIdealReactorApp < handle
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
             xlabel(app.RTD_AxesEtheta, '\Theta = t/\tau') ;
             ylabel(app.RTD_AxesEtheta, 'E(\Theta)') ;
+        end
+
+        function RTD_queryValueChanged(app)
+            if isempty(app.RTD_FQueryInputField) || ~isvalid(app.RTD_FQueryInputField)
+                return
+            end
+
+            queryText = strtrim(app.RTD_FQueryInputField.Value) ;
+            if isempty(queryText)
+                app.RTD_FQueryInputField.UserData = [] ;
+                app.RTD_updateFQuery() ;
+                return
+            end
+
+            try
+                queryValue = InputLayerHelper.parseArithmeticExpression(queryText) ;
+                querySI = UnitConverterHelper.convertToSI('Time', queryValue, ...
+                    app.DisplayControls.RTD.time.Value) ;
+                app.RTD_FQueryInputField.UserData = struct('querySI', querySI) ;
+                app.RTD_syncQueryFieldToDisplayUnit() ;
+            catch
+                app.RTD_FQueryInputField.UserData = [] ;
+            end
+            app.RTD_updateFQuery() ;
+        end
+
+        function RTD_syncQueryFieldToDisplayUnit(app)
+            if isempty(app.RTD_FQueryInputField) || ~isvalid(app.RTD_FQueryInputField)
+                return
+            end
+
+            if ~isstruct(app.RTD_FQueryInputField.UserData) || ...
+                    ~isfield(app.RTD_FQueryInputField.UserData, 'querySI')
+                return
+            end
+
+            queryDisplay = UnitConverterHelper.convertFromSI('Time', ...
+                app.RTD_FQueryInputField.UserData.querySI, app.DisplayControls.RTD.time.Value) ;
+            app.RTD_FQueryInputField.Value = sprintf('%.6g', queryDisplay) ;
+        end
+
+        function RTD_updateFQuery(app)
+            if isempty(app.RTD_FQueryValueLabel) || ~isvalid(app.RTD_FQueryValueLabel)
+                return
+            end
+
+            if isempty(app.rtd) || ~isstruct(app.RTD_FQueryInputField.UserData) || ...
+                    ~isfield(app.RTD_FQueryInputField.UserData, 'querySI')
+                app.RTD_FQueryValueLabel.Text = '--' ;
+                app.RTD_FQueryComplementLabel.Text = '--' ;
+                app.RTD_clearFQueryOverlay() ;
+                return
+            end
+
+            querySI = app.RTD_FQueryInputField.UserData.querySI ;
+            tData = app.rtd.t(:) ;
+            fData = app.rtd.Ft(:) ;
+
+            if isempty(tData) || isempty(fData)
+                app.RTD_FQueryValueLabel.Text = '--' ;
+                app.RTD_FQueryComplementLabel.Text = '--' ;
+                app.RTD_clearFQueryOverlay() ;
+                return
+            end
+
+            if querySI <= tData(1)
+                fValue = 0 ;
+            elseif querySI >= tData(end)
+                fValue = 1 ;
+            else
+                fValue = interp1(tData, fData, querySI, 'linear') ;
+            end
+
+            fValue = min(max(fValue, 0), 1) ;
+            app.RTD_FQueryValueLabel.Text = sprintf('%.6f', fValue) ;
+            app.RTD_FQueryComplementLabel.Text = sprintf('%.6f', 1 - fValue) ;
+            app.RTD_drawFQueryOverlay(querySI, fValue) ;
+        end
+
+        function RTD_clearFQueryOverlay(app)
+            overlayHandles = { ...
+                app.RTD_FQueryPointHandle, ...
+                app.RTD_FQueryVerticalHandle, ...
+                app.RTD_FQueryHorizontalHandle} ;
+
+            for k = 1:numel(overlayHandles)
+                h = overlayHandles{k} ;
+                if ~isempty(h) && isgraphics(h)
+                    delete(h) ;
+                end
+            end
+
+            app.RTD_FQueryPointHandle = [] ;
+            app.RTD_FQueryVerticalHandle = [] ;
+            app.RTD_FQueryHorizontalHandle = [] ;
+        end
+
+        function RTD_drawFQueryOverlay(app, querySI, fValue)
+            if isempty(app.RTD_AxesFt) || ~isvalid(app.RTD_AxesFt)
+                return
+            end
+
+            app.RTD_clearFQueryOverlay() ;
+
+            timeDD = app.DisplayControls.RTD.time ;
+            xQuery = app.convertOutputFromTime('time', querySI, timeDD) ;
+            xLimits = xlim(app.RTD_AxesFt) ;
+            yLimits = ylim(app.RTD_AxesFt) ;
+
+            hold(app.RTD_AxesFt, 'on') ;
+            app.RTD_FQueryVerticalHandle = plot(app.RTD_AxesFt, ...
+                [xQuery xQuery], [yLimits(1) fValue], ...
+                'k--', 'LineWidth', 1, 'HandleVisibility', 'off') ;
+            app.RTD_FQueryHorizontalHandle = plot(app.RTD_AxesFt, ...
+                [xLimits(1) xQuery], [fValue fValue], ...
+                'k--', 'LineWidth', 1, 'HandleVisibility', 'off') ;
+            app.RTD_FQueryPointHandle = plot(app.RTD_AxesFt, ...
+                xQuery, fValue, 'ko', 'MarkerSize', 6, ...
+                'MarkerFaceColor', [1 0.8 0], ...
+                'HandleVisibility', 'off') ;
+            hold(app.RTD_AxesFt, 'off') ;
         end
 
 
@@ -1504,6 +1944,65 @@ classdef NonIdealReactorApp < handle
             end
         end
 
+        function RTD_loadRS(app)
+            rsName = app.RTD_RSNameField.Value ;
+            try
+                RS = evalin('base', rsName) ;
+                if ~isa(RS, 'ReactionSys')
+                    error('Variable "%s" is not a ReactionSys object.', rsName) ;
+                end
+                app.RTD_RS = RS ;
+                app.RTD_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', ...
+                    RS.nReactions, RS.nComponents) ;
+                app.RTD_RSStatusLabel.FontColor = [0 0.5 0] ;
+                app.RTD_RSEditButton.Enable = 'on' ;
+
+                if ~isempty(app.RTD_feedStream) && ...
+                        length(app.RTD_feedStream.concentration) ~= RS.nComponents
+                    app.RTD_feedStream = [] ;
+                    app.RTD_StreamEditButton.Enable = 'off' ;
+                    app.RTD_StreamStatusLabel.Text = 'Loaded stream cleared: its component count does not match the new Reaction System.' ;
+                    app.RTD_StreamStatusLabel.FontColor = [0.8 0 0] ;
+                end
+                if ~isempty(app.Pred_InputMethodDropdown) && ...
+                        contains(app.Pred_InputMethodDropdown.Value, 'From Calculated')
+                    app.Pred_syncFromRTDTab() ;
+                end
+            catch ME
+                app.RTD_RSStatusLabel.Text = ME.message ;
+                app.RTD_RSStatusLabel.FontColor = [0.8 0 0] ;
+            end
+        end
+
+        function RTD_editRS(app)
+            if isempty(app.RTD_RS)
+                uialert(app.UIFigure, 'No Reaction System loaded to edit.', 'Nothing to Edit') ;
+                return
+            end
+            defineReactionSysApp(app.RTD_RS, app.RTD_RSNameField.Value) ;
+        end
+
+        function RTD_loadStream(app)
+            [S, ok] = app.loadStreamFromWorkspace( ...
+                app.RTD_StreamNameField, app.RTD_StreamStatusLabel, app.RTD_RS) ;
+            if ok
+                app.RTD_feedStream = S ;
+                app.RTD_StreamEditButton.Enable = 'on' ;
+                if ~isempty(app.Pred_InputMethodDropdown) && ...
+                        contains(app.Pred_InputMethodDropdown.Value, 'From Calculated')
+                    app.Pred_syncFromRTDTab() ;
+                end
+            end
+        end
+
+        function RTD_editStream(app)
+            if isempty(app.RTD_feedStream)
+                uialert(app.UIFigure, 'No feed stream loaded to edit.', 'Nothing to Edit') ;
+                return
+            end
+            defineStreamApp(app.RTD_feedStream, 'edit', app.RTD_StreamNameField.Value) ;
+        end
+
         %% ============== TAB 2: PREDICTION MODELS ==============
         function createPredictionTab(app)
 
@@ -1515,31 +2014,50 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Prediction Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [16 2]) ;
-            rowH = repmat({28}, 1, 16) ; rowH{11} = 56 ; rowH{16} = 80 ;
+            leftGrid = uigridlayout(leftPanel, [13 2]) ;
+            rowH = repmat({28}, 1, 13) ; rowH{13} = 84 ;
             leftGrid.RowHeight = rowH ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
             leftGrid.RowSpacing = 5 ;
 
-            % Row 1: RTD status
-            uilabel(leftGrid, 'Text', 'Current RTD:', ...
+            % Row 1: Input method
+            lbl = uilabel(leftGrid, 'Text', 'Input:', 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 1 ; lbl.Layout.Column = 1 ;
+            methodSubGrid = uigridlayout(leftGrid, [1 2], ...
+                'ColumnWidth', {'1x', 28}, 'Padding', [0 0 0 0], 'ColumnSpacing', 2) ;
+            methodSubGrid.Layout.Row = 1 ; methodSubGrid.Layout.Column = 2 ;
+            app.Pred_InputMethodDropdown = uidropdown(methodSubGrid, ...
+                'Items', {'Manual', 'From Calculated Data'}, ...
+                'Value', 'Manual', ...
+                'ValueChangedFcn', @(~,~) app.Pred_inputMethodChanged()) ;
+            app.Pred_RefreshButton = uibutton(methodSubGrid, 'push', ...
+                'Text', char(8635), 'FontSize', 12, ...
+                'Tooltip', 'Refresh imported data from Tab 1', ...
+                'Visible', 'off', ...
+                'ButtonPushedFcn', @(~,~) app.Pred_inputMethodChanged()) ;
+
+            % Row 2: RTD status
+            lbl = uilabel(leftGrid, 'Text', 'Current RTD:', ...
                 'FontWeight', 'bold') ;
+            lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
             app.Pred_RTDStatusLabel = uilabel(leftGrid, ...
                 'Text', 'None (generate in Tab 1)', ...
                 'FontColor', [0.8 0 0]) ;
+            app.Pred_RTDStatusLabel.Layout.Row = 2 ;
+            app.Pred_RTDStatusLabel.Layout.Column = 2 ;
 
-            % Row 2: Reaction System header
+            % Row 3: Reaction System header
             lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
-            lbl.Layout.Row = 2 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 3 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 3: New RS + Edit RS buttons
+            % Row 4: New RS + Edit RS buttons
             app.Pred_RSDefineButton = uibutton(leftGrid, 'push', ...
                 'Text', 'New RS', ...
                 'BackgroundColor', [0.85 0.90 1.0], ...
                 'Tooltip', 'Create a new Reaction System from scratch', ...
                 'ButtonPushedFcn', @(~,~) defineReactionSysApp()) ;
-            app.Pred_RSDefineButton.Layout.Row = 3 ;
+            app.Pred_RSDefineButton.Layout.Row = 4 ;
             app.Pred_RSDefineButton.Layout.Column = 1 ;
 
             app.Pred_RSEditButton = uibutton(leftGrid, 'push', ...
@@ -1548,38 +2066,38 @@ classdef NonIdealReactorApp < handle
                 'Tooltip', 'Edit the currently loaded Reaction System', ...
                 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Pred_editRS()) ;
-            app.Pred_RSEditButton.Layout.Row = 3 ;
+            app.Pred_RSEditButton.Layout.Row = 4 ;
             app.Pred_RSEditButton.Layout.Column = 2 ;
 
-            % Row 4: RS name field + Load button
+            % Row 5: RS name field + Load button
             app.Pred_RSNameField = uieditfield(leftGrid, 'text', ...
                 'Value', 'RS', ...
                 'Tooltip', 'Name of the ReactionSys variable in the MATLAB workspace') ;
-            app.Pred_RSNameField.Layout.Row = 4 ; app.Pred_RSNameField.Layout.Column = 1 ;
+            app.Pred_RSNameField.Layout.Row = 5 ; app.Pred_RSNameField.Layout.Column = 1 ;
             app.Pred_RSLoadButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Load from Workspace', ...
                 'BackgroundColor', [0.85 0.95 0.85], ...
                 'Tooltip', 'Load the ReactionSys object from the workspace', ...
                 'ButtonPushedFcn', @(~,~) app.Pred_loadRS()) ;
-            app.Pred_RSLoadButton.Layout.Row = 4 ; app.Pred_RSLoadButton.Layout.Column = 2 ;
+            app.Pred_RSLoadButton.Layout.Row = 5 ; app.Pred_RSLoadButton.Layout.Column = 2 ;
 
-            % Row 5: RS status
+            % Row 6: RS status
             app.Pred_RSStatusLabel = uilabel(leftGrid, ...
                 'Text', 'No Reaction System loaded', 'FontColor', [0.6 0 0]) ;
-            app.Pred_RSStatusLabel.Layout.Row = 5 ;
+            app.Pred_RSStatusLabel.Layout.Row = 6 ;
             app.Pred_RSStatusLabel.Layout.Column = [1 2] ;
 
-            % Row 6: Feed Stream header
+            % Row 7: Feed Stream header
             lbl = uilabel(leftGrid, 'Text', 'Feed Stream:', 'FontWeight', 'bold') ;
-            lbl.Layout.Row = 6 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 7 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 7: New Stream + Edit Stream buttons
+            % Row 8: New Stream + Edit Stream buttons
             app.Pred_StreamDefineButton = uibutton(leftGrid, 'push', ...
                 'Text', 'New Stream', ...
                 'BackgroundColor', [0.85 0.90 1.0], ...
                 'Tooltip', 'Create a new feed stream with defineStreamApp', ...
                 'ButtonPushedFcn', @(~,~) defineStreamApp()) ;
-            app.Pred_StreamDefineButton.Layout.Row = 7 ;
+            app.Pred_StreamDefineButton.Layout.Row = 8 ;
             app.Pred_StreamDefineButton.Layout.Column = 1 ;
             app.Pred_StreamEditButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Edit Stream', ...
@@ -1587,82 +2105,59 @@ classdef NonIdealReactorApp < handle
                 'Tooltip', 'Edit the currently loaded feed stream', ...
                 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Pred_editStream()) ;
-            app.Pred_StreamEditButton.Layout.Row = 7 ;
+            app.Pred_StreamEditButton.Layout.Row = 8 ;
             app.Pred_StreamEditButton.Layout.Column = 2 ;
 
-            % Row 8: stream name + Load button
+            % Row 9: stream name + Load button
             app.Pred_StreamNameField = uieditfield(leftGrid, 'text', ...
                 'Value', 'feed', ...
                 'Tooltip', 'Name of the feed Stream variable in the MATLAB workspace') ;
-            app.Pred_StreamNameField.Layout.Row = 8 ; app.Pred_StreamNameField.Layout.Column = 1 ;
+            app.Pred_StreamNameField.Layout.Row = 9 ; app.Pred_StreamNameField.Layout.Column = 1 ;
             app.Pred_StreamLoadButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Load from Workspace', ...
                 'BackgroundColor', [0.85 0.95 0.85], ...
                 'Tooltip', 'Load the feed Stream object from the workspace', ...
                 'ButtonPushedFcn', @(~,~) app.Pred_loadStream()) ;
-            app.Pred_StreamLoadButton.Layout.Row = 8 ; app.Pred_StreamLoadButton.Layout.Column = 2 ;
+            app.Pred_StreamLoadButton.Layout.Row = 9 ; app.Pred_StreamLoadButton.Layout.Column = 2 ;
 
-            % Row 9: Stream status
+            % Row 10: Stream status
             app.Pred_StreamStatusLabel = uilabel(leftGrid, ...
                 'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
-            app.Pred_StreamStatusLabel.Layout.Row = 9 ;
+            app.Pred_StreamStatusLabel.Layout.Row = 10 ;
             app.Pred_StreamStatusLabel.Layout.Column = [1 2] ;
 
-            % Row 10: Compute button
+            % Row 11: Compute button
             app.Pred_ComputeButton = uibutton(leftGrid, 'push', ...
                 'Text', 'Compute', ...
                 'FontWeight', 'bold', ...
                 'BackgroundColor', [0.3 0.6 0.9], ...
                 'FontColor', 'white', ...
                 'ButtonPushedFcn', @(~,~) app.Pred_compute()) ;
-            app.Pred_ComputeButton.Layout.Row = 10 ;
+            app.Pred_ComputeButton.Layout.Row = 11 ;
             app.Pred_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 11: Display units
-            unitsGrid = uigridlayout(leftGrid, [2 2], ...
-                'ColumnWidth', {'1x', '1x'}, ...
-                'RowHeight', {24, 24}, ...
-                'Padding', [0 0 0 0], ...
-                'ColumnSpacing', 4) ;
-            unitsGrid.Layout.Row = 11 ;
-            unitsGrid.Layout.Column = [1 2] ;
-            app.DisplayControls.Prediction.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Prediction')) ;
-            app.DisplayControls.Prediction.concentration = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Prediction')) ;
-            app.DisplayControls.Prediction.component = app.createDisplayChoiceControl( ...
-                unitsGrid, 2, [1 2], 'Plot:', {'All reactants'}, 'All reactants', @(~,~) app.refreshDisplayUnits('Prediction')) ;
-
-            % Row 12: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+            % Row 12: Display units title
+            lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
             lbl.Layout.Row = 12 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 13: Segregation result
-            lbl = uilabel(leftGrid, 'Text', 'Segregation X<sub>seg</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 13 ; lbl.Layout.Column = 1 ;
-            app.Pred_ResultSegLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultSegLabel.Layout.Row = 13 ; app.Pred_ResultSegLabel.Layout.Column = 2 ;
-            app.setTooltip('Conversion of the selected reactant predicted by the segregation model.', ...
-                lbl, app.Pred_ResultSegLabel) ;
-
-            % Row 14: Max Mixedness result
-            lbl = uilabel(leftGrid, 'Text', 'Max Mixedness X<sub>MM</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 14 ; lbl.Layout.Column = 1 ;
-            app.Pred_ResultMMLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultMMLabel.Layout.Row = 14 ; app.Pred_ResultMMLabel.Layout.Column = 2 ;
-            app.setTooltip('Conversion of the selected reactant predicted by the maximum mixedness model.', ...
-                lbl, app.Pred_ResultMMLabel) ;
-
-            % Row 15: Interpretation
-            lbl = uilabel(leftGrid, 'Text', 'Interpretation:') ;
-            lbl.Layout.Row = 15 ; lbl.Layout.Column = 1 ;
-            app.Pred_ResultBoundsLabel = uilabel(leftGrid, 'Text', '--') ;
-            app.Pred_ResultBoundsLabel.Layout.Row = 16 ;
-            app.Pred_ResultBoundsLabel.Layout.Column = [1 2] ;
-            app.Pred_ResultBoundsLabel.WordWrap = 'on' ;
-            app.setTooltip('Text summary of the reactant conversion currently represented in the prediction plots.', ...
-                lbl, app.Pred_ResultBoundsLabel) ;
+            % Row 13: Display units
+            unitsGrid = uigridlayout(leftGrid, [3 2], ...
+                'ColumnWidth', {'1x', '1x'}, ...
+                'RowHeight', {24, 24, 24}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 4, ...
+                'RowSpacing', 4) ;
+            unitsGrid.Layout.Row = 13 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.Prediction.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Prediction'), 84) ;
+            app.DisplayControls.Prediction.concentration = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Prediction'), 92) ;
+            app.DisplayControls.Prediction.reactant = app.createDisplayChoiceControl( ...
+                unitsGrid, 2, [1 2], 'Reactants:', {'All reactants'}, 'All reactants', @(~,~) app.refreshDisplayUnits('Prediction'), 118) ;
+            app.DisplayControls.Prediction.species = app.createDisplayChoiceControl( ...
+                unitsGrid, 3, [1 2], 'Species:', {'All species'}, 'All species', @(~,~) app.refreshDisplayUnits('Prediction'), 118) ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Model Results') ;
@@ -1670,48 +2165,46 @@ classdef NonIdealReactorApp < handle
             plotGrid.RowHeight = {'1x', '1x'} ;
             plotGrid.ColumnWidth = {'1x', '1x'} ;
 
-            % X_batch(t) plot (Segregation)
+            % Conversion comparison bar chart (all models, per reactant)
             app.Pred_AxesXbatch = uiaxes(plotGrid) ;
-            title(app.Pred_AxesXbatch, 'Batch Concentration Profiles') ;
-            xlabel(app.Pred_AxesXbatch, 't [s]') ;
-            ylabel(app.Pred_AxesXbatch, 'C [mol/m^3]') ;
+            title(app.Pred_AxesXbatch, 'Conversion Comparison') ;
+            xlabel(app.Pred_AxesXbatch, 'Reactant') ;
+            ylabel(app.Pred_AxesXbatch, 'Conversion X (-)') ;
             grid(app.Pred_AxesXbatch, 'on') ;
 
-            % Integrand plot (Segregation)
+            % Outlet concentration bar chart for all species
             app.Pred_AxesIntegrand = uiaxes(plotGrid) ;
-            title(app.Pred_AxesIntegrand, 'Segregation Integrand') ;
-            xlabel(app.Pred_AxesIntegrand, 't [s]') ;
-            ylabel(app.Pred_AxesIntegrand, 'C(t)E(t)') ;
+            title(app.Pred_AxesIntegrand, 'Outlet Concentration - All Species') ;
+            xlabel(app.Pred_AxesIntegrand, 'Species') ;
+            ylabel(app.Pred_AxesIntegrand, 'C [mol/m^3]') ;
             grid(app.Pred_AxesIntegrand, 'on') ;
 
-            % Outlet concentrations table (bottom-left)
-            app.Pred_C_exitPanel = uipanel(plotGrid, ...
-                'Title', 'Outlet Concentrations at Exit [mol/m^3]') ;
-            app.Pred_C_exitPanel.Layout.Row = 2 ;
-            app.Pred_C_exitPanel.Layout.Column = 1 ;
+            % Bottom area: combined exit summary table
+            bottomGrid = uigridlayout(plotGrid, [1 1], ...
+                'ColumnWidth', {'1x'}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 0) ;
+            bottomGrid.Layout.Row = 2 ;
+            bottomGrid.Layout.Column = [1 2] ;
+
+            % Exit summary table
+            app.Pred_C_exitPanel = uipanel(bottomGrid, ...
+                'Title', 'Exit Summary - Concentration [mol/m^3]') ;
             app.Pred_C_exitPanel.Tooltip = ...
-                'Per-component outlet concentrations at the reactor exit predicted by each model.' ;
+                'Per-species summary of feed concentration, outlet concentration and reactant conversion for each prediction model.' ;
             tableGrid = uigridlayout(app.Pred_C_exitPanel, [1 1], ...
                 'Padding', [6 6 6 6]) ;
             app.Pred_C_exitLabel = uilabel(tableGrid, ...
                 'Text', '', ...
                 'Visible', 'off') ;
             app.Pred_C_exitTable = uitable(tableGrid, ...
-                'ColumnName', {'Component', 'Segregation', 'Max Mixedness'}, ...
-                'ColumnEditable', [false false false], ...
-                'ColumnWidth', {150, 130, 150}, ...
+                'ColumnName', {'Component', 'Role', 'C0', 'Seg. C_exit', 'MM C_exit', 'CSTR C_exit', 'PFR C_exit', 'X_seg', 'X_MM', 'X_CSTR', 'X_PFR'}, ...
+                'ColumnEditable', false(1, 11), ...
+                'ColumnWidth', {100, 90, 80, 85, 85, 95, 95, 75, 75, 85, 85}, ...
                 'RowName', {}) ;
             app.Pred_C_exitTable.Layout.Row = 1 ;
             app.Pred_C_exitTable.Tooltip = ...
-                'Seg.: segregation-model outlet concentration. MM: maximum-mixedness outlet concentration.' ;
-
-            % Reactant conversion chart (bottom-right)
-            app.Pred_AxesComparison = uiaxes(plotGrid) ;
-            app.Pred_AxesComparison.Layout.Row = 2 ;
-            app.Pred_AxesComparison.Layout.Column = 2 ;
-            title(app.Pred_AxesComparison, 'Reactant Conversions') ;
-            ylabel(app.Pred_AxesComparison, 'Conversion X') ;
-            grid(app.Pred_AxesComparison, 'on') ;
+                'Reactants show concentration and conversion. Products, intermediates and inerts show concentration only.' ;
         end
 
         %% ============== STREAM LOADING HELPER + CALLBACKS ==============
@@ -1794,6 +2287,91 @@ classdef NonIdealReactorApp < handle
 
         %% ============== PREDICTION CALLBACKS ==============
 
+        function Pred_inputMethodChanged(app)
+            useCalculated = contains(app.Pred_InputMethodDropdown.Value, 'From Calculated') ;
+            manualState = 'on' ;
+            refreshState = 'off' ;
+            if useCalculated
+                manualState = 'off' ;
+                refreshState = 'on' ;
+            end
+
+            app.Pred_RSDefineButton.Enable = manualState ;
+            app.Pred_RSEditButton.Enable = 'off' ;
+            app.Pred_RSNameField.Enable = manualState ;
+            app.Pred_RSLoadButton.Enable = manualState ;
+            app.Pred_StreamDefineButton.Enable = manualState ;
+            app.Pred_StreamEditButton.Enable = 'off' ;
+            app.Pred_StreamNameField.Enable = manualState ;
+            app.Pred_StreamLoadButton.Enable = manualState ;
+            app.Pred_RefreshButton.Visible = refreshState ;
+
+            if useCalculated
+                app.Pred_syncFromRTDTab() ;
+            else
+                if ~isempty(app.Pred_RS)
+                    app.Pred_RSEditButton.Enable = 'on' ;
+                end
+                if ~isempty(app.Pred_feedStream)
+                    app.Pred_StreamEditButton.Enable = 'on' ;
+                end
+                if isempty(app.rtd)
+                    app.Pred_RTDStatusLabel.Text = 'None (generate in Tab 1)' ;
+                    app.Pred_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                else
+                    app.Pred_RTDStatusLabel.Text = sprintf('%s | tau=%.2f, sigma2=%.2f', ...
+                        app.RTD_SourceDropdown.Value, app.rtd.tau, app.rtd.sigma2) ;
+                    app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
+                end
+            end
+        end
+
+        function Pred_syncFromRTDTab(app)
+            infoLines = {} ;
+
+            if ~isempty(app.rtd)
+                infoLines{end+1} = sprintf('RTD: %s | tau=%.2f', ...
+                    app.RTD_SourceDropdown.Value, app.rtd.tau) ;
+            else
+                infoLines{end+1} = 'RTD: not loaded' ;
+            end
+
+            if ~isempty(app.RTD_RS)
+                app.Pred_RS = app.RTD_RS ;
+                app.Pred_RSNameField.Value = app.RTD_RSNameField.Value ;
+                app.Pred_RSStatusLabel.Text = sprintf('From Tab 1: %d reactions, %d components', ...
+                    app.RTD_RS.nReactions, app.RTD_RS.nComponents) ;
+                app.Pred_RSStatusLabel.FontColor = [0 0.5 0] ;
+                infoLines{end+1} = sprintf('RS: %s', app.RTD_RSNameField.Value) ;
+            else
+                app.Pred_RS = [] ;
+                app.Pred_RSStatusLabel.Text = 'Tab 1 has no Reaction System loaded' ;
+                app.Pred_RSStatusLabel.FontColor = [0.8 0 0] ;
+                infoLines{end+1} = 'RS: not loaded' ;
+            end
+
+            if ~isempty(app.RTD_feedStream)
+                app.Pred_feedStream = app.RTD_feedStream ;
+                app.Pred_StreamNameField.Value = app.RTD_StreamNameField.Value ;
+                C_str = sprintf('%.4g  ', app.RTD_feedStream.concentration) ;
+                app.Pred_StreamStatusLabel.Text = sprintf('(from Tab 1, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                app.Pred_StreamStatusLabel.FontColor = [0 0.5 0] ;
+                infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
+            else
+                app.Pred_feedStream = [] ;
+                app.Pred_StreamStatusLabel.Text = 'Tab 1 has no feed stream loaded' ;
+                app.Pred_StreamStatusLabel.FontColor = [0.8 0 0] ;
+                infoLines{end+1} = 'Stream: not loaded' ;
+            end
+
+            if any(contains(infoLines, 'not loaded'))
+                app.Pred_RTDStatusLabel.FontColor = [0.8 0 0] ;
+            else
+                app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
+            end
+            app.Pred_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
+        end
+
         function Pred_loadRS(app)
             % Load a ReactionSys object from the MATLAB workspace by name
             rsName = app.Pred_RSNameField.Value ;
@@ -1831,6 +2409,10 @@ classdef NonIdealReactorApp < handle
 
             try
                 app.updateStatus('Computing conversion bounds...') ;
+
+                if contains(app.Pred_InputMethodDropdown.Value, 'From Calculated')
+                    app.Pred_syncFromRTDTab() ;
+                end
 
                 % Check RTD is available
                 if isempty(app.rtd)
@@ -1904,188 +2486,97 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
-            timeDD = app.DisplayControls.Prediction.time ;
             concDD = app.DisplayControls.Prediction.concentration ;
-            t_display = app.convertOutputVectorFromTime('time', app.seg_model.rtd.t, timeDD) ;
-            Et_display = app.convertOutputVectorFromTime('timeInverse', app.seg_model.rtd.Et, timeDD) ;
             RS = app.Pred_RS ;
             C0 = app.Pred_feedStream.concentration(:)' ;
             reactantInfo = app.getPredictionReactantInfo(RS, C0) ;
-            app.ensurePredictionReactantSelector(app.DisplayControls.Prediction.component, reactantInfo) ;
+            speciesInfo = app.getPredictionSpeciesInfo(RS) ;
+            speciesRoles = app.classifySpeciesRoles(RS) ;
+            app.ensurePredictionReactantSelector(app.DisplayControls.Prediction.reactant, reactantInfo) ;
             [selectedIdx, selectedLabel, selectedKey] = app.getPredictionSelectedReactants( ...
-                app.DisplayControls.Prediction.component, reactantInfo) ;
+                app.DisplayControls.Prediction.reactant, reactantInfo) ;
+            app.ensurePredictionSpeciesSelector(app.DisplayControls.Prediction.species, speciesInfo) ;
+            [selectedSpeciesIdx, selectedSpeciesLabel, selectedSpeciesKey] = app.getPredictionSelectedSpecies( ...
+                app.DisplayControls.Prediction.species, speciesInfo) ;
+            [C_out_cstr_ref, ~] = TanksInSeries.solve_sequential(1, RS, C0, app.rtd.tau) ;
+            [C_out_pfr_ref, ~] = TanksInSeries.solve_PFR(RS, C0, app.rtd.tau) ;
 
-            % Segregation: concentration profiles for reactants only
-            cla(app.Pred_AxesXbatch) ;
+            % Compute conversions for all reactants up front
+            X_seg_all  = app.computeSpeciesConversion(C0, app.seg_model.C_exit, reactantInfo.reactantIndices) ;
+            X_mm_all   = app.computeSpeciesConversion(C0, app.mm_model.C_exit,  reactantInfo.reactantIndices) ;
+            X_cstr_all = app.computeSpeciesConversion(C0, C_out_cstr_ref,       reactantInfo.reactantIndices) ;
+            X_pfr_all  = app.computeSpeciesConversion(C0, C_out_pfr_ref,        reactantInfo.reactantIndices) ;
+
+            % Update exit summary panel header
             app.updateConcentrationHeader(app.Pred_C_exitLabel, concDD) ;
-            app.Pred_C_exitPanel.Title = sprintf('Outlet Concentrations at Exit [%s]', ...
+            app.Pred_C_exitPanel.Title = sprintf('Exit Summary - Concentration [%s]', ...
                 app.concentrationUnitName(concDD)) ;
-            app.updateNamedConcentrationTable(app.Pred_C_exitTable, ...
-                reactantInfo.componentLabels, ...
-                [app.seg_model.C_exit(:), app.mm_model.C_exit(:)], ...
-                {'Segregation', 'Max Mixedness'}, concDD) ;
-            C_batch_display = app.convertOutputConcentration(app.seg_model.C_batch, concDD) ;
-            colors = lines(size(app.seg_model.C_batch, 2)) ;
-            if isempty(selectedIdx)
-                title(app.Pred_AxesXbatch, 'Batch Concentration Profiles') ;
-                xlabel(app.Pred_AxesXbatch, app.axisLabelWithUnit('t', timeDD)) ;
-                ylabel(app.Pred_AxesXbatch, app.axisLabelWithUnit('C', concDD)) ;
+
+            % --- PLOT 1: Conversion comparison (grouped bars, selected reactants) ---
+            cla(app.Pred_AxesXbatch) ;
+            nR = numel(reactantInfo.reactantIndices) ;
+            if nR == 0
                 text(app.Pred_AxesXbatch, 0.5, 0.5, 'No reactants with C_0 > 0', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.Pred_AxesXbatch, 'off') ;
-                grid(app.Pred_AxesXbatch, 'on') ;
             else
-                for i = selectedIdx
-                    plot(app.Pred_AxesXbatch, t_display, C_batch_display(:,i)', ...
-                        'Color', colors(i,:), 'LineWidth', 1.5, ...
-                        'DisplayName', reactantInfo.componentLabels{i}) ;
-                    hold(app.Pred_AxesXbatch, 'on') ;
-                end
-                hold(app.Pred_AxesXbatch, 'off') ;
-                if isscalar(selectedIdx)
-                    legend(app.Pred_AxesXbatch, 'off') ;
-                else
-                    legend(app.Pred_AxesXbatch, 'Location', 'best') ;
-                end
-                xlabel(app.Pred_AxesXbatch, app.axisLabelWithUnit('t', timeDD)) ;
-                ylabel(app.Pred_AxesXbatch, app.axisLabelWithUnit('C', concDD)) ;
-                if strcmp(selectedKey, 'ALL')
-                    title(app.Pred_AxesXbatch, 'Batch Concentration Profiles - Reactants') ;
-                else
-                    title(app.Pred_AxesXbatch, sprintf('Batch Concentration Profile - %s', selectedLabel)) ;
-                end
-                grid(app.Pred_AxesXbatch, 'on') ;
+                reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedIdx) ;
+                X_matrix = [X_seg_all(reactantPlotPos)', X_mm_all(reactantPlotPos)', ...
+                            X_cstr_all(reactantPlotPos)', X_pfr_all(reactantPlotPos)'] ;
+                reactantLabels = reactantInfo.componentLabels(selectedIdx) ;
+                nSelectedReactants = numel(selectedIdx) ;
+                b = bar(app.Pred_AxesXbatch, 1:nSelectedReactants, X_matrix, 'grouped') ;
+                app.Pred_AxesXbatch.XTick = 1:nSelectedReactants ;
+                app.Pred_AxesXbatch.XTickLabel = reactantLabels ;
+                ylim(app.Pred_AxesXbatch, [0, max(1, max(X_matrix(:)) * 1.1)]) ;
+                legendLabels = {'Segregation', 'Max Mixedness', 'Ideal CSTR', 'Ideal PFR'} ;
+                legend(app.Pred_AxesXbatch, b(1:min(numel(b), numel(legendLabels))), ...
+                    legendLabels(1:min(numel(b), numel(legendLabels))), 'Location', 'best') ;
             end
+            if strcmp(selectedKey, 'ALL')
+                title(app.Pred_AxesXbatch, 'Conversion Comparison - All Reactants') ;
+            else
+                title(app.Pred_AxesXbatch, sprintf('Conversion Comparison - %s', selectedLabel)) ;
+            end
+            xlabel(app.Pred_AxesXbatch, 'Reactant') ;
+            ylabel(app.Pred_AxesXbatch, 'Conversion X (-)') ;
+            grid(app.Pred_AxesXbatch, 'on') ;
 
+            % --- PLOT 2: Outlet concentration for selected species ---
             cla(app.Pred_AxesIntegrand) ;
-            integrand_display = C_batch_display .* Et_display(:) ;
-            if isempty(selectedIdx)
-                title(app.Pred_AxesIntegrand, 'Segregation Integrand') ;
-                xlabel(app.Pred_AxesIntegrand, app.axisLabelWithUnit('t', timeDD)) ;
-                ylabel(app.Pred_AxesIntegrand, sprintf('C(t)E(t) [%s*%s]', ...
-                    app.concentrationUnitName(concDD), app.timeInverseUnitName(timeDD))) ;
-                text(app.Pred_AxesIntegrand, 0.5, 0.5, 'No reactants with C_0 > 0', ...
+            if isempty(selectedSpeciesIdx)
+                text(app.Pred_AxesIntegrand, 0.5, 0.5, 'No species available', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.Pred_AxesIntegrand, 'off') ;
             else
-                hold(app.Pred_AxesIntegrand, 'on') ;
-                if isscalar(selectedIdx)
-                    i = selectedIdx ;
-                    area(app.Pred_AxesIntegrand, t_display, integrand_display(:, i), ...
-                        'FaceColor', colors(i,:), 'FaceAlpha', 0.45, ...
-                        'EdgeColor', colors(i,:)) ;
-                    title(app.Pred_AxesIntegrand, sprintf('Segregation Integrand - %s', selectedLabel)) ;
-                else
-                    for i = selectedIdx
-                        plot(app.Pred_AxesIntegrand, t_display, integrand_display(:, i), ...
-                            'Color', colors(i,:), 'LineWidth', 1.5, ...
-                            'DisplayName', reactantInfo.componentLabels{i}) ;
-                    end
-                    title(app.Pred_AxesIntegrand, 'Segregation Integrands - Reactants') ;
-                end
-                hold(app.Pred_AxesIntegrand, 'off') ;
-                if isscalar(selectedIdx)
-                    legend(app.Pred_AxesIntegrand, 'off') ;
-                else
-                    legend(app.Pred_AxesIntegrand, 'Location', 'best') ;
-                end
-                xlabel(app.Pred_AxesIntegrand, app.axisLabelWithUnit('t', timeDD)) ;
-                ylabel(app.Pred_AxesIntegrand, sprintf('C(t)E(t) [%s*%s]', ...
-                    app.concentrationUnitName(concDD), app.timeInverseUnitName(timeDD))) ;
+                concMatrix = [app.seg_model.C_exit(:), app.mm_model.C_exit(:), ...
+                              C_out_cstr_ref(:), C_out_pfr_ref(:)] ;  % nComp x 4
+                concDisplay = reshape(app.convertOutputConcentration(concMatrix(:)', concDD), size(concMatrix)) ;
+                C_species = concDisplay(selectedSpeciesIdx, :) ;
+                speciesLabels = speciesInfo.componentLabels(selectedSpeciesIdx) ;
+                nSelectedSpecies = numel(selectedSpeciesIdx) ;
+                b = bar(app.Pred_AxesIntegrand, 1:nSelectedSpecies, C_species, 'grouped') ;
+                app.Pred_AxesIntegrand.XTick = 1:nSelectedSpecies ;
+                app.Pred_AxesIntegrand.XTickLabel = speciesLabels ;
+                legendLabels = {'Segregation', 'Max Mixedness', 'Ideal CSTR', 'Ideal PFR'} ;
+                legend(app.Pred_AxesIntegrand, b(1:min(numel(b), numel(legendLabels))), ...
+                    legendLabels(1:min(numel(b), numel(legendLabels))), 'Location', 'best') ;
             end
+            if strcmp(selectedSpeciesKey, 'ALL')
+                title(app.Pred_AxesIntegrand, 'Outlet Concentration - All Species') ;
+            else
+                title(app.Pred_AxesIntegrand, sprintf('Outlet Concentration - %s', selectedSpeciesLabel)) ;
+            end
+            xlabel(app.Pred_AxesIntegrand, 'Species') ;
+            ylabel(app.Pred_AxesIntegrand, app.axisLabelWithUnit('C', concDD)) ;
             grid(app.Pred_AxesIntegrand, 'on') ;
 
-            X_seg_all = app.computeSpeciesConversion(C0, app.seg_model.C_exit, reactantInfo.reactantIndices) ;
-            X_mm_all = app.computeSpeciesConversion(C0, app.mm_model.C_exit, reactantInfo.reactantIndices) ;
-
-            if isempty(reactantInfo.reactantIndices)
-                app.Pred_ResultSegLabel.Text = '--' ;
-                app.Pred_ResultMMLabel.Text = '--' ;
-                app.Pred_ResultBoundsLabel.Text = 'No reactants with C0 > 0 available for conversion display.' ;
-                app.Pred_ResultBoundsLabel.FontColor = [0.7 0 0] ;
-            else
-                if strcmp(selectedKey, 'ALL')
-                    app.Pred_ResultSegLabel.Text = 'Multiple - see chart' ;
-                    app.Pred_ResultMMLabel.Text = 'Multiple - see chart' ;
-                    app.Pred_ResultBoundsLabel.Text = 'Reactant-specific conversions are shown in the chart below.' ;
-                    app.Pred_ResultBoundsLabel.FontColor = [0 0 0.6] ;
-                else
-                    reactantPos = find(reactantInfo.reactantIndices == selectedIdx(1), 1) ;
-                    X_seg_sel = X_seg_all(reactantPos) ;
-                    X_mm_sel = X_mm_all(reactantPos) ;
-                    app.Pred_ResultSegLabel.Text = sprintf('%.4f', X_seg_sel) ;
-                    app.Pred_ResultMMLabel.Text = sprintf('%.4f', X_mm_sel) ;
-                    if abs(X_seg_sel - X_mm_sel) < 0.001
-                        boundsText = sprintf('%s: Seg ~ MM ~ %.4f', selectedLabel, X_seg_sel) ;
-                        boundsColor = [0 0.5 0] ;
-                    elseif X_seg_sel > X_mm_sel
-                        boundsText = sprintf('%s: Seg=%.4f >= MM=%.4f', ...
-                            selectedLabel, X_seg_sel, X_mm_sel) ;
-                        boundsColor = [0 0 0.7] ;
-                    else
-                        boundsText = sprintf('%s: MM=%.4f >= Seg=%.4f', ...
-                            selectedLabel, X_mm_sel, X_seg_sel) ;
-                        boundsColor = [0.7 0 0] ;
-                    end
-                    app.Pred_ResultBoundsLabel.Text = boundsText ;
-                    app.Pred_ResultBoundsLabel.FontColor = boundsColor ;
-                end
-            end
-
-            % Reactant conversion chart
-            cla(app.Pred_AxesComparison) ;
-            if isempty(reactantInfo.reactantIndices)
-                title(app.Pred_AxesComparison, 'Reactant Conversions') ;
-                ylabel(app.Pred_AxesComparison, 'Conversion X') ;
-                text(app.Pred_AxesComparison, 0.5, 0.5, 'No reactants with C_0 > 0', ...
-                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
-                ylim(app.Pred_AxesComparison, [0 1]) ;
-            else
-                if strcmp(selectedKey, 'ALL')
-                    reactantChartLabels = reactantInfo.reactantLabels ;
-                    X_seg_chart = X_seg_all ;
-                    X_mm_chart = X_mm_all ;
-                    chartTitle = 'Reactant Conversions' ;
-                else
-                    reactantPos = find(reactantInfo.reactantIndices == selectedIdx(1), 1) ;
-                    reactantChartLabels = reactantInfo.reactantLabels(reactantPos) ;
-                    X_seg_chart = X_seg_all(reactantPos) ;
-                    X_mm_chart = X_mm_all(reactantPos) ;
-                    chartTitle = sprintf('Reactant Conversion - %s', selectedLabel) ;
-                end
-                barMatrix = [X_seg_chart(:), X_mm_chart(:)] ;
-                xGroups = 1:numel(reactantChartLabels) ;
-                b = bar(app.Pred_AxesComparison, xGroups, barMatrix, 'grouped') ;
-                if numel(b) >= 1
-                    b(1).FaceColor = [0.3 0.6 0.9] ;
-                    b(1).DisplayName = 'Segregation' ;
-                end
-                if numel(b) >= 2
-                    b(2).FaceColor = [0.8 0.3 0.8] ;
-                    b(2).DisplayName = 'Max Mixedness' ;
-                end
-                set(app.Pred_AxesComparison, 'XTick', xGroups, ...
-                    'XTickLabel', reactantChartLabels) ;
-                ylabel(app.Pred_AxesComparison, 'Conversion X') ;
-                title(app.Pred_AxesComparison, chartTitle) ;
-                legend(app.Pred_AxesComparison, {'Segregation', 'Max Mixedness'}, ...
-                    'Location', 'best') ;
-                ylim(app.Pred_AxesComparison, [0 1.12]) ;
-
-                hold(app.Pred_AxesComparison, 'on') ;
-                xOffsets = [-0.15, 0.15] ;
-                for row = 1:size(barMatrix, 1)
-                    for col = 1:size(barMatrix, 2)
-                        text(app.Pred_AxesComparison, xGroups(row) + xOffsets(col), ...
-                            barMatrix(row, col) + 0.03, ...
-                            sprintf('%.4f', barMatrix(row, col)), ...
-                            'HorizontalAlignment', 'center', ...
-                            'FontWeight', 'bold', 'FontSize', 9) ;
-                    end
-                end
-            end
-            hold(app.Pred_AxesComparison, 'off') ;
-            grid(app.Pred_AxesComparison, 'on') ;
+            % --- Update Exit Summary table ---
+            app.updatePredictionSummaryTable( ...
+                reactantInfo.componentLabels, speciesRoles, C0, ...
+                app.seg_model.C_exit, app.mm_model.C_exit, C_out_cstr_ref, C_out_pfr_ref, ...
+                reactantInfo.reactantIndices, X_seg_all, X_mm_all, X_cstr_all, X_pfr_all, ...
+                selectedIdx, selectedKey, concDD) ;
         end
 
         %% ============== TAB 3: TANKS-IN-SERIES ==============
@@ -2240,11 +2731,11 @@ classdef NonIdealReactorApp < handle
             unitsGrid.Layout.Row = 14 ;
             unitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.TIS.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('TIS')) ;
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('TIS'), 84) ;
             app.DisplayControls.TIS.concentration = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('TIS')) ;
+                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('TIS'), 92) ;
             app.DisplayControls.TIS.component = app.createDisplayChoiceControl( ...
-                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('TIS')) ;
+                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('TIS'), 118) ;
 
             % Row 15: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
@@ -2772,11 +3263,11 @@ classdef NonIdealReactorApp < handle
             unitsGrid.Layout.Row = 16 ;
             unitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.Dispersion.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Dispersion')) ;
+                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Dispersion'), 84) ;
             app.DisplayControls.Dispersion.concentration = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Dispersion')) ;
+                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Dispersion'), 92) ;
             app.DisplayControls.Dispersion.component = app.createDisplayChoiceControl( ...
-                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('Dispersion')) ;
+                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('Dispersion'), 118) ;
 
             % Row 17: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
