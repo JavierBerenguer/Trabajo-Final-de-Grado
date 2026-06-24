@@ -213,7 +213,10 @@ classdef NonIdealReactorApp < handle
 
             % Menu bar
             mFile = uimenu(app.UIFigure, 'Text', 'File') ;
+            uimenu(mFile, 'Text', 'Restart', ...
+                'MenuSelectedFcn', @(~,~) app.restartApp()) ;
             uimenu(mFile, 'Text', 'Exit', ...
+                'Separator', 'on', ...
                 'MenuSelectedFcn', @(~,~) delete(app.UIFigure)) ;
             mTools = uimenu(app.UIFigure, 'Text', 'Tools') ;
             uimenu(mTools, 'Text', 'Unit Converter', ...
@@ -268,6 +271,14 @@ classdef NonIdealReactorApp < handle
 
             % Status bar stretches full width at bottom
             app.StatusBar.Position = [0 0 w 22] ;
+        end
+
+        function restartApp(app)
+            if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
+                delete(app.UIFigure) ;
+            end
+            drawnow ;
+            NonIdealReactorApp() ;
         end
 
         %% ============== HELPER: NUMERIC FIELD + UNIT SELECTOR ==============
@@ -4032,5 +4043,6 @@ classdef NonIdealReactorApp < handle
         end
 
     end
+
 end
 
