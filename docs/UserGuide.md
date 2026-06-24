@@ -166,6 +166,8 @@ This tool is optional during normal use, because most scalar inputs in the app a
 
 ## Menu Bar
 
+- **File > Guardar:** save the current session into the local `saves/` folder as a `.mat` file.
+- **File > Cargar:** restore a previously saved session, including `RTD`, `ReactionSys`, `Stream`, input fields, and display selections.
 - **File > Exit:** close the application
 - **Tools > Unit Converter:** open the unit converter
 - **Help > User Guide:** open this guide inside the app

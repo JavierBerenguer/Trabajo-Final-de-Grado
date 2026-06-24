@@ -211,7 +211,12 @@ classdef NonIdealReactorApp < handle
 
             % Menu bar
             mFile = uimenu(app.UIFigure, 'Text', 'File') ;
+            uimenu(mFile, 'Text', 'Guardar', ...
+                'MenuSelectedFcn', @(~,~) app.saveSession()) ;
+            uimenu(mFile, 'Text', 'Cargar', ...
+                'MenuSelectedFcn', @(~,~) app.loadSession()) ;
             uimenu(mFile, 'Text', 'Restart', ...
+                'Separator', 'on', ...
                 'MenuSelectedFcn', @(~,~) app.restartApp()) ;
             uimenu(mFile, 'Text', 'Exit', ...
                 'Separator', 'on', ...
@@ -254,6 +259,31 @@ classdef NonIdealReactorApp < handle
             app.UIFigure.Visible = 'on' ;
         end
 
+        function saveSessionToFile(app, fullPath, sessionName)
+            if nargin < 2 || isempty(fullPath)
+                error('A valid destination path is required.') ;
+            end
+            if nargin < 3 || isempty(sessionName)
+                [~, sessionName] = fileparts(fullPath) ;
+            end
+
+            sessionData = app.buildSessionSnapshot(sessionName) ;
+            save(fullPath, 'sessionData', '-mat') ;
+        end
+
+        function loadSessionFromFile(app, fullPath)
+            if nargin < 2 || isempty(fullPath)
+                error('A valid session file path is required.') ;
+            end
+
+            loadedData = load(fullPath, 'sessionData') ;
+            if ~isfield(loadedData, 'sessionData') || ~isstruct(loadedData.sessionData)
+                error('The selected file does not contain a valid session snapshot.') ;
+            end
+
+            app.applySessionSnapshot(loadedData.sessionData) ;
+        end
+
     end
 
     methods (Access = private)
@@ -277,6 +307,665 @@ classdef NonIdealReactorApp < handle
             end
             drawnow ;
             NonIdealReactorApp() ;
+        end
+
+        function rootDir = getAppRoot(~)
+            appPath = which('NonIdealReactorApp') ;
+            if isempty(appPath)
+                rootDir = pwd ;
+            else
+                rootDir = fileparts(appPath) ;
+            end
+        end
+
+        function savesDir = getSavesDirectory(app)
+            savesDir = fullfile(app.getAppRoot(), 'saves') ;
+        end
+
+        function controlHandle = getDisplayControl(app, groupName, primaryFieldName, varargin)
+            controlHandle = [] ;
+            if ~isstruct(app.DisplayControls) || ~isfield(app.DisplayControls, groupName)
+                return
+            end
+
+            groupControls = app.DisplayControls.(groupName) ;
+            if ~isstruct(groupControls)
+                return
+            end
+
+            candidateFields = [{primaryFieldName}, varargin] ;
+            for k = 1:numel(candidateFields)
+                fieldName = candidateFields{k} ;
+                if isfield(groupControls, fieldName)
+                    controlHandle = groupControls.(fieldName) ;
+                    return
+                end
+            end
+        end
+
+        function value = getControlValue(~, controlHandle, defaultValue)
+            value = defaultValue ;
+            if isempty(controlHandle) || ~isvalid(controlHandle)
+                return
+            end
+
+            try
+                value = controlHandle.Value ;
+            catch
+            end
+        end
+
+        function snapshot = serializeValueObject(~, obj)
+            snapshot = [] ;
+            if isempty(obj)
+                return
+            end
+            if isstruct(obj)
+                snapshot = obj ;
+                return
+            end
+
+            className = class(obj) ;
+            switch className
+                case 'RTD'
+                    snapshot = struct( ...
+                        'object_class', 'RTD', ...
+                        't', obj.t, ...
+                        'Et', obj.Et, ...
+                        'source', obj.source) ;
+                    return
+            end
+
+            snapshot = struct('object_class', className) ;
+            propNames = properties(obj) ;
+            for k = 1:numel(propNames)
+                propName = propNames{k} ;
+                try
+                    snapshot.(propName) = obj.(propName) ;
+                catch
+                end
+            end
+        end
+
+        function obj = deserializeValueObject(~, snapshot, className)
+            obj = [] ;
+            if isempty(snapshot)
+                return
+            end
+            if isa(snapshot, className)
+                obj = snapshot ;
+                return
+            end
+            if ~isstruct(snapshot)
+                return
+            end
+
+            storedClass = '' ;
+            if isfield(snapshot, 'object_class')
+                storedClass = char(snapshot.object_class) ;
+            elseif isfield(snapshot, '__class__')
+                storedClass = char(snapshot.('__class__')) ;
+            end
+            if ~isempty(storedClass) && ~strcmp(storedClass, className)
+                return
+            end
+
+            switch className
+                case 'RTD'
+                    t = [] ;
+                    Et = [] ;
+                    if isfield(snapshot, 't'), t = snapshot.t ; end
+                    if isfield(snapshot, 'Et'), Et = snapshot.Et ; end
+                    if isempty(t) || isempty(Et)
+                        obj = RTD() ;
+                    else
+                        obj = RTD(t, Et) ;
+                    end
+                    if isfield(snapshot, 'source')
+                        obj.source = snapshot.source ;
+                    end
+                    return
+            end
+
+            obj = feval(className) ;
+            fieldNames = fieldnames(snapshot) ;
+            for k = 1:numel(fieldNames)
+                fieldName = fieldNames{k} ;
+                if any(strcmp(fieldName, {'__class__', 'object_class'})) || ~isprop(obj, fieldName)
+                    continue
+                end
+                try
+                    obj.(fieldName) = snapshot.(fieldName) ;
+                catch
+                end
+            end
+        end
+
+        function state = captureFieldWithUnit(~, field)
+            state = struct('value', field.Value) ;
+            if isstruct(field.UserData) && isfield(field.UserData, 'unitDropdown') && ...
+                    ~isempty(field.UserData.unitDropdown) && isvalid(field.UserData.unitDropdown)
+                state.unit = field.UserData.unitDropdown.Value ;
+            end
+        end
+
+        function applyFieldWithUnit(~, field, state)
+            if isempty(field) || ~isvalid(field) || ~isstruct(state)
+                return
+            end
+
+            if isfield(state, 'unit') && isstruct(field.UserData) && ...
+                    isfield(field.UserData, 'unitDropdown') && ...
+                    ~isempty(field.UserData.unitDropdown) && isvalid(field.UserData.unitDropdown)
+                dd = field.UserData.unitDropdown ;
+                if any(strcmp(cellstr(dd.Items), char(string(state.unit))))
+                    dd.Value = char(string(state.unit)) ;
+                end
+            end
+
+            if isfield(state, 'value')
+                try
+                    field.Value = state.value ;
+                catch
+                end
+            end
+        end
+
+        function state = captureLabelState(~, labelHandle)
+            state = struct( ...
+                'text', labelHandle.Text, ...
+                'fontColor', labelHandle.FontColor, ...
+                'visible', labelHandle.Visible) ;
+        end
+
+        function applyLabelState(~, labelHandle, state)
+            if isempty(labelHandle) || ~isvalid(labelHandle) || ~isstruct(state)
+                return
+            end
+
+            if isfield(state, 'text')
+                labelHandle.Text = state.text ;
+            end
+            if isfield(state, 'fontColor')
+                labelHandle.FontColor = state.fontColor ;
+            end
+            if isfield(state, 'visible')
+                labelHandle.Visible = state.visible ;
+            end
+        end
+
+        function values = captureListboxSelection(~, listbox)
+            values = [] ;
+            if isempty(listbox) || ~isvalid(listbox)
+                return
+            end
+            if isnumeric(listbox.Value)
+                values = reshape(listbox.Value, 1, []) ;
+            end
+        end
+
+        function restoreListboxSelection(~, listbox, selectedValues)
+            if isempty(listbox) || ~isvalid(listbox) || ~isnumeric(listbox.ItemsData)
+                return
+            end
+
+            itemValues = reshape(listbox.ItemsData, 1, []) ;
+            if isempty(selectedValues)
+                listbox.Value = [] ;
+                return
+            end
+
+            validValues = intersect(itemValues, reshape(selectedValues, 1, []), 'stable') ;
+            if isempty(validValues)
+                listbox.Value = itemValues ;
+            else
+                listbox.Value = validValues ;
+            end
+        end
+
+        function value = getStructField(~, S, fieldName, defaultValue)
+            value = defaultValue ;
+            if isstruct(S) && isfield(S, fieldName)
+                value = S.(fieldName) ;
+            end
+        end
+
+        function setDropdownValueIfValid(~, dropdown, value)
+            if isempty(dropdown) || ~isvalid(dropdown) || isempty(value)
+                return
+            end
+            if any(strcmp(cellstr(dropdown.Items), char(string(value))))
+                dropdown.Value = char(string(value)) ;
+            end
+        end
+
+        function state = enableStateForObject(~, obj)
+            state = 'off' ;
+            if ~isempty(obj)
+                state = 'on' ;
+            end
+        end
+
+        function restoreChemicalSelectors(app, RS, C0, reactantListbox, reactantSelection, speciesListbox, speciesSelection)
+            if isempty(RS)
+                return
+            end
+
+            speciesInfo = app.getPredictionSpeciesInfo(RS) ;
+            if ~isempty(speciesListbox) && isvalid(speciesListbox)
+                app.ensurePredictionSpeciesSelector(speciesListbox, speciesInfo) ;
+                app.restoreListboxSelection(speciesListbox, speciesSelection) ;
+            end
+
+            if nargin < 4 || isempty(reactantListbox) || isempty(C0)
+                return
+            end
+
+            reactantInfo = app.getPredictionReactantInfo(RS, C0) ;
+            if isvalid(reactantListbox)
+                app.ensurePredictionReactantSelector(reactantListbox, reactantInfo) ;
+                app.restoreListboxSelection(reactantListbox, reactantSelection) ;
+            end
+        end
+
+        function assignExperimentalWorkspaceData(app, rtdSnapshot)
+            expData = app.getStructField(rtdSnapshot, 'experimentalWorkspaceData', struct()) ;
+            if ~isstruct(expData)
+                return
+            end
+
+            tData = app.getStructField(expData, 'tData', []) ;
+            cData = app.getStructField(expData, 'cData', []) ;
+            if isempty(tData) || isempty(cData)
+                return
+            end
+
+            tVarName = strtrim(app.RTD_ExpTVarField.Value) ;
+            cVarName = strtrim(app.RTD_ExpCVarField.Value) ;
+            if ~isvarname(tVarName)
+                tVarName = 't_exp_session' ;
+                app.RTD_ExpTVarField.Value = tVarName ;
+            end
+            if ~isvarname(cVarName)
+                cVarName = 'C_exp_session' ;
+                app.RTD_ExpCVarField.Value = cVarName ;
+            end
+
+            assignin('base', tVarName, tData) ;
+            assignin('base', cVarName, cData) ;
+        end
+
+        function snapshot = buildSessionSnapshot(app, sessionName)
+            if nargin < 2 || isempty(sessionName)
+                sessionName = sprintf('session_%s', char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'))) ;
+            end
+
+            selectedTabTitle = '' ;
+            if ~isempty(app.TabGroup.SelectedTab) && isvalid(app.TabGroup.SelectedTab)
+                selectedTabTitle = app.TabGroup.SelectedTab.Title ;
+            end
+
+            rtdTimeControl = app.getDisplayControl('RTD', 'time') ;
+            rtdVolumeControl = app.getDisplayControl('RTD', 'volume') ;
+            predConcentrationControl = app.getDisplayControl('Prediction', 'concentration') ;
+            predReactantControl = app.getDisplayControl('Prediction', 'reactant') ;
+            predSpeciesControl = app.getDisplayControl('Prediction', 'species') ;
+            tisTimeControl = app.getDisplayControl('TIS', 'time') ;
+            tisConcentrationControl = app.getDisplayControl('TIS', 'concentration') ;
+            tisReactantControl = app.getDisplayControl('TIS', 'reactant') ;
+            tisSpeciesControl = app.getDisplayControl('TIS', 'component', 'species') ;
+            dispTimeControl = app.getDisplayControl('Dispersion', 'time') ;
+            dispConcentrationControl = app.getDisplayControl('Dispersion', 'concentration') ;
+            dispReactantControl = app.getDisplayControl('Dispersion', 'reactant') ;
+            dispSpeciesControl = app.getDisplayControl('Dispersion', 'species', 'component') ;
+
+            expWorkspaceData = struct('tData', [], 'cData', []) ;
+            if any(strcmp(app.RTD_SourceDropdown.Value, {'Experimental Pulse', 'Experimental Step'}))
+                try
+                    expWorkspaceData.tData = evalin('base', app.RTD_ExpTVarField.Value) ;
+                catch
+                end
+                try
+                    expWorkspaceData.cData = evalin('base', app.RTD_ExpCVarField.Value) ;
+                catch
+                end
+            end
+
+            snapshot = struct() ;
+            snapshot.session_version = 1 ;
+            snapshot.saved_at = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')) ;
+            snapshot.session_name = sessionName ;
+            snapshot.selected_tab_title = selectedTabTitle ;
+
+            snapshot.shared = struct( ...
+                'rtd', app.serializeValueObject(app.rtd)) ;
+
+            snapshot.rtd = struct( ...
+                'source', app.RTD_SourceDropdown.Value, ...
+                'tauField', app.captureFieldWithUnit(app.RTD_TauField), ...
+                'qvField', app.captureFieldWithUnit(app.RTD_QvField), ...
+                'nValue', app.RTD_NField.Value, ...
+                'boValue', app.RTD_BoField.Value, ...
+                'expTVar', app.RTD_ExpTVarField.Value, ...
+                'expTUnit', app.RTD_ExpTUnitDropdown.Value, ...
+                'expCVar', app.RTD_ExpCVarField.Value, ...
+                'expC0Field', app.captureFieldWithUnit(app.RTD_ExpC0Field), ...
+                'equation', app.RTD_EqField.Value, ...
+                'equationTStart', app.RTD_EqTStartField.Value, ...
+                'equationTEnd', app.RTD_EqTEndField.Value, ...
+                'equationTimeUnit', app.RTD_EqTimeUnitDropdown.Value, ...
+                'equationNpts', app.RTD_EqNptsField.Value, ...
+                'dataType', app.RTD_DataTypeDropdown.Value, ...
+                'dataTable', app.RTD_DataTable.Data, ...
+                'exportName', app.RTD_ExportNameField.Value, ...
+                'exportCounter', app.RTD_ExportCounter, ...
+                'displayTimeUnit', app.getControlValue(rtdTimeControl, 's'), ...
+                'displayVolumeUnit', app.getControlValue(rtdVolumeControl, 'm^3'), ...
+                'fQueryValue', app.RTD_FQueryInputField.Value, ...
+                'rs', app.serializeValueObject(app.RTD_RS), ...
+                'rsName', app.RTD_RSNameField.Value, ...
+                'feedStream', app.serializeValueObject(app.RTD_feedStream), ...
+                'streamName', app.RTD_StreamNameField.Value, ...
+                'experimentalWorkspaceData', expWorkspaceData, ...
+                'importLabel', app.captureLabelState(app.RTD_ImportLabel), ...
+                'rsStatus', app.captureLabelState(app.RTD_RSStatusLabel), ...
+                'streamStatus', app.captureLabelState(app.RTD_StreamStatusLabel)) ;
+
+            snapshot.prediction = struct( ...
+                'inputMethod', app.Pred_InputMethodDropdown.Value, ...
+                'rs', app.serializeValueObject(app.Pred_RS), ...
+                'rsName', app.Pred_RSNameField.Value, ...
+                'feedStream', app.serializeValueObject(app.Pred_feedStream), ...
+                'streamName', app.Pred_StreamNameField.Value, ...
+                'displayConcentrationUnit', app.getControlValue(predConcentrationControl, 'mol/m^3'), ...
+                'reactantSelection', app.captureListboxSelection(predReactantControl), ...
+                'speciesSelection', app.captureListboxSelection(predSpeciesControl), ...
+                'rtdStatus', app.captureLabelState(app.Pred_RTDStatusLabel), ...
+                'rsStatus', app.captureLabelState(app.Pred_RSStatusLabel), ...
+                'streamStatus', app.captureLabelState(app.Pred_StreamStatusLabel)) ;
+
+            snapshot.tis = struct( ...
+                'inputMethod', app.TIS_NMethodDropdown.Value, ...
+                'nValue', app.TIS_NField.Value, ...
+                'tauField', app.captureFieldWithUnit(app.TIS_tauField), ...
+                'rs', app.serializeValueObject(app.TIS_RS), ...
+                'rsName', app.TIS_RSNameField.Value, ...
+                'feedStream', app.serializeValueObject(app.TIS_feedStream), ...
+                'streamName', app.TIS_StreamNameField.Value, ...
+                'displayTimeUnit', app.getControlValue(tisTimeControl, 's'), ...
+                'displayConcentrationUnit', app.getControlValue(tisConcentrationControl, 'mol/m^3'), ...
+                'reactantSelection', app.captureListboxSelection(tisReactantControl), ...
+                'speciesSelection', app.captureListboxSelection(tisSpeciesControl), ...
+                'rtdStatus', app.captureLabelState(app.TIS_RTDStatusLabel), ...
+                'rsStatus', app.captureLabelState(app.TIS_RSStatusLabel), ...
+                'streamStatus', app.captureLabelState(app.TIS_StreamStatusLabel)) ;
+
+            snapshot.dispersion = struct( ...
+                'inputMethod', app.Disp_InputMethodDropdown.Value, ...
+                'boValue', app.Disp_BoField.Value, ...
+                'boundary', app.Disp_BCDropdown.Value, ...
+                'tauField', app.captureFieldWithUnit(app.Disp_tauField), ...
+                'rs', app.serializeValueObject(app.Disp_RS), ...
+                'rsName', app.Disp_RSNameField.Value, ...
+                'feedStream', app.serializeValueObject(app.Disp_feedStream), ...
+                'streamName', app.Disp_StreamNameField.Value, ...
+                'displayTimeUnit', app.getControlValue(dispTimeControl, 's'), ...
+                'displayConcentrationUnit', app.getControlValue(dispConcentrationControl, 'mol/m^3'), ...
+                'reactantSelection', app.captureListboxSelection(dispReactantControl), ...
+                'speciesSelection', app.captureListboxSelection(dispSpeciesControl), ...
+                'rtdStatus', app.captureLabelState(app.Disp_RTDStatusLabel), ...
+                'rsStatus', app.captureLabelState(app.Disp_RSStatusLabel), ...
+                'streamStatus', app.captureLabelState(app.Disp_StreamStatusLabel)) ;
+        end
+
+        function applySessionSnapshot(app, snapshot)
+            shared = app.getStructField(snapshot, 'shared', struct()) ;
+            app.rtd = app.deserializeValueObject(app.getStructField(shared, 'rtd', []), 'RTD') ;
+            app.DisplayCache = app.getStructField(shared, 'displayCache', struct()) ;
+            app.seg_model = app.getStructField(shared, 'seg_model', []) ;
+            app.mm_model = app.getStructField(shared, 'mm_model', []) ;
+            app.disp_reactor = app.getStructField(shared, 'disp_reactor', []) ;
+
+            rtdTimeControl = app.getDisplayControl('RTD', 'time') ;
+            rtdVolumeControl = app.getDisplayControl('RTD', 'volume') ;
+            predConcentrationControl = app.getDisplayControl('Prediction', 'concentration') ;
+            predReactantControl = app.getDisplayControl('Prediction', 'reactant') ;
+            predSpeciesControl = app.getDisplayControl('Prediction', 'species') ;
+            tisTimeControl = app.getDisplayControl('TIS', 'time') ;
+            tisConcentrationControl = app.getDisplayControl('TIS', 'concentration') ;
+            tisReactantControl = app.getDisplayControl('TIS', 'reactant') ;
+            tisSpeciesControl = app.getDisplayControl('TIS', 'component', 'species') ;
+            dispTimeControl = app.getDisplayControl('Dispersion', 'time') ;
+            dispConcentrationControl = app.getDisplayControl('Dispersion', 'concentration') ;
+            dispReactantControl = app.getDisplayControl('Dispersion', 'reactant') ;
+            dispSpeciesControl = app.getDisplayControl('Dispersion', 'species', 'component') ;
+
+            rtdSnapshot = app.getStructField(snapshot, 'rtd', struct()) ;
+            app.setDropdownValueIfValid(app.RTD_SourceDropdown, app.getStructField(rtdSnapshot, 'source', app.RTD_SourceDropdown.Value)) ;
+            app.RTD_sourceChanged() ;
+            app.applyFieldWithUnit(app.RTD_TauField, app.getStructField(rtdSnapshot, 'tauField', struct())) ;
+            app.applyFieldWithUnit(app.RTD_QvField, app.getStructField(rtdSnapshot, 'qvField', struct())) ;
+            app.RTD_NField.Value = app.getStructField(rtdSnapshot, 'nValue', app.RTD_NField.Value) ;
+            app.RTD_BoField.Value = app.getStructField(rtdSnapshot, 'boValue', app.RTD_BoField.Value) ;
+            app.RTD_ExpTVarField.Value = app.getStructField(rtdSnapshot, 'expTVar', app.RTD_ExpTVarField.Value) ;
+            app.setDropdownValueIfValid(app.RTD_ExpTUnitDropdown, app.getStructField(rtdSnapshot, 'expTUnit', app.RTD_ExpTUnitDropdown.Value)) ;
+            app.RTD_ExpCVarField.Value = app.getStructField(rtdSnapshot, 'expCVar', app.RTD_ExpCVarField.Value) ;
+            app.applyFieldWithUnit(app.RTD_ExpC0Field, app.getStructField(rtdSnapshot, 'expC0Field', struct())) ;
+            app.RTD_EqField.Value = app.getStructField(rtdSnapshot, 'equation', app.RTD_EqField.Value) ;
+            app.RTD_EqTStartField.Value = app.getStructField(rtdSnapshot, 'equationTStart', app.RTD_EqTStartField.Value) ;
+            app.RTD_EqTEndField.Value = app.getStructField(rtdSnapshot, 'equationTEnd', app.RTD_EqTEndField.Value) ;
+            app.setDropdownValueIfValid(app.RTD_EqTimeUnitDropdown, app.getStructField(rtdSnapshot, 'equationTimeUnit', app.RTD_EqTimeUnitDropdown.Value)) ;
+            app.RTD_EqNptsField.Value = app.getStructField(rtdSnapshot, 'equationNpts', app.RTD_EqNptsField.Value) ;
+            app.setDropdownValueIfValid(app.RTD_DataTypeDropdown, app.getStructField(rtdSnapshot, 'dataType', app.RTD_DataTypeDropdown.Value)) ;
+            app.RTD_dataTypeChanged() ;
+            app.RTD_DataTable.Data = app.getStructField(rtdSnapshot, 'dataTable', app.RTD_DataTable.Data) ;
+            app.RTD_ExportNameField.Value = app.getStructField(rtdSnapshot, 'exportName', app.RTD_ExportNameField.Value) ;
+            app.RTD_ExportCounter = app.getStructField(rtdSnapshot, 'exportCounter', app.RTD_ExportCounter) ;
+            app.setDropdownValueIfValid(rtdTimeControl, app.getStructField(rtdSnapshot, 'displayTimeUnit', app.getControlValue(rtdTimeControl, 's'))) ;
+            app.setDropdownValueIfValid(rtdVolumeControl, app.getStructField(rtdSnapshot, 'displayVolumeUnit', app.getControlValue(rtdVolumeControl, 'm^3'))) ;
+            app.RTD_RS = app.deserializeValueObject(app.getStructField(rtdSnapshot, 'rs', []), 'ReactionSys') ;
+            app.RTD_RSNameField.Value = app.getStructField(rtdSnapshot, 'rsName', app.RTD_RSNameField.Value) ;
+            app.RTD_feedStream = app.deserializeValueObject(app.getStructField(rtdSnapshot, 'feedStream', []), 'Stream') ;
+            app.RTD_StreamNameField.Value = app.getStructField(rtdSnapshot, 'streamName', app.RTD_StreamNameField.Value) ;
+            app.assignExperimentalWorkspaceData(rtdSnapshot) ;
+            app.applyLabelState(app.RTD_ImportLabel, app.getStructField(rtdSnapshot, 'importLabel', struct())) ;
+            app.applyLabelState(app.RTD_RSStatusLabel, app.getStructField(rtdSnapshot, 'rsStatus', struct())) ;
+            app.applyLabelState(app.RTD_StreamStatusLabel, app.getStructField(rtdSnapshot, 'streamStatus', struct())) ;
+            app.RTD_RSEditButton.Enable = app.enableStateForObject(app.RTD_RS) ;
+            app.RTD_StreamEditButton.Enable = app.enableStateForObject(app.RTD_feedStream) ;
+            app.RTD_ExportButton.Enable = app.enableStateForObject(app.rtd) ;
+            if ~isempty(app.rtd)
+                app.RTD_updateResults() ;
+                app.RTD_updatePlots() ;
+            end
+            app.RTD_FQueryInputField.Value = app.getStructField(rtdSnapshot, 'fQueryValue', app.RTD_FQueryInputField.Value) ;
+            app.RTD_queryValueChanged() ;
+
+            predSnapshot = app.getStructField(snapshot, 'prediction', struct()) ;
+            app.Pred_RS = app.deserializeValueObject(app.getStructField(predSnapshot, 'rs', []), 'ReactionSys') ;
+            app.Pred_RSNameField.Value = app.getStructField(predSnapshot, 'rsName', app.Pred_RSNameField.Value) ;
+            app.Pred_feedStream = app.deserializeValueObject(app.getStructField(predSnapshot, 'feedStream', []), 'Stream') ;
+            app.Pred_StreamNameField.Value = app.getStructField(predSnapshot, 'streamName', app.Pred_StreamNameField.Value) ;
+            app.setDropdownValueIfValid(app.Pred_InputMethodDropdown, app.getStructField(predSnapshot, 'inputMethod', app.Pred_InputMethodDropdown.Value)) ;
+            app.Pred_inputMethodChanged() ;
+            app.setDropdownValueIfValid(predConcentrationControl, ...
+                app.getStructField(predSnapshot, 'displayConcentrationUnit', app.getControlValue(predConcentrationControl, 'mol/m^3'))) ;
+            if ~isempty(app.Pred_RS) && ~isempty(app.Pred_feedStream)
+                app.restoreChemicalSelectors(app.Pred_RS, app.Pred_feedStream.concentration(:)', ...
+                    predReactantControl, app.getStructField(predSnapshot, 'reactantSelection', []), ...
+                    predSpeciesControl, app.getStructField(predSnapshot, 'speciesSelection', [])) ;
+            end
+            app.applyLabelState(app.Pred_RTDStatusLabel, app.getStructField(predSnapshot, 'rtdStatus', struct())) ;
+            app.applyLabelState(app.Pred_RSStatusLabel, app.getStructField(predSnapshot, 'rsStatus', struct())) ;
+            app.applyLabelState(app.Pred_StreamStatusLabel, app.getStructField(predSnapshot, 'streamStatus', struct())) ;
+            if strcmp(app.Pred_InputMethodDropdown.Value, 'Manual')
+                app.Pred_RSEditButton.Enable = app.enableStateForObject(app.Pred_RS) ;
+                app.Pred_StreamEditButton.Enable = app.enableStateForObject(app.Pred_feedStream) ;
+            end
+            if ~isempty(app.seg_model) && ~isempty(app.mm_model) && ~isempty(app.rtd) && ...
+                    ~isempty(app.Pred_RS) && ~isempty(app.Pred_feedStream)
+                app.Pred_updatePlots() ;
+            end
+
+            tisSnapshot = app.getStructField(snapshot, 'tis', struct()) ;
+            app.TIS_RS = app.deserializeValueObject(app.getStructField(tisSnapshot, 'rs', []), 'ReactionSys') ;
+            app.TIS_RSNameField.Value = app.getStructField(tisSnapshot, 'rsName', app.TIS_RSNameField.Value) ;
+            app.TIS_feedStream = app.deserializeValueObject(app.getStructField(tisSnapshot, 'feedStream', []), 'Stream') ;
+            app.TIS_StreamNameField.Value = app.getStructField(tisSnapshot, 'streamName', app.TIS_StreamNameField.Value) ;
+            app.TIS_NField.Value = app.getStructField(tisSnapshot, 'nValue', app.TIS_NField.Value) ;
+            app.applyFieldWithUnit(app.TIS_tauField, app.getStructField(tisSnapshot, 'tauField', struct())) ;
+            app.setDropdownValueIfValid(app.TIS_NMethodDropdown, app.getStructField(tisSnapshot, 'inputMethod', app.TIS_NMethodDropdown.Value)) ;
+            app.TIS_NMethodChanged() ;
+            app.setDropdownValueIfValid(tisTimeControl, app.getStructField(tisSnapshot, 'displayTimeUnit', app.getControlValue(tisTimeControl, 's'))) ;
+            app.setDropdownValueIfValid(tisConcentrationControl, ...
+                app.getStructField(tisSnapshot, 'displayConcentrationUnit', app.getControlValue(tisConcentrationControl, 'mol/m^3'))) ;
+            if ~isempty(app.TIS_RS) && ~isempty(app.TIS_feedStream)
+                app.restoreChemicalSelectors(app.TIS_RS, app.TIS_feedStream.concentration(:)', ...
+                    tisReactantControl, app.getStructField(tisSnapshot, 'reactantSelection', []), ...
+                    tisSpeciesControl, app.getStructField(tisSnapshot, 'speciesSelection', [])) ;
+            end
+            app.applyLabelState(app.TIS_RTDStatusLabel, app.getStructField(tisSnapshot, 'rtdStatus', struct())) ;
+            app.applyLabelState(app.TIS_RSStatusLabel, app.getStructField(tisSnapshot, 'rsStatus', struct())) ;
+            app.applyLabelState(app.TIS_StreamStatusLabel, app.getStructField(tisSnapshot, 'streamStatus', struct())) ;
+            if strcmp(app.TIS_NMethodDropdown.Value, 'Manual')
+                app.TIS_RSEditButton.Enable = app.enableStateForObject(app.TIS_RS) ;
+                app.TIS_StreamEditButton.Enable = app.enableStateForObject(app.TIS_feedStream) ;
+            end
+            if isfield(app.DisplayCache, 'TIS') && ~isempty(app.DisplayCache.TIS)
+                app.refreshDisplayUnits('TIS') ;
+            end
+
+            dispSnapshot = app.getStructField(snapshot, 'dispersion', struct()) ;
+            app.Disp_RS = app.deserializeValueObject(app.getStructField(dispSnapshot, 'rs', []), 'ReactionSys') ;
+            app.Disp_RSNameField.Value = app.getStructField(dispSnapshot, 'rsName', app.Disp_RSNameField.Value) ;
+            app.Disp_feedStream = app.deserializeValueObject(app.getStructField(dispSnapshot, 'feedStream', []), 'Stream') ;
+            app.Disp_StreamNameField.Value = app.getStructField(dispSnapshot, 'streamName', app.Disp_StreamNameField.Value) ;
+            app.Disp_BoField.Value = app.getStructField(dispSnapshot, 'boValue', app.Disp_BoField.Value) ;
+            app.setDropdownValueIfValid(app.Disp_BCDropdown, app.getStructField(dispSnapshot, 'boundary', app.Disp_BCDropdown.Value)) ;
+            app.applyFieldWithUnit(app.Disp_tauField, app.getStructField(dispSnapshot, 'tauField', struct())) ;
+            app.setDropdownValueIfValid(app.Disp_InputMethodDropdown, app.getStructField(dispSnapshot, 'inputMethod', app.Disp_InputMethodDropdown.Value)) ;
+            app.Disp_inputMethodChanged() ;
+            app.Disp_updatePe() ;
+            app.setDropdownValueIfValid(dispTimeControl, app.getStructField(dispSnapshot, 'displayTimeUnit', app.getControlValue(dispTimeControl, 's'))) ;
+            app.setDropdownValueIfValid(dispConcentrationControl, ...
+                app.getStructField(dispSnapshot, 'displayConcentrationUnit', app.getControlValue(dispConcentrationControl, 'mol/m^3'))) ;
+            if ~isempty(app.Disp_RS) && ~isempty(app.Disp_feedStream)
+                app.restoreChemicalSelectors(app.Disp_RS, app.Disp_feedStream.concentration(:)', ...
+                    dispReactantControl, app.getStructField(dispSnapshot, 'reactantSelection', []), ...
+                    dispSpeciesControl, app.getStructField(dispSnapshot, 'speciesSelection', [])) ;
+            end
+            app.applyLabelState(app.Disp_RTDStatusLabel, app.getStructField(dispSnapshot, 'rtdStatus', struct())) ;
+            app.applyLabelState(app.Disp_RSStatusLabel, app.getStructField(dispSnapshot, 'rsStatus', struct())) ;
+            app.applyLabelState(app.Disp_StreamStatusLabel, app.getStructField(dispSnapshot, 'streamStatus', struct())) ;
+            if strcmp(app.Disp_InputMethodDropdown.Value, 'Manual')
+                app.Disp_RSEditButton.Enable = app.enableStateForObject(app.Disp_RS) ;
+                app.Disp_StreamEditButton.Enable = app.enableStateForObject(app.Disp_feedStream) ;
+            end
+            if isempty(app.disp_reactor)
+                app.disp_reactor = DispersionReactor(app.Disp_BoField.Value, app.Disp_BCDropdown.Value) ;
+            end
+            if isfield(app.DisplayCache, 'Dispersion') && ~isempty(app.DisplayCache.Dispersion)
+                app.refreshDisplayUnits('Dispersion') ;
+            end
+
+            selectedTabTitle = app.getStructField(snapshot, 'selected_tab_title', '') ;
+            if ~isempty(selectedTabTitle)
+                for k = 1:numel(app.TabGroup.Children)
+                    if strcmp(app.TabGroup.Children(k).Title, selectedTabTitle)
+                        app.TabGroup.SelectedTab = app.TabGroup.Children(k) ;
+                        break
+                    end
+                end
+            end
+        end
+
+        function saveSession(app)
+            try
+                saveDir = app.getSavesDirectory() ;
+                if ~exist(saveDir, 'dir')
+                    mkdir(saveDir) ;
+                end
+
+                defaultFile = fullfile(saveDir, sprintf('session_%s.mat', char(datetime('now', 'Format', 'yyyyMMdd_HHmmss')))) ;
+                [fileName, ~] = uiputfile({'*.mat', 'MAT-files (*.mat)'}, ...
+                    'Guardar sesión', defaultFile) ;
+                if isequal(fileName, 0)
+                    return
+                end
+                if isempty(fileparts(fileName))
+                    [~, baseName, ext] = fileparts(fileName) ;
+                    if isempty(ext)
+                        fileName = [baseName '.mat'] ;
+                    end
+                end
+                fullPath = fullfile(saveDir, fileName) ;
+                if exist(fullPath, 'file')
+                    choice = uiconfirm(app.UIFigure, ...
+                        sprintf('El archivo "%s" ya existe. ¿Deseas sobrescribirlo?', fileName), ...
+                        'Confirmar sobreescritura', ...
+                        'Options', {'Sobrescribir', 'Cancelar'}, ...
+                        'DefaultOption', 2, ...
+                        'CancelOption', 2, ...
+                        'Icon', 'warning') ;
+                    if ~strcmp(choice, 'Sobrescribir')
+                        return
+                    end
+                end
+
+                [~, sessionName] = fileparts(fileName) ;
+                app.saveSessionToFile(fullPath, sessionName) ;
+                app.updateStatus(sprintf('Session saved: %s', fileName)) ;
+            catch ME
+                app.updateStatus('Error') ;
+                errorMessage = ME.message ;
+                if ~isempty(ME.stack)
+                    errorMessage = sprintf('%s\n\n%s (line %d)', ...
+                        errorMessage, ME.stack(1).name, ME.stack(1).line) ;
+                end
+                uialert(app.UIFigure, errorMessage, 'Save Session Error') ;
+            end
+        end
+
+        function loadSession(app)
+            saveDir = app.getSavesDirectory() ;
+            if ~exist(saveDir, 'dir')
+                uialert(app.UIFigure, ...
+                    'No existe la carpeta "saves" todavia. Guarda una sesion primero.', ...
+                    'No Saved Sessions') ;
+                return
+            end
+
+            [fileName, filePath] = uigetfile({'*.mat', 'MAT-files (*.mat)'}, ...
+                'Cargar sesión', saveDir) ;
+            if isequal(fileName, 0)
+                return
+            end
+
+            backupSnapshot = app.buildSessionSnapshot('backup_before_load') ;
+            try
+                app.loadSessionFromFile(fullfile(filePath, fileName)) ;
+                app.updateStatus(sprintf('Session loaded: %s', fileName)) ;
+
+                loadedData = load(fullfile(filePath, fileName), 'sessionData') ;
+                if ~isfield(loadedData.sessionData, 'session_version') || ...
+                        loadedData.sessionData.session_version < 1
+                    uialert(app.UIFigure, ...
+                        'La sesion cargada usa un formato antiguo o incompleto. Se han aplicado valores por defecto donde ha sido necesario.', ...
+                        'Session Compatibility', 'Icon', 'info') ;
+                end
+            catch ME
+                try
+                    app.applySessionSnapshot(backupSnapshot) ;
+                catch
+                end
+                app.updateStatus('Error') ;
+                errorMessage = ME.message ;
+                if ~isempty(ME.stack)
+                    errorMessage = sprintf('%s\n\n%s (line %d)', ...
+                        errorMessage, ME.stack(1).name, ME.stack(1).line) ;
+                end
+                uialert(app.UIFigure, errorMessage, 'Load Session Error') ;
+            end
         end
 
         %% ============== HELPER: NUMERIC FIELD + UNIT SELECTOR ==============

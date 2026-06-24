@@ -29,6 +29,12 @@ Tambien puedes abrir primero la app base de reactores ideales:
 app = ReactorApp;
 ```
 
+## Sesiones
+
+- `File > Guardar` crea un archivo `.mat` de sesion dentro de `saves/`.
+- `File > Cargar` restaura los inputs, objetos `RTD` / `ReactionSys` / `Stream` y las selecciones de visualizacion para continuar trabajando sin reintroducir datos.
+- La carga no recalcula automaticamente; deja la app lista para pulsar `Compute`.
+
 ## Alcance funcional
 
 ### Tab 1 - RTD Analysis
