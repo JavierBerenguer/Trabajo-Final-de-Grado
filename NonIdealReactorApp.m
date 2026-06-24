@@ -155,6 +155,7 @@ classdef NonIdealReactorApp < handle
         TIS_ResultXpfr
         TIS_ResultNused
         TIS_RefreshButton
+        TIS_C_exitPanel
         TIS_C_exitLabel
         TIS_C_exitTable         % UITable: outlet concentrations per component
         TIS_AxesEt
@@ -402,6 +403,9 @@ classdef NonIdealReactorApp < handle
                 labelText, callbackFcn, listHeight)
             if nargin < 7 || isempty(listHeight)
                 listHeight = 88 ;
+            end
+            if isstring(listHeight) && isscalar(listHeight)
+                listHeight = char(listHeight) ;
             end
             subGrid = uigridlayout(parentGrid, [2 1], ...
                 'RowHeight', {18, listHeight}, ...
@@ -918,6 +922,62 @@ classdef NonIdealReactorApp < handle
                 'X_CSTR', 'X_seg', 'X_MM', 'X_PFR'} ;
             app.Pred_C_exitTable.ColumnWidth = {88, 70, 68, 78, 78, 84, 84, 62, 62, 72, 72} ;
             app.Pred_C_exitTable.Data = summaryRows(rowOrder, :) ;
+        end
+
+        function updateTISSummaryTable(app, ...
+                compLabels, roles, C0, ...
+                C_tis, C_cstr, C_pfr, ...
+                reactantIndices, X_tis, X_cstr, X_pfr, concDropdown)
+
+            nComp = numel(compLabels) ;
+            summaryRows = cell(nComp, 9) ;
+            concMatrix = [C0(:), C_tis(:), C_cstr(:), C_pfr(:)] ;
+            concDisplay = reshape(app.convertOutputConcentration(concMatrix(:)', concDropdown), size(concMatrix)) ;
+
+            reactantPosMap = containers.Map('KeyType', 'double', 'ValueType', 'double') ;
+            for k = 1:numel(reactantIndices)
+                reactantPosMap(reactantIndices(k)) = k ;
+            end
+
+            rolePriority = zeros(1, nComp) ;
+            for i = 1:nComp
+                summaryRows{i, 1} = compLabels{i} ;
+                summaryRows{i, 2} = roles{i} ;
+                for j = 1:4
+                    summaryRows{i, j + 2} = sprintf('%.4g', concDisplay(i, j)) ;
+                end
+
+                if isKey(reactantPosMap, i) && strcmp(roles{i}, 'Reactant')
+                    pos = reactantPosMap(i) ;
+                    summaryRows{i, 7} = sprintf('%.4f', X_tis(pos)) ;
+                    summaryRows{i, 8} = sprintf('%.4f', X_cstr(pos)) ;
+                    summaryRows{i, 9} = sprintf('%.4f', X_pfr(pos)) ;
+                else
+                    summaryRows{i, 7} = '--' ;
+                    summaryRows{i, 8} = '--' ;
+                    summaryRows{i, 9} = '--' ;
+                end
+
+                switch roles{i}
+                    case 'Reactant'
+                        rolePriority(i) = 1 ;
+                    case 'Intermediate'
+                        rolePriority(i) = 2 ;
+                    case 'Product'
+                        rolePriority(i) = 3 ;
+                    otherwise
+                        rolePriority(i) = 4 ;
+                end
+            end
+
+            [~, rowOrder] = sortrows([rolePriority(:), (1:nComp)']) ;
+            rowOrder = rowOrder(:)' ;
+
+            app.TIS_C_exitTable.ColumnName = { ...
+                'Component', 'Role', 'C_in', 'TIS C_out', 'CSTR C_out', ...
+                'PFR C_out', 'X_TIS', 'X_CSTR', 'X_PFR'} ;
+            app.TIS_C_exitTable.ColumnWidth = {86, 72, 68, 82, 84, 84, 64, 74, 74} ;
+            app.TIS_C_exitTable.Data = summaryRows(rowOrder, :) ;
         end
 
         function ensureComponentSelectorItems(app, dropdown, nComp)
@@ -2792,8 +2852,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'TIS Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [20 2]) ;
-            rowH = repmat({28}, 1, 20) ; rowH{14} = 56 ; rowH{20} = 80 ;
+            leftGrid = uigridlayout(leftPanel, [15 2]) ;
+            rowH = repmat({28}, 1, 15) ; rowH{15} = 260 ;
             leftGrid.RowHeight = rowH ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
@@ -2927,97 +2987,109 @@ classdef NonIdealReactorApp < handle
             app.TIS_ComputeButton.Layout.Row = 13 ;
             app.TIS_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 14: Display units
-            unitsGrid = uigridlayout(leftGrid, [2 2], ...
-                'ColumnWidth', {'1x', '1x'}, 'RowHeight', {24, 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
-            unitsGrid.Layout.Row = 14 ;
-            unitsGrid.Layout.Column = [1 2] ;
-            app.DisplayControls.TIS.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('TIS'), 84) ;
-            app.DisplayControls.TIS.concentration = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('TIS'), 92) ;
-            app.DisplayControls.TIS.component = app.createDisplayChoiceControl( ...
-                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('TIS'), 118) ;
-
-            % Row 15: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+            % Row 14: Display units title
+            lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 15 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 14 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 16: N used
-            lbl = uilabel(leftGrid, 'Text', 'N used:') ;
-            lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
-            app.TIS_ResultNused = uilabel(leftGrid, 'Text', '--') ;
-            app.TIS_ResultNused.Layout.Row = 16 ;
-            app.TIS_ResultNused.Layout.Column = 2 ;
-            app.setTooltip('Number of stirred tanks used in the tanks-in-series approximation for the current calculation.', ...
-                lbl, app.TIS_ResultNused) ;
+            % Row 15: Display units
+            unitsGrid = uigridlayout(leftGrid, [2 2], ...
+                'ColumnWidth', {'1x', '1x'}, ...
+                'RowHeight', {'fit', '1x'}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 4, ...
+                'RowSpacing', 4) ;
+            unitsGrid.Layout.Row = 15 ;
+            unitsGrid.Layout.Column = [1 2] ;
 
-            % Row 17: X_TIS
-            lbl = uilabel(leftGrid, 'Text', 'X<sub>TIS</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
-            app.TIS_ResultXtis = uilabel(leftGrid, 'Text', '--') ;
-            app.TIS_ResultXtis.Layout.Row = 17 ;
-            app.TIS_ResultXtis.Layout.Column = 2 ;
-            app.TIS_ResultXtis.FontWeight = 'bold' ;
-            app.setTooltip('Conversion predicted by the selected tanks-in-series model.', ...
-                lbl, app.TIS_ResultXtis) ;
+            rtdPanel = uipanel(unitsGrid, 'Title', 'E(t) Plot') ;
+            rtdPanel.Layout.Row = 1 ;
+            rtdPanel.Layout.Column = [1 2] ;
+            rtdGrid = uigridlayout(rtdPanel, [1 1], ...
+                'Padding', [6 6 6 6]) ;
+            app.DisplayControls.TIS.time = app.createDisplayUnitControl( ...
+                rtdGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('TIS'), 84) ;
 
-            % Row 18: X_CSTR + X_PFR on same row
-            app.TIS_ResultXcstr = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub>: --', 'Interpreter', 'html') ;
-            app.TIS_ResultXcstr.Layout.Row = 18 ; app.TIS_ResultXcstr.Layout.Column = 1 ;
-            app.TIS_ResultXpfr = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub>: --', 'Interpreter', 'html') ;
-            app.TIS_ResultXpfr.Layout.Row = 18 ; app.TIS_ResultXpfr.Layout.Column = 2 ;
-            app.setTooltip('Reference conversion for the ideal CSTR limit, equivalent to N = 1.', ...
-                app.TIS_ResultXcstr) ;
-            app.setTooltip('Reference conversion for the ideal plug-flow limit, equivalent to N approaching infinity.', ...
-                app.TIS_ResultXpfr) ;
+            concPanel = uipanel(unitsGrid, 'Title', 'Outlet Concentration vs N') ;
+            concPanel.Layout.Row = 2 ;
+            concPanel.Layout.Column = 1 ;
+            concGrid = uigridlayout(concPanel, [2 1], ...
+                'RowHeight', {'fit', '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 6) ;
+            app.DisplayControls.TIS.concentration = app.createDisplayUnitControl( ...
+                concGrid, 1, 1, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('TIS'), 92) ;
+            app.DisplayControls.TIS.component = app.createDisplayMultiSelectControl( ...
+                concGrid, 2, 1, 'Species:', @(~,~) app.refreshDisplayUnits('TIS'), '1x') ;
 
-            % Row 19: Outlet concentrations header
-            app.TIS_C_exitLabel = uilabel(leftGrid, ...
-                'Text', 'Outlet Conc. at Exit [mol/m^3]:', ...
-                'FontWeight', 'bold') ;
-            app.TIS_C_exitLabel.Layout.Row = 19 ;
-            app.TIS_C_exitLabel.Layout.Column = [1 2] ;
-            app.TIS_C_exitLabel.Tooltip = ...
-                'Per-component outlet concentrations at the reactor exit for TIS and its CSTR/PFR limits.' ;
-
-            % Row 20: Per-component outlet concentration table
-            app.TIS_C_exitTable = uitable(leftGrid, ...
-                'ColumnName', {'Comp.', 'TIS', 'CSTR', 'PFR'}, ...
-                'ColumnEditable', [false false false false], ...
-                'ColumnWidth', {70, 80, 80, 80}) ;
-            app.TIS_C_exitTable.Layout.Row = 20 ;
-            app.TIS_C_exitTable.Layout.Column = [1 2] ;
-            app.TIS_C_exitTable.Tooltip = ...
-                'Outlet concentrations by component at the reactor exit for the selected TIS model and its CSTR/PFR references.' ;
+            convPanel = uipanel(unitsGrid, 'Title', 'Conversion vs N') ;
+            convPanel.Layout.Row = 2 ;
+            convPanel.Layout.Column = 2 ;
+            convGrid = uigridlayout(convPanel, [2 1], ...
+                'RowHeight', {'fit', '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 6) ;
+            app.DisplayControls.TIS.reactant = app.createDisplayMultiSelectControl( ...
+                convGrid, 2, 1, 'Reactants:', @(~,~) app.refreshDisplayUnits('TIS'), '1x') ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'TIS Results') ;
-            plotGrid = uigridlayout(rightPanel, [2 2]) ;
-            plotGrid.RowHeight = {'1x', '1x'} ;
-            plotGrid.ColumnWidth = {'1x', '1x'} ;
+            rightGrid = uigridlayout(rightPanel, [2 2]) ;
+            rightGrid.RowHeight = {'1x', '1x'} ;
+            rightGrid.ColumnWidth = {'1x', '1x'} ;
+            rightGrid.Padding = [0 0 0 0] ;
+            rightGrid.RowSpacing = 6 ;
+            rightGrid.ColumnSpacing = 6 ;
 
-            % E(t) plot for TIS model
-            app.TIS_AxesEt = uiaxes(plotGrid) ;
-            title(app.TIS_AxesEt, 'E(t) - TIS Model') ;
-            xlabel(app.TIS_AxesEt, 't [s]') ;
-            ylabel(app.TIS_AxesEt, 'E(t) [1/s]') ;
-            grid(app.TIS_AxesEt, 'on') ;
-
-            % X vs N sweep plot
-            app.TIS_AxesXvsN = uiaxes(plotGrid) ;
+            % Outlet concentration vs N plot
+            app.TIS_AxesXvsN = uiaxes(rightGrid) ;
+            app.TIS_AxesXvsN.Layout.Row = 1 ;
+            app.TIS_AxesXvsN.Layout.Column = 1 ;
             title(app.TIS_AxesXvsN, 'Outlet Concentration vs N') ;
             xlabel(app.TIS_AxesXvsN, 'N [number of tanks]') ;
             ylabel(app.TIS_AxesXvsN, 'C [mol/m^3]') ;
             grid(app.TIS_AxesXvsN, 'on') ;
 
-            % Comparison bar chart
-            app.TIS_AxesComparison = uiaxes(plotGrid) ;
-            app.TIS_AxesComparison.Layout.Column = [1 2] ;
-            title(app.TIS_AxesComparison, 'Comparison: CSTR vs TIS vs PFR') ;
+            % Conversion vs N plot
+            app.TIS_AxesComparison = uiaxes(rightGrid) ;
+            app.TIS_AxesComparison.Layout.Row = 1 ;
+            app.TIS_AxesComparison.Layout.Column = 2 ;
+            title(app.TIS_AxesComparison, 'Conversion vs N') ;
+            xlabel(app.TIS_AxesComparison, 'N [number of tanks]') ;
             ylabel(app.TIS_AxesComparison, 'Conversion X') ;
             grid(app.TIS_AxesComparison, 'on') ;
+
+            % Exit summary table
+            app.TIS_C_exitPanel = uipanel(rightGrid, ...
+                'Title', 'Exit Summary - Concentration [mol/m^3]') ;
+            app.TIS_C_exitPanel.Layout.Row = 2 ;
+            app.TIS_C_exitPanel.Layout.Column = 1 ;
+            app.TIS_C_exitPanel.Tooltip = ...
+                ['Per-species summary of feed concentration, outlet concentration and reactant conversion for TIS and its CSTR/PFR references. ' ...
+                'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
+            tableGrid = uigridlayout(app.TIS_C_exitPanel, [1 1], ...
+                'Padding', [6 6 6 6]) ;
+            app.TIS_C_exitLabel = uilabel(tableGrid, ...
+                'Text', '', ...
+                'Visible', 'off') ;
+            app.TIS_C_exitTable = uitable(tableGrid, ...
+                'ColumnName', {'Component', 'Role', 'C_in', 'TIS C_out', 'CSTR C_out', 'PFR C_out', 'X_TIS', 'X_CSTR', 'X_PFR'}, ...
+                'ColumnEditable', false(1, 9), ...
+                'ColumnWidth', {86, 72, 68, 82, 84, 84, 64, 74, 74}, ...
+                'RowName', {}) ;
+            app.TIS_C_exitTable.Layout.Row = 1 ;
+            app.TIS_C_exitTable.Tooltip = ...
+                ['Reactants show concentration and conversion. Products, intermediates and inerts show concentration only. ' ...
+                'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
+
+            % E(t) plot for TIS model
+            app.TIS_AxesEt = uiaxes(rightGrid) ;
+            app.TIS_AxesEt.Layout.Row = 2 ;
+            app.TIS_AxesEt.Layout.Column = 2 ;
+            title(app.TIS_AxesEt, 'E(t) - TIS Model') ;
+            xlabel(app.TIS_AxesEt, 't [s]') ;
+            ylabel(app.TIS_AxesEt, 'E(t) [1/s]') ;
+            grid(app.TIS_AxesEt, 'on') ;
         end
 
         %% ============== TIS CALLBACKS ==============
@@ -3159,14 +3231,6 @@ classdef NonIdealReactorApp < handle
                 % --- Reference: PFR (N→inf) ---
                 [C_out_pfr,  X_pfr]  = TanksInSeries.solve_PFR(RS, C0, tau_val) ;
 
-                % --- Update results ---
-                app.TIS_ResultNused.Text = sprintf('%.2f', N_val) ;
-                app.TIS_ResultXtis.Text = sprintf('%.4f', X_tis) ;
-                app.TIS_ResultXcstr.Text = sprintf('X_{CSTR}: %.4f', X_cstr) ;
-                app.TIS_ResultXpfr.Text = sprintf('X_{PFR}: %.4f', X_pfr) ;
-
-                app.ensureComponentSelectorItems(app.DisplayControls.TIS.component, RS.nComponents) ;
-
                 app.DisplayCache.TIS = struct( ...
                     'N_val', N_val, ...
                     'tau_val', tau_val, ...
@@ -3193,7 +3257,7 @@ classdef NonIdealReactorApp < handle
         end
 
         function TIS_updatePlots(app, N_val, tau_val, RS, C0, ...
-                                 X_tis, X_cstr, X_pfr, ...
+                                 ~, ~, ~, ...
                                  C_out_tis, C_out_cstr, C_out_pfr)
 
             % ---- Plot 1: E(t) for current N ----
@@ -3209,33 +3273,46 @@ classdef NonIdealReactorApp < handle
             ylabel(app.TIS_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
             app.updateConcentrationHeader(app.TIS_C_exitLabel, concDD) ;
-            app.updateConcentrationTable(app.TIS_C_exitTable, ...
-                [C_out_tis(:), C_out_cstr(:), C_out_pfr(:)], ...
-                {'TIS', 'CSTR', 'PFR'}, concDD) ;
+            app.TIS_C_exitPanel.Title = sprintf('Exit Summary - Concentration [%s]', ...
+                app.concentrationUnitName(concDD)) ;
+
+            compLabels = app.getReactionComponentLabels(RS) ;
+            speciesRoles = app.classifySpeciesRoles(RS) ;
+            reactantInfo = app.getPredictionReactantInfo(RS, C0) ;
+            speciesInfo = app.getPredictionSpeciesInfo(RS) ;
+            X_tis_all = app.computeSpeciesConversion(C0, C_out_tis, reactantInfo.reactantIndices) ;
+            X_cstr_all = app.computeSpeciesConversion(C0, C_out_cstr, reactantInfo.reactantIndices) ;
+            X_pfr_all = app.computeSpeciesConversion(C0, C_out_pfr, reactantInfo.reactantIndices) ;
+            app.updateTISSummaryTable( ...
+                compLabels, speciesRoles, C0, ...
+                C_out_tis, C_out_cstr, C_out_pfr, ...
+                reactantInfo.reactantIndices, X_tis_all, X_cstr_all, X_pfr_all, concDD) ;
 
             % ---- Plot 2: Outlet concentration vs N sweep ----
             cla(app.TIS_AxesXvsN) ;
             N_sweep = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 50, 100] ;
             C_sweep = zeros(numel(N_sweep), RS.nComponents) ;
+            X_sweep = zeros(numel(N_sweep), 1) ;
 
             for idx = 1:length(N_sweep)
-                [C_sweep(idx, :), ~] = TanksInSeries.solve_sequential( ...
+                [C_sweep(idx, :), X_sweep(idx)] = TanksInSeries.solve_sequential( ...
                     N_sweep(idx), RS, C0, tau_val) ;
             end
 
-            app.ensureComponentSelectorItems(app.DisplayControls.TIS.component, RS.nComponents) ;
-            selectedIdx = app.getSelectedComponentIndices(app.DisplayControls.TIS.component, RS.nComponents) ;
+            app.ensurePredictionSpeciesSelector(app.DisplayControls.TIS.component, speciesInfo) ;
+            selectedIdx = app.getPredictionSelectedSpecies(app.DisplayControls.TIS.component, speciesInfo) ;
             C_sweep_display = app.convertOutputConcentration(C_sweep, concDD) ;
             C_tis_display = app.convertOutputConcentration(C_out_tis, concDD) ;
             C_cstr_display = app.convertOutputConcentration(C_out_cstr, concDD) ;
             C_pfr_display = app.convertOutputConcentration(C_out_pfr, concDD) ;
+            compLabels = app.getReactionComponentLabels(RS) ;
             colors = lines(RS.nComponents) ;
             hold(app.TIS_AxesXvsN, 'on') ;
             for i = selectedIdx
                 plot(app.TIS_AxesXvsN, N_sweep, C_sweep_display(:, i), 'o-', ...
                     'Color', colors(i,:), 'LineWidth', 1.5, ...
                     'MarkerFaceColor', colors(i,:), ...
-                    'DisplayName', sprintf('C%d', i)) ;
+                    'DisplayName', compLabels{i}) ;
                 plot(app.TIS_AxesXvsN, N_val, C_tis_display(i), 'p', ...
                     'Color', colors(i,:), 'MarkerSize', 11, ...
                     'MarkerFaceColor', colors(i,:), ...
@@ -3251,49 +3328,84 @@ classdef NonIdealReactorApp < handle
             end
             hold(app.TIS_AxesXvsN, 'off') ;
 
-            if isscalar(selectedIdx)
-                title(app.TIS_AxesXvsN, sprintf('Outlet Concentration vs N - C%d', selectedIdx)) ;
+            if isempty(selectedIdx)
+                text(app.TIS_AxesXvsN, 0.5, 0.5, 'No species selected', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
+                legend(app.TIS_AxesXvsN, 'off') ;
+            elseif isscalar(selectedIdx)
+                title(app.TIS_AxesXvsN, sprintf('Outlet Concentration vs N - %s', compLabels{selectedIdx})) ;
             else
                 title(app.TIS_AxesXvsN, 'Outlet Concentration vs N') ;
             end
             xlabel(app.TIS_AxesXvsN, 'N [number of tanks]') ;
             ylabel(app.TIS_AxesXvsN, app.axisLabelWithUnit('C', concDD)) ;
-            if isscalar(selectedIdx)
+            if isempty(selectedIdx) || isscalar(selectedIdx)
                 legend(app.TIS_AxesXvsN, 'off') ;
             else
                 legend(app.TIS_AxesXvsN, 'Location', 'best') ;
             end
 
-            % ---- Plot 3: Comparison bar chart (spanning both columns) ----
+            % ---- Plot 3: Conversion vs N ----
             cla(app.TIS_AxesComparison) ;
-            bar_data = [X_cstr ; X_tis ; X_pfr] ;
-            b = bar(app.TIS_AxesComparison, bar_data) ;
-            b.FaceColor = 'flat' ;
-            b.CData = [0.9 0.3 0.3 ; 0.3 0.6 0.9 ; 0.3 0.8 0.3] ;
-            set(app.TIS_AxesComparison, 'XTickLabel', ...
-                {'CSTR (N=1)', sprintf('TIS (N=%.1f)', N_val), 'PFR (N->inf)'}) ;
-            ylabel(app.TIS_AxesComparison, 'Conversion X') ;
-            title(app.TIS_AxesComparison, 'CSTR vs TIS vs PFR') ;
-            ylim(app.TIS_AxesComparison, [0 1.12]) ;
-
-            % Value labels
-            hold(app.TIS_AxesComparison, 'on') ;
-            vals = [X_cstr, X_tis, X_pfr] ;
-            for idx = 1:3
-                if vals(idx) > 0.85
-                    ypos = vals(idx) - 0.06 ;
-                    txtColor = [1 1 1] ;
-                else
-                    ypos = vals(idx) + 0.03 ;
-                    txtColor = [0 0 0] ;
+            app.ensurePredictionReactantSelector(app.DisplayControls.TIS.reactant, reactantInfo) ;
+            selectedReactants = app.getPredictionSelectedReactants(app.DisplayControls.TIS.reactant, reactantInfo) ;
+            if isempty(reactantInfo.reactantIndices)
+                text(app.TIS_AxesComparison, 0.5, 0.5, 'No reactants with C_0 > 0', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
+                legend(app.TIS_AxesComparison, 'off') ;
+            elseif isempty(selectedReactants)
+                text(app.TIS_AxesComparison, 0.5, 0.5, 'No reactants selected', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
+                legend(app.TIS_AxesComparison, 'off') ;
+            else
+                X_sweep_all = zeros(numel(N_sweep), numel(reactantInfo.reactantIndices)) ;
+                for idx = 1:numel(N_sweep)
+                    X_sweep_all(idx, :) = app.computeSpeciesConversion( ...
+                        C0, C_sweep(idx, :), reactantInfo.reactantIndices) ;
                 end
-                text(app.TIS_AxesComparison, idx, ypos, ...
-                    sprintf('%.4f', vals(idx)), ...
-                    'HorizontalAlignment', 'center', ...
-                    'FontWeight', 'bold', 'FontSize', 10, ...
-                    'Color', txtColor) ;
+                reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedReactants) ;
+                reactantLabels = compLabels(selectedReactants) ;
+                reactantColors = lines(max(1, numel(reactantInfo.reactantIndices))) ;
+                hold(app.TIS_AxesComparison, 'on') ;
+                for k = 1:numel(selectedReactants)
+                    pos = reactantPlotPos(k) ;
+                    plot(app.TIS_AxesComparison, N_sweep, X_sweep_all(:, pos), 'o-', ...
+                        'Color', reactantColors(pos, :), ...
+                        'LineWidth', 1.5, ...
+                        'MarkerFaceColor', reactantColors(pos, :), ...
+                        'DisplayName', reactantLabels{k}) ;
+                    plot(app.TIS_AxesComparison, N_val, X_tis_all(pos), 'p', ...
+                        'Color', reactantColors(pos, :), ...
+                        'MarkerSize', 11, ...
+                        'MarkerFaceColor', reactantColors(pos, :), ...
+                        'HandleVisibility', 'off') ;
+                    if isscalar(selectedReactants)
+                        yline(app.TIS_AxesComparison, X_cstr_all(pos), '--', 'CSTR', ...
+                            'Color', [0.80 0.20 0.20], ...
+                            'LineWidth', 1, ...
+                            'LabelHorizontalAlignment', 'left') ;
+                        yline(app.TIS_AxesComparison, X_pfr_all(pos), '--', 'PFR', ...
+                            'Color', [0.20 0.60 0.20], ...
+                            'LineWidth', 1, ...
+                            'LabelHorizontalAlignment', 'left') ;
+                    end
+                end
+                hold(app.TIS_AxesComparison, 'off') ;
+                if isscalar(selectedReactants)
+                    title(app.TIS_AxesComparison, sprintf('Conversion vs N - %s', reactantLabels{1})) ;
+                else
+                    title(app.TIS_AxesComparison, 'Conversion vs N') ;
+                end
+                plotLimitMatrix = X_sweep_all(:, reactantPlotPos) ;
+                app.setPredictionAnnotatedYLimits(app.TIS_AxesComparison, plotLimitMatrix, 1) ;
+                if isscalar(selectedReactants)
+                    legend(app.TIS_AxesComparison, 'off') ;
+                else
+                    legend(app.TIS_AxesComparison, 'Location', 'best') ;
+                end
             end
-            hold(app.TIS_AxesComparison, 'off') ;
+            xlabel(app.TIS_AxesComparison, 'N [number of tanks]') ;
+            ylabel(app.TIS_AxesComparison, 'Conversion X (-)') ;
         end
 
         %% ============== TAB 4: DISPERSION MODEL ==============
