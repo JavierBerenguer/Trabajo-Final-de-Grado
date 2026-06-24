@@ -92,9 +92,10 @@ The main window includes **4 tabs**, a **File** menu, a **Tools** menu, a **Help
 
 ### Plots
 
-- **Conversion Comparison:** compares reactant conversion for `Segregation`, `Max Mixedness`, `Ideal CSTR`, and `Ideal PFR`. The `Reactants` list allows multiselection, so you can display any subset of reactants.
-- **Outlet Concentration:** compares outlet concentration for every species across the same four models. The `Species` list allows multiselection, and the `Concentration` control only affects this plot and its displayed units.
-- **Exit Summary:** table with inlet concentration, outlet concentration, and reactant conversion per species.
+- **Conversion Comparison:** compares reactant conversion with a fixed left-to-right model order: `Ideal CSTR`, `Segregation`, `Max Mixedness`, and `Ideal PFR`. The `Reactants` list allows multiselection, so you can display any subset of reactants.
+- **Outlet Concentration:** compares outlet concentration for every species using the same fixed model order and shared colors. The `Species` list allows multiselection, and the `Concentration` control only affects this plot and its displayed units.
+- **Exit Summary:** table with inlet concentration, outlet concentration `C(out)`, and reactant conversion per species.
+- **Non-Ideal Mixing Effect (%):** compact comparison of reactant conversion loss relative to the `Ideal PFR` reference.
 - **Shared Legend:** both plots use the same model colors and a single legend below the charts.
 
 ---

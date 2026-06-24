@@ -118,6 +118,9 @@ classdef NonIdealReactorApp < handle
         Pred_C_exitPanel
         Pred_C_exitLabel
         Pred_C_exitTable        % UITable: outlet concentrations per component
+        Pred_MixingEffectPanel
+        Pred_MixingEffectLabel
+        Pred_MixingEffectTable
         Pred_AxesXbatch
         Pred_AxesIntegrand
         Pred_SharedLegend
@@ -640,11 +643,11 @@ classdef NonIdealReactorApp < handle
         end
 
         function [labels, colors] = getPredictionModelLegendSpec(~)
-            labels = {'Segregation', 'Max Mixedness', 'Ideal CSTR', 'Ideal PFR'} ;
+            labels = {'Ideal CSTR', 'Segregation', 'Max Mixedness', 'Ideal PFR'} ;
             colors = [ ...
+                0.29 0.64 0.25
                 0.18 0.45 0.78
                 0.85 0.33 0.10
-                0.29 0.64 0.25
                 0.49 0.18 0.56] ;
         end
 
@@ -653,6 +656,74 @@ classdef NonIdealReactorApp < handle
             for i = 1:min(numel(barHandles), size(colors, 1))
                 barHandles(i).FaceColor = colors(i, :) ;
                 barHandles(i).DisplayName = labels{i} ;
+            end
+        end
+
+        function setPredictionAnnotatedYLimits(~, ax, valueMatrix, minimumUpper)
+            if nargin < 4 || isempty(minimumUpper)
+                minimumUpper = [] ;
+            end
+            if isempty(valueMatrix)
+                return
+            end
+
+            finiteValues = valueMatrix(isfinite(valueMatrix)) ;
+            if isempty(finiteValues)
+                return
+            end
+
+            minVal = min([0; finiteValues(:)]) ;
+            maxVal = max([0; finiteValues(:)]) ;
+            span = maxVal - minVal ;
+            if span < 1e-12
+                span = max([1, abs(maxVal), abs(minVal)]) ;
+            end
+
+            pad = max([0.12 * span, 0.04 * max(abs([minVal, maxVal])), 0.02]) ;
+            lowerLim = minVal - 0.35 * pad ;
+            upperLim = maxVal + 1.75 * pad ;
+
+            if minVal >= 0
+                lowerLim = 0 ;
+            end
+            if ~isempty(minimumUpper)
+                upperLim = max(upperLim, minimumUpper) ;
+            end
+
+            ylim(ax, [lowerLim, upperLim]) ;
+        end
+
+        function annotatePredictionBars(~, ax, barHandles, valueMatrix, formatSpec)
+            if isempty(barHandles) || isempty(valueMatrix)
+                return
+            end
+
+            nSeries = min(numel(barHandles), size(valueMatrix, 2)) ;
+            for i = 1:nSeries
+                if ~isprop(barHandles(i), 'XEndPoints') || ~isprop(barHandles(i), 'YEndPoints')
+                    continue
+                end
+
+                xPos = barHandles(i).XEndPoints ;
+                yPos = barHandles(i).YEndPoints ;
+                nPoints = min(numel(xPos), size(valueMatrix, 1)) ;
+                for k = 1:nPoints
+                    value = valueMatrix(k, i) ;
+                    if ~isfinite(value)
+                        continue
+                    end
+
+                    vAlign = 'bottom' ;
+                    if yPos(k) < 0
+                        vAlign = 'top' ;
+                    end
+
+                    text(ax, xPos(k), yPos(k), sprintf(formatSpec, value), ...
+                        'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', vAlign, ...
+                        'FontSize', 8, ...
+                        'Clipping', 'on') ;
+                end
             end
         end
 
@@ -680,6 +751,68 @@ classdef NonIdealReactorApp < handle
                 'Orientation', 'horizontal', ...
                 'Location', 'southoutside') ;
             app.Pred_SharedLegend.Layout.Tile = 'south' ;
+        end
+
+        function values = computePredictionModelComparison(~, X_model, X_reference)
+            values = nan(size(X_model)) ;
+            validMask = abs(X_reference) > 1e-12 ;
+            values(validMask) = (X_model(validMask) - X_reference(validMask)) ./ ...
+                max(abs(X_reference(validMask)), eps) * 100 ;
+        end
+
+        function updatePredictionMixingEffectPanel(app, reactantInfo, selectedIdx, ...
+                X_seg_all, X_mm_all, X_cstr_all, X_pfr_all)
+            if isempty(app.Pred_MixingEffectPanel) || ~isvalid(app.Pred_MixingEffectPanel)
+                return
+            end
+
+            app.Pred_MixingEffectPanel.Title = 'Non-Ideal Mixing Effect (%)' ;
+
+            if isempty(reactantInfo.reactantIndices)
+                app.Pred_MixingEffectTable.Visible = 'off' ;
+                app.Pred_MixingEffectLabel.Visible = 'on' ;
+                app.Pred_MixingEffectLabel.Text = 'No reactants with C_0 > 0' ;
+                return
+            end
+
+            if isempty(selectedIdx)
+                app.Pred_MixingEffectTable.Visible = 'off' ;
+                app.Pred_MixingEffectLabel.Visible = 'on' ;
+                app.Pred_MixingEffectLabel.Text = 'No reactants selected' ;
+                return
+            end
+
+            reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedIdx) ;
+            reactantLabels = reactantInfo.componentLabels(selectedIdx) ;
+            segVsCstr = app.computePredictionModelComparison( ...
+                X_seg_all(reactantPlotPos), X_cstr_all(reactantPlotPos)) ;
+            segVsPfr = app.computePredictionModelComparison( ...
+                X_seg_all(reactantPlotPos), X_pfr_all(reactantPlotPos)) ;
+            mmVsCstr = app.computePredictionModelComparison( ...
+                X_mm_all(reactantPlotPos), X_cstr_all(reactantPlotPos)) ;
+            mmVsPfr = app.computePredictionModelComparison( ...
+                X_mm_all(reactantPlotPos), X_pfr_all(reactantPlotPos)) ;
+
+            tableData = cell(numel(selectedIdx), 5) ;
+            for i = 1:numel(selectedIdx)
+                tableData{i, 1} = reactantLabels{i} ;
+                tableData{i, 2} = app.formatPredictionMixingComparison(segVsCstr(i)) ;
+                tableData{i, 3} = app.formatPredictionMixingComparison(segVsPfr(i)) ;
+                tableData{i, 4} = app.formatPredictionMixingComparison(mmVsCstr(i)) ;
+                tableData{i, 5} = app.formatPredictionMixingComparison(mmVsPfr(i)) ;
+            end
+
+            app.Pred_MixingEffectLabel.Visible = 'off' ;
+            app.Pred_MixingEffectTable.Visible = 'on' ;
+            app.Pred_MixingEffectTable.Data = tableData ;
+        end
+
+        function textValue = formatPredictionMixingComparison(~, numericValue)
+            if ~isfinite(numericValue)
+                textValue = '--' ;
+            else
+                textValue = sprintf('%+.2f', numericValue) ;
+            end
         end
 
         function X = computeSpeciesConversion(~, C0, C_exit, indices)
@@ -735,9 +868,9 @@ classdef NonIdealReactorApp < handle
 
                 if isKey(reactantPosMap, i) && strcmp(roles{i}, 'Reactant')
                     pos = reactantPosMap(i) ;
-                    summaryRows{i, 8} = sprintf('%.4f', X_seg(pos)) ;
-                    summaryRows{i, 9} = sprintf('%.4f', X_mm(pos)) ;
-                    summaryRows{i, 10} = sprintf('%.4f', X_cstr(pos)) ;
+                    summaryRows{i, 8} = sprintf('%.4f', X_cstr(pos)) ;
+                    summaryRows{i, 9} = sprintf('%.4f', X_seg(pos)) ;
+                    summaryRows{i, 10} = sprintf('%.4f', X_mm(pos)) ;
                     summaryRows{i, 11} = sprintf('%.4f', X_pfr(pos)) ;
                 else
                     summaryRows{i, 8} = '--' ;
@@ -769,10 +902,10 @@ classdef NonIdealReactorApp < handle
             end
 
             app.Pred_C_exitTable.ColumnName = { ...
-                'Component', 'Role', 'C0', 'Seg. C_exit', 'MM C_exit', ...
-                'CSTR C_exit', 'PFR C_exit', ...
-                'X_seg', 'X_MM', 'X_CSTR', 'X_PFR'} ;
-            app.Pred_C_exitTable.ColumnWidth = {100, 90, 80, 85, 85, 95, 95, 75, 75, 85, 85} ;
+                'Component', 'Role', 'C_in', 'Seg. C_out', 'MM C_out', ...
+                'CSTR C_out', 'PFR C_out', ...
+                'X_CSTR', 'X_seg', 'X_MM', 'X_PFR'} ;
+            app.Pred_C_exitTable.ColumnWidth = {88, 70, 68, 78, 78, 84, 84, 62, 62, 72, 72} ;
             app.Pred_C_exitTable.Data = summaryRows(rowOrder, :) ;
         end
 
@@ -2188,15 +2321,16 @@ classdef NonIdealReactorApp < handle
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Model Results') ;
-            rightGrid = uigridlayout(rightPanel, [2 1]) ;
+            rightGrid = uigridlayout(rightPanel, [2 2]) ;
             rightGrid.RowHeight = {'1x', '1x'} ;
-            rightGrid.ColumnWidth = {'1x'} ;
+            rightGrid.ColumnWidth = {'1.02x', '0.80x'} ;
             rightGrid.Padding = [0 0 0 0] ;
             rightGrid.RowSpacing = 6 ;
+            rightGrid.ColumnSpacing = 6 ;
 
             plotPanel = uipanel(rightGrid, 'BorderType', 'none') ;
             plotPanel.Layout.Row = 1 ;
-            plotPanel.Layout.Column = 1 ;
+            plotPanel.Layout.Column = [1 2] ;
             plotLayout = tiledlayout(plotPanel, 1, 2, ...
                 'Padding', 'compact', ...
                 'TileSpacing', 'compact') ;
@@ -2221,20 +2355,51 @@ classdef NonIdealReactorApp < handle
             app.Pred_C_exitPanel.Layout.Row = 2 ;
             app.Pred_C_exitPanel.Layout.Column = 1 ;
             app.Pred_C_exitPanel.Tooltip = ...
-                'Per-species summary of feed concentration, outlet concentration and reactant conversion for each prediction model.' ;
+                ['Per-species summary of feed concentration, outlet concentration and reactant conversion for each prediction model. ' ...
+                'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
             tableGrid = uigridlayout(app.Pred_C_exitPanel, [1 1], ...
                 'Padding', [6 6 6 6]) ;
             app.Pred_C_exitLabel = uilabel(tableGrid, ...
                 'Text', '', ...
                 'Visible', 'off') ;
             app.Pred_C_exitTable = uitable(tableGrid, ...
-                'ColumnName', {'Component', 'Role', 'C0', 'Seg. C_exit', 'MM C_exit', 'CSTR C_exit', 'PFR C_exit', 'X_seg', 'X_MM', 'X_CSTR', 'X_PFR'}, ...
+                'ColumnName', {'Component', 'Role', 'C_in', 'Seg. C_out', 'MM C_out', 'CSTR C_out', 'PFR C_out', 'X_CSTR', 'X_seg', 'X_MM', 'X_PFR'}, ...
                 'ColumnEditable', false(1, 11), ...
-                'ColumnWidth', {100, 90, 80, 85, 85, 95, 95, 75, 75, 85, 85}, ...
+                'ColumnWidth', {88, 70, 68, 78, 78, 84, 84, 62, 62, 72, 72}, ...
                 'RowName', {}) ;
             app.Pred_C_exitTable.Layout.Row = 1 ;
             app.Pred_C_exitTable.Tooltip = ...
-                'Reactants show concentration and conversion. Products, intermediates and inerts show concentration only.' ;
+                ['Reactants show concentration and conversion. Products, intermediates and inerts show concentration only. ' ...
+                'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
+
+            app.Pred_MixingEffectPanel = uipanel(rightGrid, ...
+                'Title', 'Non-Ideal Mixing Effect (%)') ;
+            app.Pred_MixingEffectPanel.Layout.Row = 2 ;
+            app.Pred_MixingEffectPanel.Layout.Column = 2 ;
+            app.Pred_MixingEffectPanel.Tooltip = ...
+                ['Relative conversion comparison between model pairs for the selected reactants. ' ...
+                'Positive values mean the first model has higher conversion than the reference model.'] ;
+            mixGrid = uigridlayout(app.Pred_MixingEffectPanel, [1 1], ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 6) ;
+            app.Pred_MixingEffectLabel = uilabel(mixGrid, ...
+                'Text', 'Compute a case to populate this comparison.', ...
+                'WordWrap', 'on') ;
+            app.Pred_MixingEffectLabel.HorizontalAlignment = 'center' ;
+            app.Pred_MixingEffectLabel.VerticalAlignment = 'top' ;
+            app.Pred_MixingEffectLabel.Layout.Row = 1 ;
+            app.Pred_MixingEffectLabel.Layout.Column = 1 ;
+            app.Pred_MixingEffectTable = uitable(mixGrid, ...
+                'ColumnName', {'Reactant', 'Seg. vs CSTR', 'Seg. vs PFR', 'MM vs CSTR', 'MM vs PFR'}, ...
+                'ColumnEditable', false(1, 5), ...
+                'ColumnWidth', {92, 102, 96, 102, 96}, ...
+                'RowName', {}, ...
+                'Visible', 'off') ;
+            app.Pred_MixingEffectTable.Layout.Row = 1 ;
+            app.Pred_MixingEffectTable.Layout.Column = 1 ;
+            app.Pred_MixingEffectTable.Tooltip = ...
+                ['Percentage conversion comparison for each selected reactant. ' ...
+                'Positive values mean the first model has higher conversion than the model shown after "vs".'] ;
         end
 
         %% ============== STREAM LOADING HELPER + CALLBACKS ==============
@@ -2553,15 +2718,16 @@ classdef NonIdealReactorApp < handle
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
             else
                 reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedIdx) ;
-                X_matrix = [X_seg_all(reactantPlotPos)', X_mm_all(reactantPlotPos)', ...
-                            X_cstr_all(reactantPlotPos)', X_pfr_all(reactantPlotPos)'] ;
+                X_matrix = [X_cstr_all(reactantPlotPos)', X_seg_all(reactantPlotPos)', ...
+                            X_mm_all(reactantPlotPos)', X_pfr_all(reactantPlotPos)'] ;
                 reactantLabels = reactantInfo.componentLabels(selectedIdx) ;
                 nSelectedReactants = numel(selectedIdx) ;
                 b = bar(app.Pred_AxesXbatch, 1:nSelectedReactants, X_matrix, 'grouped') ;
                 app.applyPredictionBarStyles(b) ;
                 app.Pred_AxesXbatch.XTick = 1:nSelectedReactants ;
                 app.Pred_AxesXbatch.XTickLabel = reactantLabels ;
-                ylim(app.Pred_AxesXbatch, [0, max(1, max(X_matrix(:)) * 1.1)]) ;
+                app.setPredictionAnnotatedYLimits(app.Pred_AxesXbatch, X_matrix, 1) ;
+                app.annotatePredictionBars(app.Pred_AxesXbatch, b, X_matrix, '%.4f') ;
             end
             title(app.Pred_AxesXbatch, 'Conversion Comparison') ;
             xlabel(app.Pred_AxesXbatch, 'Reactant') ;
@@ -2574,8 +2740,8 @@ classdef NonIdealReactorApp < handle
                 text(app.Pred_AxesIntegrand, 0.5, 0.5, 'No species selected', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
             else
-                concMatrix = [app.seg_model.C_exit(:), app.mm_model.C_exit(:), ...
-                              C_out_cstr_ref(:), C_out_pfr_ref(:)] ;  % nComp x 4
+                concMatrix = [C_out_cstr_ref(:), app.seg_model.C_exit(:), ...
+                              app.mm_model.C_exit(:), C_out_pfr_ref(:)] ;  % nComp x 4
                 concDisplay = reshape(app.convertOutputConcentration(concMatrix(:)', concDD), size(concMatrix)) ;
                 C_species = concDisplay(selectedSpeciesIdx, :) ;
                 speciesLabels = speciesInfo.componentLabels(selectedSpeciesIdx) ;
@@ -2584,6 +2750,8 @@ classdef NonIdealReactorApp < handle
                 app.applyPredictionBarStyles(b) ;
                 app.Pred_AxesIntegrand.XTick = 1:nSelectedSpecies ;
                 app.Pred_AxesIntegrand.XTickLabel = speciesLabels ;
+                app.setPredictionAnnotatedYLimits(app.Pred_AxesIntegrand, C_species) ;
+                app.annotatePredictionBars(app.Pred_AxesIntegrand, b, C_species, '%.4g') ;
             end
             legendHandles = app.createPredictionLegendPlaceholders(app.Pred_AxesXbatch) ;
             app.updatePredictionSharedLegend(legendHandles) ;
@@ -2598,6 +2766,8 @@ classdef NonIdealReactorApp < handle
                 app.seg_model.C_exit, app.mm_model.C_exit, C_out_cstr_ref, C_out_pfr_ref, ...
                 reactantInfo.reactantIndices, X_seg_all, X_mm_all, X_cstr_all, X_pfr_all, ...
                 selectedIdx, concDD) ;
+            app.updatePredictionMixingEffectPanel( ...
+                reactantInfo, selectedIdx, X_seg_all, X_mm_all, X_cstr_all, X_pfr_all) ;
         end
 
         %% ============== TAB 3: TANKS-IN-SERIES ==============
