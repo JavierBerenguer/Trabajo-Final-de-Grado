@@ -57,7 +57,10 @@ app = ReactorApp;
 
 - Modelo de dispersion axial parametrizado con `Bo`.
 - Soporte para contornos `open-open` y `closed-closed`.
-- Comparacion de conversion con referencias `CSTR` y `PFR`.
+- `Display units` reorganizado como en `Tanks-in-Series`: `Time base` solo para `E(t)`, `Concentration` para concentraciones y listas multiseleccion para `Species` y `Reactants`.
+- Graficas superiores `Outlet Concentration vs Bo` y `Conversion vs Bo`, ambas filtrables por multiseleccion.
+- Tabla `Exit Summary` con `C_in`, `Disp C_out`, referencias `CSTR`/`PFR` y conversion por reactivo.
+- `E(t)` se mantiene en la parte inferior derecha con anotacion de `Bo`, `Pe` y `tau`.
 
 ## Unidades
 

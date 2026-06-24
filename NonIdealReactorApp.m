@@ -185,13 +185,10 @@ classdef NonIdealReactorApp < handle
         Disp_StreamLoadButton   % Loads Stream from workspace
         Disp_StreamStatusLabel  % Shows loaded Stream info
         Disp_feedStream         % Loaded feed Stream object
+        Disp_C_exitPanel
         Disp_C_exitLabel
         Disp_C_exitTable        % UITable: outlet concentrations per component
         Disp_ComputeButton
-        Disp_ResultX
-        Disp_ResultXcstr
-        Disp_ResultXpfr
-        Disp_ResultBo
         Disp_RefreshButton
         Disp_AxesEt
         Disp_AxesXvsBo
@@ -978,6 +975,62 @@ classdef NonIdealReactorApp < handle
                 'PFR C_out', 'X_TIS', 'X_CSTR', 'X_PFR'} ;
             app.TIS_C_exitTable.ColumnWidth = {86, 72, 68, 82, 84, 84, 64, 74, 74} ;
             app.TIS_C_exitTable.Data = summaryRows(rowOrder, :) ;
+        end
+
+        function updateDispSummaryTable(app, ...
+                compLabels, roles, C0, ...
+                C_disp, C_cstr, C_pfr, ...
+                reactantIndices, X_disp, X_cstr, X_pfr, concDropdown)
+
+            nComp = numel(compLabels) ;
+            summaryRows = cell(nComp, 9) ;
+            concMatrix = [C0(:), C_disp(:), C_cstr(:), C_pfr(:)] ;
+            concDisplay = reshape(app.convertOutputConcentration(concMatrix(:)', concDropdown), size(concMatrix)) ;
+
+            reactantPosMap = containers.Map('KeyType', 'double', 'ValueType', 'double') ;
+            for k = 1:numel(reactantIndices)
+                reactantPosMap(reactantIndices(k)) = k ;
+            end
+
+            rolePriority = zeros(1, nComp) ;
+            for i = 1:nComp
+                summaryRows{i, 1} = compLabels{i} ;
+                summaryRows{i, 2} = roles{i} ;
+                for j = 1:4
+                    summaryRows{i, j + 2} = sprintf('%.4g', concDisplay(i, j)) ;
+                end
+
+                if isKey(reactantPosMap, i) && strcmp(roles{i}, 'Reactant')
+                    pos = reactantPosMap(i) ;
+                    summaryRows{i, 7} = sprintf('%.4f', X_disp(pos)) ;
+                    summaryRows{i, 8} = sprintf('%.4f', X_cstr(pos)) ;
+                    summaryRows{i, 9} = sprintf('%.4f', X_pfr(pos)) ;
+                else
+                    summaryRows{i, 7} = '--' ;
+                    summaryRows{i, 8} = '--' ;
+                    summaryRows{i, 9} = '--' ;
+                end
+
+                switch roles{i}
+                    case 'Reactant'
+                        rolePriority(i) = 1 ;
+                    case 'Intermediate'
+                        rolePriority(i) = 2 ;
+                    case 'Product'
+                        rolePriority(i) = 3 ;
+                    otherwise
+                        rolePriority(i) = 4 ;
+                end
+            end
+
+            [~, rowOrder] = sortrows([rolePriority(:), (1:nComp)']) ;
+            rowOrder = rowOrder(:)' ;
+
+            app.Disp_C_exitTable.ColumnName = { ...
+                'Component', 'Role', 'C_in', 'Disp C_out', 'CSTR C_out', ...
+                'PFR C_out', 'X_Disp', 'X_CSTR', 'X_PFR'} ;
+            app.Disp_C_exitTable.ColumnWidth = {86, 72, 68, 84, 84, 84, 68, 74, 74} ;
+            app.Disp_C_exitTable.Data = summaryRows(rowOrder, :) ;
         end
 
         function ensureComponentSelectorItems(app, dropdown, nComp)
@@ -3422,8 +3475,8 @@ classdef NonIdealReactorApp < handle
 
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Dispersion Configuration') ;
-            leftGrid = uigridlayout(leftPanel, [23 2]) ;
-            rowHD = repmat({28}, 1, 23) ; rowHD{16} = 56 ; rowHD{23} = 80 ;
+            leftGrid = uigridlayout(leftPanel, [17 2]) ;
+            rowHD = repmat({28}, 1, 17) ; rowHD{17} = 260 ;
             leftGrid.RowHeight = rowHD ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
@@ -3574,101 +3627,109 @@ classdef NonIdealReactorApp < handle
             app.Disp_ComputeButton.Layout.Row = 15 ;
             app.Disp_ComputeButton.Layout.Column = [1 2] ;
 
-            % Row 16: Display units
-            unitsGrid = uigridlayout(leftGrid, [2 2], ...
-                'ColumnWidth', {'1x', '1x'}, 'RowHeight', {24, 24}, 'Padding', [0 0 0 0], 'ColumnSpacing', 4) ;
-            unitsGrid.Layout.Row = 16 ;
-            unitsGrid.Layout.Column = [1 2] ;
-            app.DisplayControls.Dispersion.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Dispersion'), 84) ;
-            app.DisplayControls.Dispersion.concentration = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Dispersion'), 92) ;
-            app.DisplayControls.Dispersion.component = app.createDisplayChoiceControl( ...
-                unitsGrid, 2, [1 2], 'Plot:', {'All'}, 'All', @(~,~) app.refreshDisplayUnits('Dispersion'), 118) ;
-
-            % Row 17: Results header
-            lbl = uilabel(leftGrid, 'Text', 'Results:', ...
+            % Row 16: Display units title
+            lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
                 'FontWeight', 'bold', 'FontSize', 13) ;
-            lbl.Layout.Row = 17 ; lbl.Layout.Column = [1 2] ;
+            lbl.Layout.Row = 16 ; lbl.Layout.Column = [1 2] ;
 
-            % Row 18: Bo info
-            lbl = uilabel(leftGrid, 'Text', 'Bo:') ;
-            lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
-            app.Disp_ResultBo = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultBo.Layout.Row = 18 ; app.Disp_ResultBo.Layout.Column = 2 ;
-            app.setTooltip('Current Bodenstein number and its inverse Peclet number. They quantify the intensity of axial mixing in the dispersion model.', ...
-                lbl, app.Disp_ResultBo) ;
+            % Row 17: Display units
+            unitsGrid = uigridlayout(leftGrid, [2 2], ...
+                'ColumnWidth', {'1x', '1x'}, ...
+                'RowHeight', {'fit', '1x'}, ...
+                'Padding', [0 0 0 0], ...
+                'ColumnSpacing', 4, ...
+                'RowSpacing', 4) ;
+            unitsGrid.Layout.Row = 17 ;
+            unitsGrid.Layout.Column = [1 2] ;
 
-            % Row 19: X_dispersion
-            lbl = uilabel(leftGrid, 'Text', 'X<sub>dispersion</sub>:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 19 ; lbl.Layout.Column = 1 ;
-            app.Disp_ResultX = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultX.Layout.Row = 19 ; app.Disp_ResultX.Layout.Column = 2 ;
-            app.Disp_ResultX.FontWeight = 'bold' ;
-            app.setTooltip('Conversion predicted by the axial-dispersion reactor model for the selected Bo and boundary condition.', ...
-                lbl, app.Disp_ResultX) ;
+            rtdPanel = uipanel(unitsGrid, 'Title', 'E(t) Plot') ;
+            rtdPanel.Layout.Row = 1 ;
+            rtdPanel.Layout.Column = [1 2] ;
+            rtdGrid = uigridlayout(rtdPanel, [1 1], ...
+                'Padding', [6 6 6 6]) ;
+            app.DisplayControls.Dispersion.time = app.createDisplayUnitControl( ...
+                rtdGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Dispersion'), 84) ;
 
-            % Row 20: X_CSTR
-            lbl = uilabel(leftGrid, 'Text', 'X<sub>CSTR</sub> [Bo&#8594;&#8734;]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 20 ; lbl.Layout.Column = 1 ;
-            app.Disp_ResultXcstr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXcstr.Layout.Row = 20 ; app.Disp_ResultXcstr.Layout.Column = 2 ;
-            app.setTooltip('Reference conversion for the perfectly mixed limit of the dispersion model, reached as Bo approaches infinity.', ...
-                lbl, app.Disp_ResultXcstr) ;
+            concPanel = uipanel(unitsGrid, 'Title', 'Outlet Concentration vs Bo') ;
+            concPanel.Layout.Row = 2 ;
+            concPanel.Layout.Column = 1 ;
+            concGrid = uigridlayout(concPanel, [2 1], ...
+                'RowHeight', {'fit', '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 6) ;
+            app.DisplayControls.Dispersion.concentration = app.createDisplayUnitControl( ...
+                concGrid, 1, 1, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('Dispersion'), 92) ;
+            app.DisplayControls.Dispersion.species = app.createDisplayMultiSelectControl( ...
+                concGrid, 2, 1, 'Species:', @(~,~) app.refreshDisplayUnits('Dispersion'), '1x') ;
 
-            % Row 21: X_PFR
-            lbl = uilabel(leftGrid, 'Text', 'X<sub>PFR</sub> [Bo&#8594;0]:', 'Interpreter', 'html') ;
-            lbl.Layout.Row = 21 ; lbl.Layout.Column = 1 ;
-            app.Disp_ResultXpfr = uilabel(leftGrid, 'Text', '--') ;
-            app.Disp_ResultXpfr.Layout.Row = 21 ; app.Disp_ResultXpfr.Layout.Column = 2 ;
-            app.setTooltip('Reference conversion for the plug-flow limit of the dispersion model, reached as Bo approaches zero in this app convention.', ...
-                lbl, app.Disp_ResultXpfr) ;
-
-            % Row 22: Outlet concentrations header
-            app.Disp_C_exitLabel = uilabel(leftGrid, ...
-                'Text', 'Outlet Conc. at Exit [mol/m^3]:', ...
-                'FontWeight', 'bold') ;
-            app.Disp_C_exitLabel.Layout.Row = 22 ;
-            app.Disp_C_exitLabel.Layout.Column = [1 2] ;
-            app.Disp_C_exitLabel.Tooltip = ...
-                'Per-component outlet concentrations at the reactor exit for dispersion and its CSTR/PFR limits.' ;
-
-            % Row 23: Per-component outlet concentration table
-            app.Disp_C_exitTable = uitable(leftGrid, ...
-                'ColumnName', {'Comp.', 'Disp.', 'CSTR', 'PFR'}, ...
-                'ColumnEditable', [false false false false], ...
-                'ColumnWidth', {70, 80, 80, 80}) ;
-            app.Disp_C_exitTable.Layout.Row = 23 ;
-            app.Disp_C_exitTable.Layout.Column = [1 2] ;
-            app.Disp_C_exitTable.Tooltip = ...
-                'Outlet concentrations by component at the reactor exit for the selected dispersion model and its CSTR/PFR references.' ;
+            convPanel = uipanel(unitsGrid, 'Title', 'Conversion vs Bo') ;
+            convPanel.Layout.Row = 2 ;
+            convPanel.Layout.Column = 2 ;
+            convGrid = uigridlayout(convPanel, [2 1], ...
+                'RowHeight', {'fit', '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 6) ;
+            app.DisplayControls.Dispersion.reactant = app.createDisplayMultiSelectControl( ...
+                convGrid, 2, 1, 'Reactants:', @(~,~) app.refreshDisplayUnits('Dispersion'), '1x') ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'Dispersion Results') ;
-            plotGrid = uigridlayout(rightPanel, [2 2]) ;
-            plotGrid.RowHeight = {'1x', '1x'} ;
-            plotGrid.ColumnWidth = {'1x', '1x'} ;
+            rightGrid = uigridlayout(rightPanel, [2 2]) ;
+            rightGrid.RowHeight = {'1x', '1x'} ;
+            rightGrid.ColumnWidth = {'1x', '1x'} ;
+            rightGrid.Padding = [0 0 0 0] ;
+            rightGrid.RowSpacing = 6 ;
+            rightGrid.ColumnSpacing = 6 ;
 
-            % E(t) plot
-            app.Disp_AxesEt = uiaxes(plotGrid) ;
-            title(app.Disp_AxesEt, 'E(t) - Dispersion') ;
-            xlabel(app.Disp_AxesEt, 't [s]') ;
-            ylabel(app.Disp_AxesEt, 'E(t) [1/s]') ;
-            grid(app.Disp_AxesEt, 'on') ;
-
-            % X vs Bo sweep
-            app.Disp_AxesXvsBo = uiaxes(plotGrid) ;
+            % Outlet concentration vs Bo plot
+            app.Disp_AxesXvsBo = uiaxes(rightGrid) ;
+            app.Disp_AxesXvsBo.Layout.Row = 1 ;
+            app.Disp_AxesXvsBo.Layout.Column = 1 ;
             title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
             xlabel(app.Disp_AxesXvsBo, 'Bo [dispersion number]') ;
             ylabel(app.Disp_AxesXvsBo, 'C [mol/m^3]') ;
             grid(app.Disp_AxesXvsBo, 'on') ;
 
-            % Comparison bar chart (spans 2 columns)
-            app.Disp_AxesComparison = uiaxes(plotGrid) ;
-            app.Disp_AxesComparison.Layout.Column = [1 2] ;
-            title(app.Disp_AxesComparison, 'PFR vs Dispersion vs CSTR') ;
+            % Conversion vs Bo plot
+            app.Disp_AxesComparison = uiaxes(rightGrid) ;
+            app.Disp_AxesComparison.Layout.Row = 1 ;
+            app.Disp_AxesComparison.Layout.Column = 2 ;
+            title(app.Disp_AxesComparison, 'Conversion vs Bo') ;
+            xlabel(app.Disp_AxesComparison, 'Bo [dispersion number]') ;
             ylabel(app.Disp_AxesComparison, 'Conversion X') ;
             grid(app.Disp_AxesComparison, 'on') ;
+
+            % Exit summary table
+            app.Disp_C_exitPanel = uipanel(rightGrid, ...
+                'Title', 'Exit Summary - Concentration [mol/m^3]') ;
+            app.Disp_C_exitPanel.Layout.Row = 2 ;
+            app.Disp_C_exitPanel.Layout.Column = 1 ;
+            app.Disp_C_exitPanel.Tooltip = ...
+                ['Per-species summary of feed concentration, outlet concentration and reactant conversion for dispersion and its CSTR/PFR references. ' ...
+                'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
+            tableGrid = uigridlayout(app.Disp_C_exitPanel, [1 1], ...
+                'Padding', [6 6 6 6]) ;
+            app.Disp_C_exitLabel = uilabel(tableGrid, ...
+                'Text', '', ...
+                'Visible', 'off') ;
+            app.Disp_C_exitTable = uitable(tableGrid, ...
+                'ColumnName', {'Component', 'Role', 'C_in', 'Disp C_out', 'CSTR C_out', 'PFR C_out', 'X_Disp', 'X_CSTR', 'X_PFR'}, ...
+                'ColumnEditable', false(1, 9), ...
+                'ColumnWidth', {86, 72, 68, 84, 84, 84, 68, 74, 74}, ...
+                'RowName', {}) ;
+            app.Disp_C_exitTable.Layout.Row = 1 ;
+            app.Disp_C_exitTable.Tooltip = ...
+                ['Reactants show concentration and conversion. Products, intermediates and inerts show concentration only. ' ...
+                'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
+
+            % E(t) plot
+            app.Disp_AxesEt = uiaxes(rightGrid) ;
+            app.Disp_AxesEt.Layout.Row = 2 ;
+            app.Disp_AxesEt.Layout.Column = 2 ;
+            title(app.Disp_AxesEt, 'E(t) - Dispersion') ;
+            xlabel(app.Disp_AxesEt, 't [s]') ;
+            ylabel(app.Disp_AxesEt, 'E(t) [1/s]') ;
+            grid(app.Disp_AxesEt, 'on') ;
         end
 
         %% ============== DISPERSION CALLBACKS ==============
@@ -3843,14 +3904,6 @@ classdef NonIdealReactorApp < handle
                 X_cstr = max(0, min(1, X_cstr)) ;
                 X_pfr  = max(0, min(1, X_pfr)) ;
 
-                % Update results
-                app.Disp_ResultBo.Text = sprintf('Bo=%.4g, Pe=%.4g', Bo_val, 1/Bo_val) ;
-                app.Disp_ResultX.Text = sprintf('%.4f', X_disp) ;
-                app.Disp_ResultXcstr.Text = sprintf('%.4f', X_cstr) ;
-                app.Disp_ResultXpfr.Text = sprintf('%.4f', X_pfr) ;
-
-                app.ensureComponentSelectorItems(app.DisplayControls.Dispersion.component, RS.nComponents) ;
-
                 app.DisplayCache.Dispersion = struct( ...
                     'Bo_val', Bo_val, ...
                     'tau_val', tau_val, ...
@@ -3878,7 +3931,7 @@ classdef NonIdealReactorApp < handle
         end
 
         function Disp_updatePlots(app, Bo_val, tau_val, RS, C0, ...
-                                  X_disp, X_cstr, X_pfr, ...
+                                  ~, ~, ~, ...
                                   C_out_disp, C_out_cstr, C_out_pfr, bcType)
 
             % ---- Plot 1: E(t) ----
@@ -3894,7 +3947,6 @@ classdef NonIdealReactorApp < handle
             xlabel(app.Disp_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.Disp_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
-            % Add annotation
             tau_display = app.convertOutputScalar('Time', tau_val, timeDD) ;
             text(app.Disp_AxesEt, 0.95, 0.90, ...
                 sprintf('Bo = %.4g\nPe = %.4g\n\\tau = %.4g %s', ...
@@ -3904,26 +3956,37 @@ classdef NonIdealReactorApp < handle
                 'Interpreter', 'tex', ...
                 'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
 
-            app.updateConcentrationHeader(app.Disp_C_exitLabel, concDD) ;
-            app.updateConcentrationTable(app.Disp_C_exitTable, ...
-                [C_out_disp(:), C_out_cstr(:), C_out_pfr(:)], ...
-                {'Disp.', 'CSTR', 'PFR'}, concDD) ;
+            app.Disp_C_exitPanel.Title = sprintf('Exit Summary - Concentration [%s]', ...
+                app.concentrationUnitName(concDD)) ;
+
+            compLabels = app.getReactionComponentLabels(RS) ;
+            speciesRoles = app.classifySpeciesRoles(RS) ;
+            reactantInfo = app.getPredictionReactantInfo(RS, C0) ;
+            speciesInfo = app.getPredictionSpeciesInfo(RS) ;
+            X_disp_all = app.computeSpeciesConversion(C0, C_out_disp, reactantInfo.reactantIndices) ;
+            X_cstr_all = app.computeSpeciesConversion(C0, C_out_cstr, reactantInfo.reactantIndices) ;
+            X_pfr_all = app.computeSpeciesConversion(C0, C_out_pfr, reactantInfo.reactantIndices) ;
+            app.updateDispSummaryTable( ...
+                compLabels, speciesRoles, C0, ...
+                C_out_disp, C_out_cstr, C_out_pfr, ...
+                reactantInfo.reactantIndices, X_disp_all, X_cstr_all, X_pfr_all, concDD) ;
 
             % ---- Plot 2: Outlet concentration vs Bo sweep ----
             cla(app.Disp_AxesXvsBo) ;
             [Bo_sweep, ~, C_sweep] = app.disp_reactor.sweep_Bo_general(RS, C0, tau_val) ;
-            app.ensureComponentSelectorItems(app.DisplayControls.Dispersion.component, RS.nComponents) ;
-            selectedIdx = app.getSelectedComponentIndices(app.DisplayControls.Dispersion.component, RS.nComponents) ;
+            app.ensurePredictionSpeciesSelector(app.DisplayControls.Dispersion.species, speciesInfo) ;
+            selectedIdx = app.getPredictionSelectedSpecies(app.DisplayControls.Dispersion.species, speciesInfo) ;
             C_sweep_display = app.convertOutputConcentration(C_sweep, concDD) ;
             C_disp_display = app.convertOutputConcentration(C_out_disp, concDD) ;
             C_cstr_display = app.convertOutputConcentration(C_out_cstr, concDD) ;
             C_pfr_display = app.convertOutputConcentration(C_out_pfr, concDD) ;
             colors = lines(RS.nComponents) ;
+            title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
             hold(app.Disp_AxesXvsBo, 'on') ;
             for i = selectedIdx
                 semilogx(app.Disp_AxesXvsBo, Bo_sweep, C_sweep_display(:, i), '-', ...
                     'Color', colors(i,:), 'LineWidth', 1.5, ...
-                    'DisplayName', sprintf('C%d', i)) ;
+                    'DisplayName', compLabels{i}) ;
                 semilogx(app.Disp_AxesXvsBo, Bo_val, C_disp_display(i), 'p', ...
                     'Color', colors(i,:), 'MarkerSize', 12, ...
                     'MarkerFaceColor', colors(i,:), ...
@@ -3939,14 +4002,18 @@ classdef NonIdealReactorApp < handle
             end
             hold(app.Disp_AxesXvsBo, 'off') ;
 
-            if isscalar(selectedIdx)
-                title(app.Disp_AxesXvsBo, sprintf('Outlet Concentration vs Bo - C%d', selectedIdx)) ;
+            if isempty(selectedIdx)
+                text(app.Disp_AxesXvsBo, 0.5, 0.5, 'No species selected', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
+                legend(app.Disp_AxesXvsBo, 'off') ;
+            elseif isscalar(selectedIdx)
+                title(app.Disp_AxesXvsBo, sprintf('Outlet Concentration vs Bo - %s', compLabels{selectedIdx})) ;
             else
                 title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
             end
             xlabel(app.Disp_AxesXvsBo, 'Bo [dispersion number]') ;
             ylabel(app.Disp_AxesXvsBo, app.axisLabelWithUnit('C', concDD)) ;
-            if isscalar(selectedIdx)
+            if isempty(selectedIdx) || isscalar(selectedIdx)
                 legend(app.Disp_AxesXvsBo, 'off') ;
             else
                 legend(app.Disp_AxesXvsBo, 'Location', 'best') ;
@@ -3954,34 +4021,66 @@ classdef NonIdealReactorApp < handle
 
             % ---- Plot 3: Comparison bar chart (CSTR → Disp → PFR) ----
             cla(app.Disp_AxesComparison) ;
-            bar_data = [X_cstr ; X_disp ; X_pfr] ;
-            b = bar(app.Disp_AxesComparison, bar_data) ;
-            b.FaceColor = 'flat' ;
-            b.CData = [0.9 0.3 0.3 ; 0.3 0.6 0.9 ; 0.3 0.8 0.3] ;
-            set(app.Disp_AxesComparison, 'XTickLabel', ...
-                {'CSTR (Bo->inf)', sprintf('Disp (Bo=%.3g)', Bo_val), 'PFR (Bo->0)'}) ;
-            ylabel(app.Disp_AxesComparison, 'Conversion X') ;
-            title(app.Disp_AxesComparison, 'CSTR vs Dispersion vs PFR') ;
-            ylim(app.Disp_AxesComparison, [0 1.12]) ;
-
-            % Value labels
-            hold(app.Disp_AxesComparison, 'on') ;
-            vals = [X_cstr, X_disp, X_pfr] ;
-            for idx = 1:3
-                if vals(idx) > 0.85
-                    ypos = vals(idx) - 0.06 ;
-                    txtColor = [1 1 1] ;
-                else
-                    ypos = vals(idx) + 0.03 ;
-                    txtColor = [0 0 0] ;
+            title(app.Disp_AxesComparison, 'Conversion vs Bo') ;
+            app.ensurePredictionReactantSelector(app.DisplayControls.Dispersion.reactant, reactantInfo) ;
+            selectedReactants = app.getPredictionSelectedReactants(app.DisplayControls.Dispersion.reactant, reactantInfo) ;
+            if isempty(reactantInfo.reactantIndices)
+                text(app.Disp_AxesComparison, 0.5, 0.5, 'No reactants with C_0 > 0', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
+                legend(app.Disp_AxesComparison, 'off') ;
+            elseif isempty(selectedReactants)
+                text(app.Disp_AxesComparison, 0.5, 0.5, 'No reactants selected', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
+                legend(app.Disp_AxesComparison, 'off') ;
+            else
+                X_sweep_all = zeros(numel(Bo_sweep), numel(reactantInfo.reactantIndices)) ;
+                for idx = 1:numel(Bo_sweep)
+                    X_sweep_all(idx, :) = app.computeSpeciesConversion( ...
+                        C0, C_sweep(idx, :), reactantInfo.reactantIndices) ;
                 end
-                text(app.Disp_AxesComparison, idx, ypos, ...
-                    sprintf('%.4f', vals(idx)), ...
-                    'HorizontalAlignment', 'center', ...
-                    'FontWeight', 'bold', 'FontSize', 10, ...
-                    'Color', txtColor) ;
+                reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedReactants) ;
+                reactantLabels = compLabels(selectedReactants) ;
+                reactantColors = lines(max(1, numel(reactantInfo.reactantIndices))) ;
+                hold(app.Disp_AxesComparison, 'on') ;
+                for k = 1:numel(selectedReactants)
+                    pos = reactantPlotPos(k) ;
+                    semilogx(app.Disp_AxesComparison, Bo_sweep, X_sweep_all(:, pos), 'o-', ...
+                        'Color', reactantColors(pos, :), ...
+                        'LineWidth', 1.5, ...
+                        'MarkerFaceColor', reactantColors(pos, :), ...
+                        'DisplayName', reactantLabels{k}) ;
+                    semilogx(app.Disp_AxesComparison, Bo_val, X_disp_all(pos), 'p', ...
+                        'Color', reactantColors(pos, :), ...
+                        'MarkerSize', 11, ...
+                        'MarkerFaceColor', reactantColors(pos, :), ...
+                        'HandleVisibility', 'off') ;
+                    if isscalar(selectedReactants)
+                        yline(app.Disp_AxesComparison, X_cstr_all(pos), '--', 'CSTR', ...
+                            'Color', [0.80 0.20 0.20], ...
+                            'LineWidth', 1, ...
+                            'LabelHorizontalAlignment', 'left') ;
+                        yline(app.Disp_AxesComparison, X_pfr_all(pos), '--', 'PFR', ...
+                            'Color', [0.20 0.60 0.20], ...
+                            'LineWidth', 1, ...
+                            'LabelHorizontalAlignment', 'left') ;
+                    end
+                end
+                hold(app.Disp_AxesComparison, 'off') ;
+                if isscalar(selectedReactants)
+                    title(app.Disp_AxesComparison, sprintf('Conversion vs Bo - %s', reactantLabels{1})) ;
+                else
+                    title(app.Disp_AxesComparison, 'Conversion vs Bo') ;
+                end
+                plotLimitMatrix = X_sweep_all(:, reactantPlotPos) ;
+                app.setPredictionAnnotatedYLimits(app.Disp_AxesComparison, plotLimitMatrix, 1) ;
+                if isscalar(selectedReactants)
+                    legend(app.Disp_AxesComparison, 'off') ;
+                else
+                    legend(app.Disp_AxesComparison, 'Location', 'best') ;
+                end
             end
-            hold(app.Disp_AxesComparison, 'off') ;
+            xlabel(app.Disp_AxesComparison, 'Bo [dispersion number]') ;
+            ylabel(app.Disp_AxesComparison, 'Conversion X (-)') ;
         end
     end
 

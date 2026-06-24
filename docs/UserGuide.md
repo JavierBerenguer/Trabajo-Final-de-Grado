@@ -144,7 +144,15 @@ The main window includes **4 tabs**, a **File** menu, a **Tools** menu, a **Help
 2. Enter `Bo`, `tau`, and `C_A0`.
 3. Create, edit, or load the reaction system.
 4. Click **Compute**.
-5. Review `X_disp`, `X_CSTR`, `X_PFR`, and the reported `Pe` value.
+5. Review the `Outlet Concentration vs Bo` and `Conversion vs Bo` plots, the `Exit Summary` table, and the reported `Bo`/`Pe` annotation in `E(t)`.
+
+### Display Units and Results
+
+- **E(t) Plot:** uses the local `Time base` selector only.
+- **Outlet Concentration vs Bo:** uses the `Concentration` selector and a multiselect `Species` list.
+- **Conversion vs Bo:** uses a multiselect `Reactants` list.
+- **Exit Summary:** shows `C_in`, `Disp C_out`, `CSTR C_out`, `PFR C_out`, `X_Disp`, `X_CSTR`, and `X_PFR` for all species.
+- The lower-left table is not filtered by the species/reactant selectors; those selectors only affect the plots.
 
 ---
 
