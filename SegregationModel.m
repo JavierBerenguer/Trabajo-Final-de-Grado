@@ -103,6 +103,9 @@ classdef SegregationModel
 
             % Store concentration profiles
             obj.C_batch = interp1(t_ode, C_ode, t_rtd, 'pchip') ;
+            if nComp == 1
+                obj.C_batch = obj.C_batch(:) ;
+            end
 
             % Integrate
             obj.integrand = obj.X_batch .* Et ;

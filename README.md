@@ -2,12 +2,13 @@
 
 Herramienta de MATLAB para analizar reactores no ideales a partir de distribuciones de tiempo de residencia (RTD) y modelos limite de mezcla.
 
-La app actual se ha acotado a **4 tabs**:
+La app actual se ha acotado a **5 tabs**:
 
 1. `RTD Analysis`
 2. `Prediction Models`
 3. `Tanks-in-Series`
 4. `Dispersion Model`
+5. `Design & Optimization`
 
 ## Requisitos
 
@@ -68,6 +69,18 @@ app = ReactorApp;
 - Tabla `Exit Summary` con `C_in`, `Disp C_out`, referencias `CSTR`/`PFR` y conversion por reactivo.
 - `E(t)` se mantiene en la parte inferior derecha con anotacion de `Bo`, `Pe` y `tau`.
 
+### Tab 5 - Design & Optimization
+
+- Workspace abierto para trabajo no ideal en tres subareas:
+  - `Diagnosis & Fit`
+  - `Reactive Performance`
+  - `Optimization & Scale-Up`
+- La caracterizacion RTD se hace en `Tab 1 - RTD Analysis`; Tab 5 ya no duplica esa etapa.
+- `Diagnosis & Fit` ajusta `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass` y `CSTR + Dead Volume + Bypass` a partir de la RTD de Tab 1.
+- `Reactive Performance` compara `Ideal CSTR`, `Segregation`, `Max Mixedness` e `Ideal PFR`, e incluye deteccion directa de 1er orden cuando aplica.
+- `Optimization & Scale-Up` optimiza sobre `tau`, `N`, `Bo`, `bypass`, `activeFraction` y `recycleRatio`, y compara escenarios piloto/industrial.
+- La persistencia de sesion ya incluye snapshot propio `designWorkspace`.
+
 ## Unidades
 
 La app convierte entradas a SI internamente y permite seleccionar unidades de visualizacion por tab.
@@ -81,6 +94,7 @@ UnitConverterHelper.launch()
 ```text
 ReactorApp toolbox/
   NonIdealReactorApp.m
+  DesignWorkspaceHelper.m
   RTD.m
   SegregationModel.m
   MaxMixednessModel.m

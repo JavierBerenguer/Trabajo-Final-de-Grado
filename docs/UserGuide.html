@@ -153,7 +153,7 @@
       <h2>Quick Start</h2>
       <pre><code>% Launch the application
 app = NonIdealReactorApp ;</code></pre>
-      <p>The main window includes <strong>4 tabs</strong>, a <strong>File</strong> menu, a <strong>Tools</strong> menu, a <strong>Help</strong> menu, and a status bar at the bottom.</p>
+      <p>The main window includes <strong>5 tabs</strong>, a <strong>File</strong> menu, a <strong>Tools</strong> menu, a <strong>Help</strong> menu, and a status bar at the bottom.</p>
       <h3>Working with Units</h3>
       <ul>
         <li>Most numeric inputs include a unit dropdown next to the field.</li>
@@ -279,6 +279,31 @@ app = NonIdealReactorApp ;</code></pre>
         <li>Click <strong>Compute</strong>.</li>
         <li>Review <code>X_disp</code>, <code>X_CSTR</code>, <code>X_PFR</code>, and the reported <code>Pe</code> value.</li>
       </ol>
+    </section>
+
+    <section class="section">
+      <h2>Tab 5: Design &amp; Optimization</h2>
+      <p><strong>Purpose:</strong> Work in a single Tab 5 workspace that starts from an existing RTD and connects equivalent-model fitting, reactive prediction, and optimization.</p>
+      <h3>Subareas</h3>
+      <ul>
+        <li><strong>Diagnosis &amp; Fit:</strong> estimate equivalent parameters for <code>Tanks-in-Series</code>, <code>Axial Dispersion</code>, <code>CSTR + Dead Volume</code>, <code>CSTR + Bypass</code>, and <code>CSTR + Dead Volume + Bypass</code>.</li>
+        <li><strong>Reactive Performance:</strong> compare <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>, together with outlet concentrations, selectivity, and yield.</li>
+        <li><strong>Optimization &amp; Scale-Up:</strong> optimize equivalent hydrodynamic parameters and compare pilot versus industrial scenarios with the same chemistry.</li>
+      </ul>
+      <h3>Typical Workflow</h3>
+      <ol>
+        <li>In <strong>Tab 1: RTD Analysis</strong>, generate or import the RTD and verify its moments and plots there.</li>
+        <li>In <strong>Diagnosis &amp; Fit</strong>, choose an equivalent family and run the fit if you want a compact hydrodynamic representation.</li>
+        <li>In <strong>Reactive Performance</strong>, load a <code>ReactionSys</code> and a liquid <code>Stream</code> from the workspace, choose the key reactant and products, and compute the four reference models using either <code>Tab 1 RTD</code> or <code>Fitted RTD</code>.</li>
+        <li>In <strong>Optimization &amp; Scale-Up</strong>, reuse that same chemistry to optimize <code>tau</code>, <code>N</code>, <code>Bo</code>, <code>bypass</code>, <code>activeFraction</code>, and <code>recycleRatio</code>, or to compare pilot and industrial cases.</li>
+      </ol>
+      <h3>Notes</h3>
+      <ul>
+        <li>Tab 5 is <strong>isothermal</strong> and <strong>steady-state</strong> in this version.</li>
+        <li>RTD preprocessing belongs to <strong>Tab 1</strong>, so Tab 5 no longer includes a separate hydrodynamics subarea.</li>
+        <li>Session save/load already preserves the Tab 5 workspace through <code>designWorkspace</code>.</li>
+        <li>The new workspace replaces the old <code>Design Templates</code> direction as the active Tab 5 of the app.</li>
+      </ul>
     </section>
 
     <section class="section">

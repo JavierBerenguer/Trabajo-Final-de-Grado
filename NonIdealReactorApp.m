@@ -2,7 +2,7 @@ classdef NonIdealReactorApp < handle
 % NonIdealReactorApp - GUI for non-ideal reactor analysis
 % This app provides tools for RTD analysis, conversion prediction using
 % segregation and maximum mixedness models, tanks-in-series, dispersion,
-% convolution/deconvolution, and combined reactor models.
+% and a design & optimization workspace for non-ideal reactors.
 %
 % Launch: app = NonIdealReactorApp ;
 %
@@ -196,6 +196,11 @@ classdef NonIdealReactorApp < handle
 
         % Stored dispersion model
         disp_reactor            % DispersionReactor object
+
+        % ---- Tab 5: Design & Optimization Workspace ----
+        DesignTab
+        DesignUI = struct()
+        DesignState = struct()
     end
 
     methods (Access = public)
@@ -249,6 +254,7 @@ classdef NonIdealReactorApp < handle
             app.createPredictionTab() ;
             app.createTISTab() ;
             app.createDispersionTab() ;
+            app.createDesignTemplatesTab() ;
             app.RTD_updateFQuery() ;
             app.Pred_inputMethodChanged() ;
 
@@ -632,7 +638,7 @@ classdef NonIdealReactorApp < handle
             end
 
             snapshot = struct() ;
-            snapshot.session_version = 1 ;
+            snapshot.session_version = 2 ;
             snapshot.saved_at = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')) ;
             snapshot.session_name = sessionName ;
             snapshot.selected_tab_title = selectedTabTitle ;
@@ -716,6 +722,8 @@ classdef NonIdealReactorApp < handle
                 'rtdStatus', app.captureLabelState(app.Disp_RTDStatusLabel), ...
                 'rsStatus', app.captureLabelState(app.Disp_RSStatusLabel), ...
                 'streamStatus', app.captureLabelState(app.Disp_StreamStatusLabel)) ;
+
+            snapshot.designWorkspace = app.DW_buildSnapshot() ;
         end
 
         function applySessionSnapshot(app, snapshot)
@@ -868,6 +876,13 @@ classdef NonIdealReactorApp < handle
                 app.refreshDisplayUnits('Dispersion') ;
             end
 
+            designSnapshot = app.getStructField(snapshot, 'designWorkspace', struct()) ;
+            if isempty(fieldnames(designSnapshot))
+                designSnapshot = app.DW_convertLegacyTemplateSnapshot( ...
+                    app.getStructField(snapshot, 'designTemplates', struct())) ;
+            end
+            app.DW_applySnapshot(designSnapshot) ;
+
             selectedTabTitle = app.getStructField(snapshot, 'selected_tab_title', '') ;
             if ~isempty(selectedTabTitle)
                 for k = 1:numel(app.TabGroup.Children)
@@ -948,7 +963,7 @@ classdef NonIdealReactorApp < handle
 
                 loadedData = load(fullfile(filePath, fileName), 'sessionData') ;
                 if ~isfield(loadedData.sessionData, 'session_version') || ...
-                        loadedData.sessionData.session_version < 1
+                        loadedData.sessionData.session_version < 2
                     uialert(app.UIFigure, ...
                         'La sesion cargada usa un formato antiguo o incompleto. Se han aplicado valores por defecto donde ha sido necesario.', ...
                         'Session Compatibility', 'Icon', 'info') ;
@@ -4774,6 +4789,571 @@ classdef NonIdealReactorApp < handle
             end
             xlabel(app.Disp_AxesComparison, 'Bo [dispersion number]') ;
             ylabel(app.Disp_AxesComparison, 'Conversion X (-)') ;
+        end
+
+        %% ============== TAB 5: DESIGN & OPTIMIZATION WORKSPACE ==============
+
+        function createDesignTemplatesTab(app)
+            app.DesignState = DesignWorkspaceHelper.defaultState() ;
+            app.DesignTab = uitab(app.TabGroup, 'Title', 'Design & Optimization') ;
+
+            root = uigridlayout(app.DesignTab, [1 1]) ;
+            root.Padding = [8 8 8 8] ;
+
+            app.DesignUI.TabGroup = uitabgroup(root) ;
+
+            app.DW_createFitTab() ;
+            app.DW_createReactiveTab() ;
+            app.DW_createOptimizationTab() ;
+            app.DW_refreshAll() ;
+        end
+
+        function D = DW_buildSnapshot(app)
+            D = struct() ;
+            D.fit = struct() ;
+            D.fit.source = app.DesignUI.Fit.SourceDropdown.Value ;
+            D.fit.family = app.DesignUI.Fit.FamilyDropdown.Value ;
+            D.fit.boundary = app.DesignUI.Fit.BoundaryDropdown.Value ;
+            D.fit.referenceTau = app.captureFieldWithUnit(app.DesignUI.Fit.ReferenceTauField) ;
+            D.fit.result = app.DesignState.fitResult ;
+
+            D.reaction = struct() ;
+            D.reaction.rtdSource = app.DesignUI.Reactive.RTDSourceDropdown.Value ;
+            D.reaction.rsName = app.DesignUI.Reactive.RSNameField.Value ;
+            D.reaction.streamName = app.DesignUI.Reactive.StreamNameField.Value ;
+            D.reaction.rs = app.serializeValueObject(app.getStructField(app.DesignState.reactionSpec, 'rs', [])) ;
+            D.reaction.feedStream = app.serializeValueObject(app.getStructField(app.DesignState.reactionSpec, 'feedStream', [])) ;
+            D.reaction.keyComponentIndex = app.DesignUI.Reactive.KeyComponentDropdown.Value ;
+            D.reaction.desiredProductIndex = app.DesignUI.Reactive.DesiredProductDropdown.Value ;
+            D.reaction.byproductIndex = app.DesignUI.Reactive.ByproductDropdown.Value ;
+            D.reaction.result = app.getStructField(app.DesignState.lastSolutions, 'reactiveResult', []) ;
+
+            D.optimization = struct() ;
+            D.optimization.family = app.DesignUI.Optimization.FamilyDropdown.Value ;
+            D.optimization.reactionMode = app.DesignUI.Optimization.ReactionModeDropdown.Value ;
+            D.optimization.boundary = app.DesignUI.Optimization.BoundaryDropdown.Value ;
+            D.optimization.objective = app.DesignUI.Optimization.ObjectiveDropdown.Value ;
+            D.optimization.decisionTable = app.DesignUI.Optimization.DecisionTable.Data ;
+            D.optimization.constraintTable = app.DesignUI.Optimization.ConstraintTable.Data ;
+            D.optimization.scaleTable = app.DesignUI.Optimization.ScaleTable.Data ;
+            D.optimization.result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
+            D.optimization.scaleResult = app.getStructField(app.DesignState.lastSolutions, 'scaleUpResult', []) ;
+        end
+
+        function DW_applySnapshot(app, snapshot)
+            if isempty(snapshot) || ~isstruct(snapshot)
+                return
+            end
+
+            fit = app.getStructField(snapshot, 'fit', struct()) ;
+            app.setDropdownValueIfValid(app.DesignUI.Fit.SourceDropdown, app.getStructField(fit, 'source', app.DesignUI.Fit.SourceDropdown.Value)) ;
+            app.setDropdownValueIfValid(app.DesignUI.Fit.FamilyDropdown, app.getStructField(fit, 'family', app.DesignUI.Fit.FamilyDropdown.Value)) ;
+            app.setDropdownValueIfValid(app.DesignUI.Fit.BoundaryDropdown, app.getStructField(fit, 'boundary', app.DesignUI.Fit.BoundaryDropdown.Value)) ;
+            app.applyFieldWithUnit(app.DesignUI.Fit.ReferenceTauField, app.getStructField(fit, 'referenceTau', struct())) ;
+            app.DesignState.fitResult = app.getStructField(fit, 'result', []) ;
+
+            reaction = app.getStructField(snapshot, 'reaction', struct()) ;
+            app.setDropdownValueIfValid(app.DesignUI.Reactive.RTDSourceDropdown, app.getStructField(reaction, 'rtdSource', app.DesignUI.Reactive.RTDSourceDropdown.Value)) ;
+            app.DesignUI.Reactive.RSNameField.Value = app.getStructField(reaction, 'rsName', app.DesignUI.Reactive.RSNameField.Value) ;
+            app.DesignUI.Reactive.StreamNameField.Value = app.getStructField(reaction, 'streamName', app.DesignUI.Reactive.StreamNameField.Value) ;
+            app.DesignState.reactionSpec.rs = app.deserializeValueObject(app.getStructField(reaction, 'rs', []), 'ReactionSys') ;
+            app.DesignState.reactionSpec.feedStream = app.deserializeValueObject(app.getStructField(reaction, 'feedStream', []), 'Stream') ;
+            app.DesignState.reactionSpec.keyComponentIndex = app.getStructField(reaction, 'keyComponentIndex', 1) ;
+            app.DesignState.reactionSpec.desiredProductIndex = app.getStructField(reaction, 'desiredProductIndex', 2) ;
+            app.DesignState.reactionSpec.byproductIndex = app.getStructField(reaction, 'byproductIndex', 3) ;
+            app.DesignState.lastSolutions.reactiveResult = app.getStructField(reaction, 'result', []) ;
+
+            opt = app.getStructField(snapshot, 'optimization', struct()) ;
+            app.setDropdownValueIfValid(app.DesignUI.Optimization.FamilyDropdown, app.getStructField(opt, 'family', app.DesignUI.Optimization.FamilyDropdown.Value)) ;
+            app.setDropdownValueIfValid(app.DesignUI.Optimization.ReactionModeDropdown, app.getStructField(opt, 'reactionMode', app.DesignUI.Optimization.ReactionModeDropdown.Value)) ;
+            app.setDropdownValueIfValid(app.DesignUI.Optimization.BoundaryDropdown, app.getStructField(opt, 'boundary', app.DesignUI.Optimization.BoundaryDropdown.Value)) ;
+            app.setDropdownValueIfValid(app.DesignUI.Optimization.ObjectiveDropdown, app.getStructField(opt, 'objective', app.DesignUI.Optimization.ObjectiveDropdown.Value)) ;
+            app.DesignUI.Optimization.DecisionTable.Data = app.getStructField(opt, 'decisionTable', app.DesignUI.Optimization.DecisionTable.Data) ;
+            app.DesignUI.Optimization.ConstraintTable.Data = app.getStructField(opt, 'constraintTable', app.DesignUI.Optimization.ConstraintTable.Data) ;
+            app.DesignUI.Optimization.ScaleTable.Data = app.getStructField(opt, 'scaleTable', app.DesignUI.Optimization.ScaleTable.Data) ;
+            app.DesignState.lastSolutions.optimizationResult = app.getStructField(opt, 'result', []) ;
+            app.DesignState.lastSolutions.scaleUpResult = app.getStructField(opt, 'scaleResult', []) ;
+
+            app.DW_refreshChemicalSelectors() ;
+            app.DW_refreshAll() ;
+        end
+
+        function snapshot = DW_convertLegacyTemplateSnapshot(~, legacy)
+            snapshot = struct() ;
+            if isempty(legacy) || ~isstruct(legacy)
+                return
+            end
+            snapshot.fit = struct('source', 'Tab 1 RTD', 'family', 'CSTR + Dead Volume', ...
+                'boundary', 'closed-closed', 'referenceTau', struct('value', 1, 'unit', 's'), 'result', []) ;
+        end
+
+        function DW_createFitTab(app)
+            tab = uitab(app.DesignUI.TabGroup, 'Title', 'Diagnosis & Fit') ;
+            grid = uigridlayout(tab, [1 2]) ;
+            grid.ColumnWidth = {340, '1x'} ;
+
+            left = uipanel(grid, 'Title', 'Fit Setup') ;
+            left.Layout.Column = 1 ;
+            leftGrid = uigridlayout(left, [6 2]) ;
+            leftGrid.RowHeight = {'fit','fit','fit','fit',34,'1x'} ;
+            leftGrid.ColumnWidth = {120, '1x'} ;
+
+            uilabel(leftGrid, 'Text', 'RTD source:') ;
+            app.DesignUI.Fit.SourceDropdown = uidropdown(leftGrid, 'Items', {'Tab 1 RTD'}) ;
+            app.DesignUI.Fit.SourceDropdown.Layout.Row = 1 ; app.DesignUI.Fit.SourceDropdown.Layout.Column = 2 ;
+
+            uilabel(leftGrid, 'Text', 'Family:') ;
+            app.DesignUI.Fit.FamilyDropdown = uidropdown(leftGrid, ...
+                'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass'}) ;
+            app.DesignUI.Fit.FamilyDropdown.Layout.Row = 2 ; app.DesignUI.Fit.FamilyDropdown.Layout.Column = 2 ;
+
+            uilabel(leftGrid, 'Text', 'Boundary:') ;
+            app.DesignUI.Fit.BoundaryDropdown = uidropdown(leftGrid, 'Items', {'closed-closed', 'open-open'}) ;
+            app.DesignUI.Fit.BoundaryDropdown.Layout.Row = 3 ; app.DesignUI.Fit.BoundaryDropdown.Layout.Column = 2 ;
+
+            uilabel(leftGrid, 'Text', 'Ref. tau_total:') ;
+            [app.DesignUI.Fit.ReferenceTauField, ~] = app.createNumericWithConv(leftGrid, 4, 2, 1.0, 'Time', 'Limits', [0 Inf]) ;
+
+            app.DesignUI.Fit.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Diagnosis & Fit', ...
+                'ButtonPushedFcn', @(~,~) app.DW_runFit()) ;
+            app.DesignUI.Fit.RunButton.Layout.Row = 5 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
+
+            app.DesignUI.Fit.DiagnosticsArea = uitextarea(leftGrid, 'Editable', 'off') ;
+            app.DesignUI.Fit.DiagnosticsArea.Layout.Row = 6 ; app.DesignUI.Fit.DiagnosticsArea.Layout.Column = [1 2] ;
+
+            right = uipanel(grid, 'Title', 'Fit Results') ;
+            right.Layout.Column = 2 ;
+            rightGrid = uigridlayout(right, [3 1]) ;
+            rightGrid.RowHeight = {'fit', 170, '1x'} ;
+
+            app.DesignUI.Fit.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting RTD fit.', 'WordWrap', 'on') ;
+            app.DesignUI.Fit.SummaryLabel.Layout.Row = 1 ;
+            app.DesignUI.Fit.ParameterTable = uitable(rightGrid, 'ColumnName', {'Parameter', 'Value'}, 'RowName', {}) ;
+            app.DesignUI.Fit.ParameterTable.Layout.Row = 2 ;
+            app.DesignUI.Fit.CompareAxes = uiaxes(rightGrid) ; title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t)') ;
+            app.DesignUI.Fit.CompareAxes.Layout.Row = 3 ;
+        end
+
+        function DW_createReactiveTab(app)
+            tab = uitab(app.DesignUI.TabGroup, 'Title', 'Reactive Performance') ;
+            grid = uigridlayout(tab, [1 2]) ;
+            grid.ColumnWidth = {360, '1x'} ;
+
+            left = uipanel(grid, 'Title', 'Reaction Inputs') ;
+            left.Layout.Column = 1 ;
+            leftGrid = uigridlayout(left, [10 2]) ;
+            leftGrid.RowHeight = {'fit','fit','fit','fit','fit','fit','fit','fit',34,'1x'} ;
+            leftGrid.ColumnWidth = {130, '1x'} ;
+
+            uilabel(leftGrid, 'Text', 'RTD source:') ;
+            app.DesignUI.Reactive.RTDSourceDropdown = uidropdown(leftGrid, 'Items', {'Fitted RTD', 'Tab 1 RTD'}) ;
+            app.DesignUI.Reactive.RTDSourceDropdown.Layout.Row = 1 ; app.DesignUI.Reactive.RTDSourceDropdown.Layout.Column = 2 ;
+
+            uilabel(leftGrid, 'Text', 'ReactionSys var:') ;
+            app.DesignUI.Reactive.RSNameField = uieditfield(leftGrid, 'text', 'Value', 'RS') ;
+            app.DesignUI.Reactive.RSNameField.Layout.Row = 2 ; app.DesignUI.Reactive.RSNameField.Layout.Column = 2 ;
+            uilabel(leftGrid, 'Text', 'Feed Stream var:') ;
+            app.DesignUI.Reactive.StreamNameField = uieditfield(leftGrid, 'text', 'Value', 'Feed') ;
+            app.DesignUI.Reactive.StreamNameField.Layout.Row = 3 ; app.DesignUI.Reactive.StreamNameField.Layout.Column = 2 ;
+
+            app.DesignUI.Reactive.RSLoadButton = uibutton(leftGrid, 'push', 'Text', 'Load ReactionSys', ...
+                'ButtonPushedFcn', @(~,~) app.DW_loadReactionSystem()) ;
+            app.DesignUI.Reactive.RSLoadButton.Layout.Row = 4 ; app.DesignUI.Reactive.RSLoadButton.Layout.Column = [1 2] ;
+            app.DesignUI.Reactive.StreamLoadButton = uibutton(leftGrid, 'push', 'Text', 'Load Feed Stream', ...
+                'ButtonPushedFcn', @(~,~) app.DW_loadFeedStream()) ;
+            app.DesignUI.Reactive.StreamLoadButton.Layout.Row = 5 ; app.DesignUI.Reactive.StreamLoadButton.Layout.Column = [1 2] ;
+
+            uilabel(leftGrid, 'Text', 'Key reactant:') ;
+            app.DesignUI.Reactive.KeyComponentDropdown = uidropdown(leftGrid, 'Items', {'1'}, 'ItemsData', 1, 'Value', 1) ;
+            app.DesignUI.Reactive.KeyComponentDropdown.Layout.Row = 6 ; app.DesignUI.Reactive.KeyComponentDropdown.Layout.Column = 2 ;
+            uilabel(leftGrid, 'Text', 'Desired product:') ;
+            app.DesignUI.Reactive.DesiredProductDropdown = uidropdown(leftGrid, 'Items', {'2'}, 'ItemsData', 2, 'Value', 2) ;
+            app.DesignUI.Reactive.DesiredProductDropdown.Layout.Row = 7 ; app.DesignUI.Reactive.DesiredProductDropdown.Layout.Column = 2 ;
+            uilabel(leftGrid, 'Text', 'Byproduct:') ;
+            app.DesignUI.Reactive.ByproductDropdown = uidropdown(leftGrid, 'Items', {'3'}, 'ItemsData', 3, 'Value', 3) ;
+            app.DesignUI.Reactive.ByproductDropdown.Layout.Row = 8 ; app.DesignUI.Reactive.ByproductDropdown.Layout.Column = 2 ;
+
+            app.DesignUI.Reactive.ComputeButton = uibutton(leftGrid, 'push', 'Text', 'Compute Reactive Performance', ...
+                'ButtonPushedFcn', @(~,~) app.DW_computeReactive()) ;
+            app.DesignUI.Reactive.ComputeButton.Layout.Row = 9 ; app.DesignUI.Reactive.ComputeButton.Layout.Column = [1 2] ;
+
+            app.DesignUI.Reactive.StatusArea = uitextarea(leftGrid, 'Editable', 'off', 'Value', {'Load a ReactionSys and a liquid Feed Stream.'}) ;
+            app.DesignUI.Reactive.StatusArea.Layout.Row = 10 ; app.DesignUI.Reactive.StatusArea.Layout.Column = [1 2] ;
+
+            right = uipanel(grid, 'Title', 'Reactive Results') ;
+            right.Layout.Column = 2 ;
+            rightGrid = uigridlayout(right, [4 1]) ;
+            rightGrid.RowHeight = {'fit', 150, 180, '1x'} ;
+
+            app.DesignUI.Reactive.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting reactive calculation.', 'WordWrap', 'on') ;
+            app.DesignUI.Reactive.SummaryLabel.Layout.Row = 1 ;
+            app.DesignUI.Reactive.ResultTable = uitable(rightGrid, 'ColumnName', {'Model', 'X', 'Selectivity', 'Yield'}, 'RowName', {}) ;
+            app.DesignUI.Reactive.ResultTable.Layout.Row = 2 ;
+            app.DesignUI.Reactive.CoutTable = uitable(rightGrid, 'ColumnName', {'Component', 'C_in', 'Seg', 'MM', 'CSTR', 'PFR'}, 'RowName', {}) ;
+            app.DesignUI.Reactive.CoutTable.Layout.Row = 3 ;
+            app.DesignUI.Reactive.Axes = uiaxes(rightGrid) ; title(app.DesignUI.Reactive.Axes, 'Conversion comparison') ;
+            app.DesignUI.Reactive.Axes.Layout.Row = 4 ;
+        end
+
+        function DW_createOptimizationTab(app)
+            tab = uitab(app.DesignUI.TabGroup, 'Title', 'Optimization & Scale-Up') ;
+            grid = uigridlayout(tab, [1 2]) ;
+            grid.ColumnWidth = {430, '1x'} ;
+
+            left = uipanel(grid, 'Title', 'Optimization Setup') ;
+            left.Layout.Column = 1 ;
+            leftGrid = uigridlayout(left, [8 1]) ;
+            leftGrid.RowHeight = {'fit','fit',150,120,34,'fit',150,'1x'} ;
+
+            headerGrid = uigridlayout(leftGrid, [2 2]) ;
+            headerGrid.Layout.Row = 1 ;
+            uilabel(headerGrid, 'Text', 'Family:') ;
+            app.DesignUI.Optimization.FamilyDropdown = uidropdown(headerGrid, ...
+                'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass'}) ;
+            app.DesignUI.Optimization.FamilyDropdown.Layout.Row = 1 ; app.DesignUI.Optimization.FamilyDropdown.Layout.Column = 2 ;
+            uilabel(headerGrid, 'Text', 'Reaction mode:') ;
+            app.DesignUI.Optimization.ReactionModeDropdown = uidropdown(headerGrid, 'Items', {'Segregation', 'Max Mixedness'}) ;
+            app.DesignUI.Optimization.ReactionModeDropdown.Layout.Row = 2 ; app.DesignUI.Optimization.ReactionModeDropdown.Layout.Column = 2 ;
+
+            boundaryGrid = uigridlayout(leftGrid, [1 2]) ;
+            boundaryGrid.Layout.Row = 2 ;
+            uilabel(boundaryGrid, 'Text', 'Boundary / Objective:') ;
+            subGrid = uigridlayout(boundaryGrid, [1 2]) ;
+            subGrid.ColumnWidth = {'1x', '1x'} ;
+            app.DesignUI.Optimization.BoundaryDropdown = uidropdown(subGrid, 'Items', {'closed-closed', 'open-open'}) ;
+            app.DesignUI.Optimization.ObjectiveDropdown = uidropdown(subGrid, ...
+                'Items', {'Max conversion', 'Max selectivity', 'Max yield', 'Min residence time', 'Min recycle ratio'}) ;
+
+            app.DesignUI.Optimization.DecisionTable = uitable(leftGrid, ...
+                'ColumnName', {'Use', 'Variable', 'Initial', 'Lower', 'Upper'}, ...
+                'ColumnEditable', [true false true true true], ...
+                'RowName', {}, ...
+                'Data', {true, 'tau', 60, 1, 1000; true, 'N', 4, 1, 25; false, 'Bo', 0.05, 1e-5, 2; false, 'bypass', 0, 0, 0.8; false, 'activeFraction', 1, 0.1, 1; false, 'recycleRatio', 0, 0, 5}) ;
+            app.DesignUI.Optimization.DecisionTable.Layout.Row = 3 ;
+
+            app.DesignUI.Optimization.ConstraintTable = uitable(leftGrid, ...
+                'ColumnName', {'Use', 'Metric', 'SpeciesIdx', 'Type', 'Value'}, ...
+                'ColumnEditable', [true true true true true], ...
+                'RowName', {}, ...
+                'Data', {true, 'Conversion', 1, 'Lower bound', 0.5; false, 'Selectivity', 2, 'Lower bound', 0.5; false, 'Yield', 2, 'Lower bound', 0.2; false, 'C_out', 2, 'Lower bound', 0}) ;
+            app.DesignUI.Optimization.ConstraintTable.Layout.Row = 4 ;
+
+            app.DesignUI.Optimization.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Optimization', ...
+                'ButtonPushedFcn', @(~,~) app.DW_runOptimization()) ;
+            app.DesignUI.Optimization.RunButton.Layout.Row = 5 ;
+
+            app.DesignUI.Optimization.ScaleHeader = uilabel(leftGrid, 'Text', ...
+                'Scale-up uses the same chemistry loaded in Reactive Performance. Pilot vs industrial scenarios:', ...
+                'WordWrap', 'on') ;
+            app.DesignUI.Optimization.ScaleHeader.Layout.Row = 6 ;
+
+            app.DesignUI.Optimization.ScaleTable = uitable(leftGrid, ...
+                'ColumnName', {'Parameter', 'Pilot', 'Industrial'}, ...
+                'ColumnEditable', [false true true], ...
+                'RowName', {}, ...
+                'Data', {'tau', 60, 120; 'N', 6, 3; 'Bo', 0.02, 0.08; 'bypass', 0.00, 0.10; 'activeFraction', 1.0, 0.85; 'recycleRatio', 0.0, 0.0}) ;
+            app.DesignUI.Optimization.ScaleTable.Layout.Row = 7 ;
+
+            app.DesignUI.Optimization.ScaleButton = uibutton(leftGrid, 'push', 'Text', 'Compare Scale-Up', ...
+                'ButtonPushedFcn', @(~,~) app.DW_compareScaleUp()) ;
+            app.DesignUI.Optimization.ScaleButton.Layout.Row = 8 ;
+
+            right = uipanel(grid, 'Title', 'Optimization Results') ;
+            right.Layout.Column = 2 ;
+            rightGrid = uigridlayout(right, [5 1]) ;
+            rightGrid.RowHeight = {'fit', 140, 140, 120, '1x'} ;
+
+            app.DesignUI.Optimization.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting optimization.', 'WordWrap', 'on') ;
+            app.DesignUI.Optimization.SummaryLabel.Layout.Row = 1 ;
+            app.DesignUI.Optimization.ComparisonTable = uitable(rightGrid, 'ColumnName', {'Metric', 'Baseline', 'Optimum'}, 'RowName', {}) ;
+            app.DesignUI.Optimization.ComparisonTable.Layout.Row = 2 ;
+            app.DesignUI.Optimization.ConstraintResultTable = uitable(rightGrid, 'ColumnName', {'Metric', 'Value', 'Target', 'Satisfied'}, 'RowName', {}) ;
+            app.DesignUI.Optimization.ConstraintResultTable.Layout.Row = 3 ;
+            app.DesignUI.Optimization.SensitivityTable = uitable(rightGrid, 'ColumnName', {'Variable', 'Base', 'Sensitivity'}, 'RowName', {}) ;
+            app.DesignUI.Optimization.SensitivityTable.Layout.Row = 4 ;
+            app.DesignUI.Optimization.ScaleResultArea = uitextarea(rightGrid, 'Editable', 'off') ;
+            app.DesignUI.Optimization.ScaleResultArea.Layout.Row = 5 ;
+        end
+
+        function DW_runFit(app)
+            try
+                app.updateStatus('Running diagnosis and fit...') ;
+                rtdObj = app.DW_resolveRTDSource(app.DesignUI.Fit.SourceDropdown.Value) ;
+                spec = struct( ...
+                    'rtd', rtdObj, ...
+                    'family', app.DesignUI.Fit.FamilyDropdown.Value, ...
+                    'boundaryType', app.DesignUI.Fit.BoundaryDropdown.Value, ...
+                    'referenceTau', app.readInputField(app.DesignUI.Fit.ReferenceTauField)) ;
+                app.DesignState.fitResult = DesignWorkspaceHelper.solveHydroFit(spec) ;
+                app.DW_refreshFit() ;
+                app.updateStatus('Diagnosis and fit completed') ;
+            catch ME
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'Diagnosis & Fit Error') ;
+            end
+        end
+
+        function DW_loadReactionSystem(app)
+            try
+                RS = evalin('base', app.DesignUI.Reactive.RSNameField.Value) ;
+                if ~isa(RS, 'ReactionSys')
+                    error('Workspace variable is not a ReactionSys object.') ;
+                end
+                app.DesignState.reactionSpec.rs = RS ;
+                app.DW_refreshChemicalSelectors() ;
+                app.updateStatus('ReactionSys loaded for Design workspace') ;
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Reaction System Error') ;
+            end
+        end
+
+        function DW_loadFeedStream(app)
+            try
+                F = evalin('base', app.DesignUI.Reactive.StreamNameField.Value) ;
+                if ~isa(F, 'Stream')
+                    error('Workspace variable is not a Stream object.') ;
+                end
+                app.DesignState.reactionSpec.feedStream = F ;
+                app.DW_refreshChemicalSelectors() ;
+                app.updateStatus('Feed Stream loaded for Design workspace') ;
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Feed Stream Error') ;
+            end
+        end
+
+        function DW_computeReactive(app)
+            try
+                app.updateStatus('Computing reactive performance...') ;
+                rtdObj = app.DW_resolveRTDSource(app.DesignUI.Reactive.RTDSourceDropdown.Value) ;
+                RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+                F = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+                if isempty(RS) || isempty(F)
+                    error('Load both ReactionSys and Feed Stream first.') ;
+                end
+                app.DesignState.reactionSpec.keyComponentIndex = app.DesignUI.Reactive.KeyComponentDropdown.Value ;
+                app.DesignState.reactionSpec.desiredProductIndex = app.DesignUI.Reactive.DesiredProductDropdown.Value ;
+                app.DesignState.reactionSpec.byproductIndex = app.DesignUI.Reactive.ByproductDropdown.Value ;
+                spec = struct( ...
+                    'rtd', rtdObj, ...
+                    'RS', RS, ...
+                    'C0', F.concentration(:)', ...
+                    'keyComponentIndex', app.DesignState.reactionSpec.keyComponentIndex, ...
+                    'desiredProductIndex', app.DesignState.reactionSpec.desiredProductIndex, ...
+                    'byproductIndex', app.DesignState.reactionSpec.byproductIndex) ;
+                app.DesignState.lastSolutions.reactiveResult = DesignWorkspaceHelper.solveReactivePerformance(spec) ;
+                app.DW_refreshReactive() ;
+                app.updateStatus('Reactive performance updated') ;
+            catch ME
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'Reactive Performance Error') ;
+            end
+        end
+
+        function DW_runOptimization(app)
+            try
+                app.updateStatus('Running optimization...') ;
+                RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+                F = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+                if isempty(RS) || isempty(F)
+                    error('Optimization reuses the chemistry loaded in Reactive Performance. Load RS and Feed first.') ;
+                end
+                spec = struct( ...
+                    'family', app.DesignUI.Optimization.FamilyDropdown.Value, ...
+                    'reactionMode', app.DesignUI.Optimization.ReactionModeDropdown.Value, ...
+                    'boundaryType', app.DesignUI.Optimization.BoundaryDropdown.Value, ...
+                    'objective', app.DesignUI.Optimization.ObjectiveDropdown.Value, ...
+                    'RS', RS, ...
+                    'C0', F.concentration(:)', ...
+                    'keyComponentIndex', app.DesignUI.Reactive.KeyComponentDropdown.Value, ...
+                    'desiredProductIndex', app.DesignUI.Reactive.DesiredProductDropdown.Value, ...
+                    'byproductIndex', app.DesignUI.Reactive.ByproductDropdown.Value, ...
+                    'decisionVariables', app.DW_parseDecisionTable(), ...
+                    'constraints', app.DW_parseConstraintTable()) ;
+                app.DesignState.lastSolutions.optimizationResult = DesignWorkspaceHelper.solveOptimization(spec) ;
+                app.DW_refreshOptimization() ;
+                app.updateStatus('Optimization completed') ;
+            catch ME
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'Optimization Error') ;
+            end
+        end
+
+        function DW_compareScaleUp(app)
+            try
+                app.updateStatus('Comparing pilot and industrial scenarios...') ;
+                RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+                F = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+                if isempty(RS) || isempty(F)
+                    error('Scale-up reuses the chemistry loaded in Reactive Performance. Load RS and Feed first.') ;
+                end
+                [pilotParams, industrialParams] = app.DW_parseScaleTable() ;
+                spec = struct( ...
+                    'family', app.DesignUI.Optimization.FamilyDropdown.Value, ...
+                    'reactionMode', app.DesignUI.Optimization.ReactionModeDropdown.Value, ...
+                    'boundaryType', app.DesignUI.Optimization.BoundaryDropdown.Value, ...
+                    'RS', RS, ...
+                    'C0', F.concentration(:)', ...
+                    'keyComponentIndex', app.DesignUI.Reactive.KeyComponentDropdown.Value, ...
+                    'desiredProductIndex', app.DesignUI.Reactive.DesiredProductDropdown.Value, ...
+                    'byproductIndex', app.DesignUI.Reactive.ByproductDropdown.Value, ...
+                    'pilotParams', pilotParams, ...
+                    'industrialParams', industrialParams) ;
+                app.DesignState.lastSolutions.scaleUpResult = DesignWorkspaceHelper.compareScaleUp(spec) ;
+                app.DW_refreshOptimization() ;
+                app.updateStatus('Scale-up comparison completed') ;
+            catch ME
+                app.updateStatus('Error') ;
+                uialert(app.UIFigure, ME.message, 'Scale-Up Error') ;
+            end
+        end
+
+        function rtdObj = DW_resolveRTDSource(app, sourceLabel)
+            switch char(string(sourceLabel))
+                case 'Fitted RTD'
+                    result = app.DesignState.fitResult ;
+                    if isempty(result), error('Fitted RTD is not available yet.') ; end
+                    rtdObj = result.fittedRTD ;
+                otherwise
+                    if isempty(app.rtd), error('Tab 1 does not hold a valid RTD.') ; end
+                    rtdObj = app.rtd ;
+            end
+        end
+
+        function rows = DW_parseDecisionTable(app)
+            data = app.DesignUI.Optimization.DecisionTable.Data ;
+            rows = repmat(struct('use', false, 'variable', '', 'initialValue', 0, 'lowerBound', 0, 'upperBound', 0), size(data, 1), 1) ;
+            for i = 1:size(data, 1)
+                rows(i).use = logical(data{i, 1}) ;
+                rows(i).variable = char(string(data{i, 2})) ;
+                rows(i).initialValue = data{i, 3} ;
+                rows(i).lowerBound = data{i, 4} ;
+                rows(i).upperBound = data{i, 5} ;
+            end
+        end
+
+        function rows = DW_parseConstraintTable(app)
+            data = app.DesignUI.Optimization.ConstraintTable.Data ;
+            rows = repmat(struct('use', false, 'metric', '', 'speciesIndex', 1, 'type', 'Lower bound', 'value', 0), size(data, 1), 1) ;
+            for i = 1:size(data, 1)
+                rows(i).use = logical(data{i, 1}) ;
+                rows(i).metric = char(string(data{i, 2})) ;
+                rows(i).speciesIndex = double(data{i, 3}) ;
+                rows(i).type = char(string(data{i, 4})) ;
+                rows(i).value = double(data{i, 5}) ;
+            end
+        end
+
+        function [pilotParams, industrialParams] = DW_parseScaleTable(app)
+            data = app.DesignUI.Optimization.ScaleTable.Data ;
+            pilotParams = struct() ;
+            industrialParams = struct() ;
+            for i = 1:size(data, 1)
+                name = char(string(data{i, 1})) ;
+                pilotParams.(name) = double(data{i, 2}) ;
+                industrialParams.(name) = double(data{i, 3}) ;
+            end
+        end
+
+        function DW_refreshAll(app)
+            app.DW_refreshFit() ;
+            app.DW_refreshReactive() ;
+            app.DW_refreshOptimization() ;
+        end
+
+        function DW_refreshFit(app)
+            result = app.DesignState.fitResult ;
+            if isempty(result)
+                app.DesignUI.Fit.ParameterTable.Data = cell(0, 2) ;
+                app.DesignUI.Fit.DiagnosticsArea.Value = {'Run a fit to see heuristic diagnosis and parameter estimates.'} ;
+                return
+            end
+            app.DesignUI.Fit.SummaryLabel.Text = sprintf('%s fitted. RMSE = %.6g, score = %.6g.', ...
+                result.family, result.rmse, result.score) ;
+            app.DesignUI.Fit.ParameterTable.Data = result.summaryTable ;
+            app.DesignUI.Fit.DiagnosticsArea.Value = result.diagnostics.summaryText ;
+            cla(app.DesignUI.Fit.CompareAxes) ;
+            plot(app.DesignUI.Fit.CompareAxes, result.inputRTD.t, result.inputRTD.Et, 'k-', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'on') ;
+            plot(app.DesignUI.Fit.CompareAxes, result.fittedRTD.t, result.fittedRTD.Et, 'b--', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'off') ;
+            legend(app.DesignUI.Fit.CompareAxes, {'Input', 'Fitted'}, 'Location', 'best') ; grid(app.DesignUI.Fit.CompareAxes, 'on') ;
+        end
+
+        function DW_refreshReactive(app)
+            app.DW_refreshChemicalSelectors() ;
+            result = app.getStructField(app.DesignState.lastSolutions, 'reactiveResult', []) ;
+            if isempty(result)
+                app.DesignUI.Reactive.ResultTable.Data = cell(0, 4) ;
+                app.DesignUI.Reactive.CoutTable.Data = cell(0, 6) ;
+                return
+            end
+            app.DesignUI.Reactive.ResultTable.Data = result.summaryTable ;
+            app.DesignUI.Reactive.CoutTable.Data = result.coutTable ;
+            app.DesignUI.Reactive.SummaryLabel.Text = result.summaryText ;
+            metrics = result.metrics ;
+            cla(app.DesignUI.Reactive.Axes) ;
+            bar(app.DesignUI.Reactive.Axes, [metrics.cstr.conversion, metrics.segregation.conversion, metrics.maxMixedness.conversion, metrics.pfr.conversion]) ;
+            app.DesignUI.Reactive.Axes.XTickLabel = {'CSTR', 'Seg', 'MM', 'PFR'} ;
+            ylabel(app.DesignUI.Reactive.Axes, 'Conversion') ; grid(app.DesignUI.Reactive.Axes, 'on') ;
+            app.DesignUI.Reactive.StatusArea.Value = { ...
+                sprintf('RS: %s', app.DesignUI.Reactive.RSNameField.Value), ...
+                sprintf('Feed Stream: %s', app.DesignUI.Reactive.StreamNameField.Value), ...
+                result.summaryText} ;
+        end
+
+        function DW_refreshOptimization(app)
+            result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
+            if isempty(result)
+                app.DesignUI.Optimization.ComparisonTable.Data = cell(0, 3) ;
+                app.DesignUI.Optimization.ConstraintResultTable.Data = cell(0, 4) ;
+                app.DesignUI.Optimization.SensitivityTable.Data = cell(0, 3) ;
+            else
+                app.DesignUI.Optimization.SummaryLabel.Text = result.summaryText ;
+                app.DesignUI.Optimization.ComparisonTable.Data = result.comparisonTable ;
+                app.DesignUI.Optimization.ConstraintResultTable.Data = result.constraintTable ;
+                app.DesignUI.Optimization.SensitivityTable.Data = result.sensitivityTable ;
+            end
+            scaleResult = app.getStructField(app.DesignState.lastSolutions, 'scaleUpResult', []) ;
+            if isempty(scaleResult)
+                app.DesignUI.Optimization.ScaleResultArea.Value = {'Run "Compare Scale-Up" to evaluate pilot vs industrial hydrodynamic scenarios.'} ;
+            else
+                lines = {scaleResult.summaryText; ''; 'Pilot vs Industrial:'} ;
+                for i = 1:size(scaleResult.comparisonTable, 1)
+                    lines{end+1, 1} = sprintf('%s: %s -> %s', scaleResult.comparisonTable{i, 1}, scaleResult.comparisonTable{i, 2}, scaleResult.comparisonTable{i, 3}) ; %#ok<AGROW>
+                end
+                app.DesignUI.Optimization.ScaleResultArea.Value = lines ;
+            end
+        end
+
+        function DW_refreshChemicalSelectors(app)
+            RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+            if isempty(RS)
+                return
+            end
+            nComp = RS.nComponents ;
+            labels = cell(1, nComp) ;
+            itemsData = 1:nComp ;
+            for i = 1:nComp
+                labels{i} = sprintf('%d - %s', i, app.getComponentLabel(RS, i)) ;
+            end
+            app.DesignUI.Reactive.KeyComponentDropdown.Items = labels ;
+            app.DesignUI.Reactive.KeyComponentDropdown.ItemsData = itemsData ;
+            app.DesignUI.Reactive.DesiredProductDropdown.Items = labels ;
+            app.DesignUI.Reactive.DesiredProductDropdown.ItemsData = itemsData ;
+            app.DesignUI.Reactive.ByproductDropdown.Items = labels ;
+            app.DesignUI.Reactive.ByproductDropdown.ItemsData = itemsData ;
+
+            app.DesignUI.Reactive.KeyComponentDropdown.Value = min(max(app.DesignState.reactionSpec.keyComponentIndex, 1), nComp) ;
+            app.DesignUI.Reactive.DesiredProductDropdown.Value = min(max(app.DesignState.reactionSpec.desiredProductIndex, 1), nComp) ;
+            app.DesignUI.Reactive.ByproductDropdown.Value = min(max(app.DesignState.reactionSpec.byproductIndex, 1), nComp) ;
+        end
+
+        function label = getComponentLabel(~, RS, idx)
+            label = sprintf('C%d', idx) ;
+            try
+                if ~isempty(RS.componentNames) && numel(RS.componentNames) >= idx
+                    label = char(string(RS.componentNames{idx})) ;
+                end
+            catch
+            end
         end
     end
 

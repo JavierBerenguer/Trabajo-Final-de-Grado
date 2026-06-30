@@ -12,7 +12,7 @@ Javier Berenguer Sabater | TFG - Chemical Engineering
 app = NonIdealReactorApp ;
 ```
 
-The main window includes **4 tabs**, a **File** menu, a **Tools** menu, a **Help** menu, and a status bar at the bottom.
+The main window includes **5 tabs**, a **File** menu, a **Tools** menu, a **Help** menu, and a status bar at the bottom.
 
 ### Working with Units
 
@@ -153,6 +153,32 @@ The main window includes **4 tabs**, a **File** menu, a **Tools** menu, a **Help
 - **Conversion vs Bo:** uses a multiselect `Reactants` list.
 - **Exit Summary:** shows `C_in`, `Disp C_out`, `CSTR C_out`, `PFR C_out`, `X_Disp`, `X_CSTR`, and `X_PFR` for all species.
 - The lower-left table is not filtered by the species/reactant selectors; those selectors only affect the plots.
+
+---
+
+## Tab 5: Design & Optimization
+
+**Purpose:** Work in a single Tab 5 workspace that starts from an existing RTD and connects equivalent-model fitting, reactive prediction, and optimization.
+
+### Subareas
+
+- **Diagnosis & Fit:** estimate equivalent parameters for `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass`, and `CSTR + Dead Volume + Bypass`.
+- **Reactive Performance:** compare `Ideal CSTR`, `Segregation`, `Max Mixedness`, and `Ideal PFR`, together with outlet concentrations, selectivity, and yield.
+- **Optimization & Scale-Up:** optimize equivalent hydrodynamic parameters and compare pilot versus industrial scenarios with the same chemistry.
+
+### Typical Workflow
+
+1. In **Tab 1: RTD Analysis**, generate or import the RTD and verify its moments and plots there.
+2. In **Diagnosis & Fit**, choose an equivalent family and run the fit if you want a compact hydrodynamic representation.
+3. In **Reactive Performance**, load a `ReactionSys` and a liquid `Stream` from the workspace, choose the key reactant and products, and compute the four reference models using either `Tab 1 RTD` or `Fitted RTD`.
+4. In **Optimization & Scale-Up**, reuse that same chemistry to optimize `tau`, `N`, `Bo`, `bypass`, `activeFraction`, and `recycleRatio`, or to compare pilot and industrial cases.
+
+### Notes
+
+- Tab 5 is **isothermal** and **steady-state** in this version.
+- RTD preprocessing belongs to **Tab 1**, so Tab 5 no longer includes a separate hydrodynamics subarea.
+- Session save/load already preserves the Tab 5 workspace through `designWorkspace`.
+- The new workspace replaces the old `Design Templates` direction as the active Tab 5 of the app.
 
 ---
 
