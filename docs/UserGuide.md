@@ -1,6 +1,6 @@
 # Non-Ideal Reactor Analysis - User Guide
 
-**Version 1.3 - April 2026**  
+**Version 1.4 - July 2026**  
 Javier Berenguer Sabater | TFG - Chemical Engineering
 
 ---
@@ -9,7 +9,7 @@ Javier Berenguer Sabater | TFG - Chemical Engineering
 
 ```matlab
 % Launch the application
-app = NonIdealReactorApp ;
+app = NonIdealReactorApp;
 ```
 
 The main window includes **5 tabs**, a **File** menu, a **Tools** menu, a **Help** menu, and a status bar at the bottom.
@@ -21,7 +21,7 @@ The main window includes **5 tabs**, a **File** menu, a **Tools** menu, a **Help
 - Several fields also accept simple expressions such as `10/60` or `2*5`.
 - Experimental RTD sources and `C(t)` equations include time-unit selectors.
 - Each main tab includes local **Display units** controls for plots and results.
-- When importing data from files or the workspace, make sure your vectors match the units selected in the app.
+- Internal calculations remain in SI, so unit changes only affect input and display layers.
 
 ---
 
@@ -36,8 +36,8 @@ The main window includes **5 tabs**, a **File** menu, a **Tools** menu, a **Help
 | Ideal CSTR | Exponential RTD for a perfectly mixed reactor |
 | Ideal PFR | Ideal plug-flow reference |
 | Tanks-in-Series | RTD for `N` equal tanks in series |
-| Dispersion (open) | Axial dispersion model with open boundaries |
-| Dispersion (closed) | Axial dispersion model with closed boundaries |
+| Dispersion (open) | Axial-dispersion RTD with open-open boundaries |
+| Dispersion (closed) | Axial-dispersion RTD with closed-closed boundaries |
 | Laminar Flow | Laminar-flow RTD |
 | Experimental Pulse | Build RTD from pulse tracer data |
 | Experimental Step | Build RTD from step tracer data |
@@ -47,138 +47,150 @@ The main window includes **5 tabs**, a **File** menu, a **Tools** menu, a **Help
 ### Basic Workflow
 
 1. Choose an **RTD Source**.
-2. Fill in the required inputs using the unit dropdowns next to each field.
-3. Click **Generate**.
-4. Review the plots and the calculated values: `tau_m`, `sigma^2`, `sigma^2_theta`, `s^3`, `N_est`, and `V_eff`.
-5. If needed, enter `Q_v` to estimate the effective volume `V_eff = tau * Q_v`.
-6. Use **Export RTD to Workspace** if you want to reuse the RTD in MATLAB or in other tabs.
+2. Fill in the required inputs using the field unit dropdowns when available.
+3. Click **Generate RTD**.
+4. Review the calculated values: `tau_m`, `sigma^2`, `sigma^2_theta`, `s^3`, `N_est`, and `V_eff`.
+5. Use **Display units** to inspect time and volume in other units without changing the stored RTD.
+6. Use **Export RTD to Workspace** if you want to reuse the RTD in MATLAB.
+
+### RTD Utilities
+
+The lower-right **RTD Utilities** panel includes:
+
+- **F(t) Query:** evaluate `F(t)` and `1 - F(t)` at a chosen elapsed time, with a point and guide lines drawn on the `F(t)` plot.
+- **Reaction System:** create, edit, or load a `ReactionSys` directly from Tab 1.
+- **Feed Stream:** create, edit, or load a `Stream` directly from Tab 1.
+
+If you later set **Tab 2** to **From Calculated Data**, the RTD, `ReactionSys`, and `Stream` loaded here are reused automatically.
 
 ### Importing Experimental Data
 
 - **From workspace:** provide the names of the time and signal variables in the corresponding fields.
-- **Pulse data:** use `t` in the selected time unit and keep `C(t)` and `C0` in the same concentration scale.
+- **Pulse data:** use `t` in the selected time unit and keep `C(t)` in a consistent concentration scale.
 - **Step data:** use `t` in the selected time unit and keep the measured outlet response consistent with `C0`.
 - **From file:** click **Import Experimental Data** and choose an `.xlsx`, `.xls`, `.csv`, or `.tsv` file.
 - For file imports, the first column must contain time and the second column must contain concentration or response.
 - In Excel files, keep the headers in row 1 and the data starting in row 2.
-- **Tabular Input:** click **Add Row** to enter values manually.
-
-### Tips
-
-- The RTD generated here is shared automatically with Tabs 2, 3, and 4.
-- The **Display units** controls let you change how time-based plots and values are shown.
-- `E(t)`, `F(t)`, and `E(theta)` are plotted separately for easier comparison.
+- **Tabular Input:** use **+ Row** and **- Row** to edit the manual table.
 
 ---
 
 ## Tab 2: Prediction Models
 
-**Purpose:** Estimate conversion limits using the **Segregation** and **Max Mixedness** models.
+**Purpose:** Estimate conversion limits using the **Segregation** and **Max Mixedness** models and compare them with ideal `CSTR` and `PFR` references.
 
-### Before You Compute
+### Input Modes
 
-- Generate an RTD first in **Tab 1**.
-- Create a reaction system with **New RS**, modify it with **Edit RS**, or load it with **Load from Workspace**.
-- Enter `C_A0` using the concentration unit you want.
+- **Manual:** load the `ReactionSys` and `Stream` directly in Tab 2.
+- **From Calculated Data:** reuse the RTD, `ReactionSys`, and `Stream` currently loaded in Tab 1.
 
 ### Workflow
 
-1. Confirm that the RTD status shows it was loaded from Tab 1.
-2. Prepare or load the reaction system.
-3. Prepare or load the feed stream with the full inlet concentration vector.
-4. Click **Compute**.
-5. Review the conversion comparison and outlet concentration plots, together with the exit summary table.
-6. Use the Tab 2 display controls to choose reactants and species; this tab no longer includes a `Time base` selector.
+1. Generate an RTD first in **Tab 1**.
+2. Choose **Manual** or **From Calculated Data**.
+3. Load or create a compatible `ReactionSys`.
+4. Load or create a compatible feed `Stream`.
+5. Click **Compute**.
+6. Review the plots, the `Exit Summary` table, and the `Non-Ideal Mixing Effect (%)` comparison.
 
-### Plots
+### Results
 
-- **Conversion Comparison:** compares reactant conversion with a fixed left-to-right model order: `Ideal CSTR`, `Segregation`, `Max Mixedness`, and `Ideal PFR`. The `Reactants` list allows multiselection, so you can display any subset of reactants.
-- **Outlet Concentration:** compares outlet concentration for every species using the same fixed model order and shared colors. The `Species` list allows multiselection, and the `Concentration` control only affects this plot and its displayed units.
-- **Exit Summary:** table with inlet concentration, outlet concentration `C(out)`, and reactant conversion per species.
-- **Non-Ideal Mixing Effect (%):** compact comparison of reactant conversion loss relative to the `Ideal PFR` reference.
-- **Shared Legend:** both plots use the same model colors and a single legend below the charts.
+- **Conversion Comparison:** bar chart for the selected reactants in the fixed model order `Ideal CSTR`, `Segregation`, `Max Mixedness`, `Ideal PFR`.
+- **Outlet Concentration:** bar chart for the selected species in the same fixed model order.
+- **Exit Summary:** per-species table with `C_in`, outlet concentrations, and reactant conversion for the four models.
+- **Non-Ideal Mixing Effect (%):** compact percentage comparison between `Segregation` / `Max Mixedness` and the ideal references.
+- **Shared Legend:** both plots use the same colors and a single legend.
+
+### Notes
+
+- This tab does **not** include a `Time base` display selector.
+- `Reactants` and `Species` are independent multiselection controls.
+- The loaded `Stream` must match the number of components in the loaded `ReactionSys`.
 
 ---
 
 ## Tab 3: Tanks-in-Series (TIS)
 
-**Purpose:** Model non-ideal behavior as `N` equal CSTRs in series.
+**Purpose:** Model non-ideal behavior as `N` equal CSTRs in series and compare it with ideal `CSTR` and `PFR` references.
 
-### Choosing `N`
+### N Method
 
-- **Manual:** type the number of tanks directly.
-- **From Calculated Data:** estimate `N` automatically from the RTD obtained in Tab 1.
+- **Manual:** enter `N` and `tau` directly.
+- **From Calculated Data:** estimate `N` from the RTD in Tab 1 and import `ReactionSys` plus `Stream` from Tab 2 when they are available.
 
 ### Workflow
 
-1. Choose how `N` will be defined.
-2. Enter `tau` and `C_A0` using the unit dropdowns.
-3. Create, edit, or load the reaction system.
-4. Click **Compute**.
-5. Review `X_TIS`, `X_CSTR`, and `X_PFR`.
+1. Choose the **N Method**.
+2. Set or import `N` and `tau`.
+3. Load or create the `ReactionSys`.
+4. Load or create the feed `Stream`.
+5. Click **Compute**.
+6. Review `Outlet Concentration vs N`, `Conversion vs N`, the `Exit Summary` table, and the `E(t)` comparison.
 
 ### Notes
 
-- If `N` is not an integer, the app rounds it and shows a warning.
-- The RTD of the TIS model is plotted together with the RTD from Tab 1.
+- If `N` is not an integer, the app still uses it for RTD estimation and reports the equivalent continuous value.
+- The `Exit Summary` table reports `TIS`, `CSTR`, and `PFR` outlet concentrations and conversions.
+- The lower-right plot compares the TIS `E(t)` with the RTD currently held by Tab 1.
 
 ---
 
 ## Tab 4: Dispersion Model
 
-**Purpose:** Model non-ideal behavior using axial dispersion.
+**Purpose:** Model non-ideal behavior using axial dispersion and compare it with ideal `CSTR` and `PFR` references.
 
-### Input Options
+### Input Modes
 
-- **Manual:** enter `Bo` directly.
-- **From Calculated Data:** estimate `Bo` from the RTD in Tab 1.
+- **Manual:** enter `Bo`, the boundary condition, and `tau` directly.
+- **From Calculated Data:** estimate `Bo` from the RTD in Tab 1 and import `ReactionSys` plus `Stream` from Tab 2 when they are available.
 
 ### Boundary Conditions
 
-- **Open-Open**
-- **Closed-Closed**
+- **closed-closed**
+- **open-open**
 
 ### Workflow
 
-1. Choose the input method and boundary condition.
-2. Enter `Bo`, `tau`, and `C_A0`.
-3. Create, edit, or load the reaction system.
-4. Click **Compute**.
-5. Review the `Outlet Concentration vs Bo` and `Conversion vs Bo` plots, the `Exit Summary` table, and the reported `Bo`/`Pe` annotation in `E(t)`.
+1. Choose the input mode and boundary condition.
+2. Set or import `Bo` and `tau`.
+3. Load or create the `ReactionSys`.
+4. Load or create the feed `Stream`.
+5. Click **Compute**.
+6. Review `Outlet Concentration vs Bo`, `Conversion vs Bo`, the `Exit Summary` table, and the `E(t)` plot with `Bo`, `Pe`, and `tau`.
 
 ### Display Units and Results
 
 - **E(t) Plot:** uses the local `Time base` selector only.
 - **Outlet Concentration vs Bo:** uses the `Concentration` selector and a multiselect `Species` list.
 - **Conversion vs Bo:** uses a multiselect `Reactants` list.
-- **Exit Summary:** shows `C_in`, `Disp C_out`, `CSTR C_out`, `PFR C_out`, `X_Disp`, `X_CSTR`, and `X_PFR` for all species.
+- **Exit Summary:** shows `C_in`, `Disp C_out`, `CSTR C_out`, `PFR C_out`, `X_Disp`, `X_CSTR`, and `X_PFR`.
 - The lower-left table is not filtered by the species/reactant selectors; those selectors only affect the plots.
 
 ---
 
 ## Tab 5: Design & Optimization
 
-**Purpose:** Work in a single Tab 5 workspace that starts from an existing RTD and connects equivalent-model fitting, reactive prediction, and optimization.
+**Purpose:** Work in a single workspace that starts from an RTD and connects equivalent-model fitting, reactive prediction, optimization, and scale-up.
 
 ### Subareas
 
-- **Diagnosis & Fit:** estimate equivalent parameters for `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass`, and `CSTR + Dead Volume + Bypass`.
-- **Reactive Performance:** compare `Ideal CSTR`, `Segregation`, `Max Mixedness`, and `Ideal PFR`, together with outlet concentrations, selectivity, and yield.
-- **Optimization & Scale-Up:** optimize equivalent hydrodynamic parameters and compare pilot versus industrial scenarios with the same chemistry.
+- **Diagnosis & Fit:** fit `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass`, and `CSTR + Dead Volume + Bypass` to the RTD from Tab 1.
+- **Reactive Performance:** compare `Ideal CSTR`, `Segregation`, `Max Mixedness`, and `Ideal PFR`, and report conversion, selectivity, yield, and outlet concentrations.
+- **Optimization & Scale-Up:** optimize equivalent hydrodynamic parameters and compare pilot versus industrial scenarios.
 
 ### Typical Workflow
 
-1. In **Tab 1: RTD Analysis**, generate or import the RTD and verify its moments and plots there.
-2. In **Diagnosis & Fit**, choose an equivalent family and run the fit if you want a compact hydrodynamic representation.
-3. In **Reactive Performance**, load a `ReactionSys` and a liquid `Stream` from the workspace, choose the key reactant and products, and compute the four reference models using either `Tab 1 RTD` or `Fitted RTD`.
-4. In **Optimization & Scale-Up**, reuse that same chemistry to optimize `tau`, `N`, `Bo`, `bypass`, `activeFraction`, and `recycleRatio`, or to compare pilot and industrial cases.
+1. In **Tab 1**, generate or import the RTD.
+2. In **Diagnosis & Fit**, choose a family and run the fit if you want an equivalent hydrodynamic model.
+3. In **Reactive Performance**, load a `ReactionSys` and a feed `Stream` from the workspace, choose the key species, and compute the reference models using either `Tab 1 RTD` or `Fitted RTD`.
+4. In **Optimization & Scale-Up**, reuse that same chemistry to optimize `tau`, `N`, `Bo`, `bypass`, `activeFraction`, and `recycleRatio`, or compare pilot and industrial scenarios.
 
 ### Notes
 
 - Tab 5 is **isothermal** and **steady-state** in this version.
-- RTD preprocessing belongs to **Tab 1**, so Tab 5 no longer includes a separate hydrodynamics subarea.
-- Session save/load already preserves the Tab 5 workspace through `designWorkspace`.
-- The new workspace replaces the old `Design Templates` direction as the active Tab 5 of the app.
+- RTD preprocessing belongs to **Tab 1**, so Tab 5 does not include a separate hydrodynamics editor.
+- Optimization reuses the chemistry already loaded in **Reactive Performance**.
+- Session save/load preserves the Tab 5 workspace through `designWorkspace`.
 
 ---
 
@@ -194,10 +206,12 @@ This tool is optional during normal use, because most scalar inputs in the app a
 
 - **File > Guardar:** save the current session into the local `saves/` folder as a `.mat` file.
 - **File > Cargar:** restore a previously saved session, including `RTD`, `ReactionSys`, `Stream`, input fields, and display selections.
-- **File > Exit:** close the application
-- **Tools > Unit Converter:** open the unit converter
-- **Help > User Guide:** open this guide inside the app
-- **Help > About:** show version and author information
+- **File > Restart:** reopen the app in a clean state.
+- **File > Exit:** close the application.
+- **Tools > Unit Converter:** open the unit converter.
+- **Help > User Guide:** open this guide inside the app.
+- **Help > Technical Guide:** open the engineering-oriented technical chapter.
+- **Help > About:** show version and author information.
 
 ---
 
@@ -205,16 +219,17 @@ This tool is optional during normal use, because most scalar inputs in the app a
 
 | Problem | What to check |
 |---------|---------------|
-| Tabs 2-4 say the RTD is not loaded | Generate an RTD first in Tab 1 |
-| A model cannot compute | Check that all required inputs are filled in |
-| Reaction system is missing | Create one with **New RS** or load it from the workspace |
+| Tabs 2-5 say something is not loaded | Confirm the required RTD, `ReactionSys`, or `Stream` is available in the source tab or workspace |
+| A model cannot compute | Check that all required inputs are filled in and that the component counts match |
 | Imported data does not work | Check column order, headers, and unit consistency |
 | A `C(t)` equation fails | Use valid MATLAB syntax and element-wise operators such as `.*` |
+| `From Calculated Data` does not populate chemistry | Make sure Tab 1 or Tab 2 already holds a valid `ReactionSys` and `Stream` |
 
 ---
 
-## Practical Unit Tips
+## Practical Tips
 
-- Keep `C0` in the same concentration scale as the imported tracer signal.
-- When using workspace or file imports, double-check that the selected unit in the app matches the data you are loading.
-- Use the local **Display units** controls when you want to inspect results without changing your original inputs.
+- Keep tracer signals and `C0` in the same concentration scale when using pulse/step RTD inputs.
+- Use Tab 1 as the main handoff point when you want to reuse RTD, `ReactionSys`, and `Stream` in Prediction.
+- Use Tab 2 as the handoff point for chemistry when you want Tabs 3 and 4 to import the same `ReactionSys` and `Stream`.
+- Use the local **Display units** controls when you want to inspect results without changing the stored internal data.

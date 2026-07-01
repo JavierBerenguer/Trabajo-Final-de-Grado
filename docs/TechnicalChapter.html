@@ -83,12 +83,6 @@
       color: var(--muted);
     }
 
-    hr {
-      border: 0;
-      border-top: 1px solid var(--line);
-      margin: 26px 0;
-    }
-
     code, pre {
       font-family: Consolas, "Courier New", monospace;
       background: var(--code);
@@ -144,90 +138,98 @@
       <h2>1. Purpose of This Document</h2>
       <p>This chapter explains how the application works internally from a <strong>chemical engineering</strong> point of view. Its purpose is not to document MATLAB syntax or UI programming, but to show:</p>
       <ul>
-        <li>what engineering problem each tab solves,</li>
+        <li>what engineering problem each active tab solves,</li>
         <li>which reactor-theory model is being applied,</li>
-        <li>how reaction kinetics enter the calculation,</li>
-        <li>which assumptions are imposed on the user input,</li>
+        <li>how reaction kinetics and feed composition enter the calculation,</li>
+        <li>which assumptions are imposed on the current workflows,</li>
         <li>and how the numerical results should be interpreted.</li>
       </ul>
-      <p>The active scope of this chapter is the block formed by:</p>
+      <p>The active scope of this chapter is the current <strong>5-tab</strong> application:</p>
       <ul>
         <li><strong>Tab 1: RTD Analysis</strong></li>
         <li><strong>Tab 2: Prediction Models</strong></li>
         <li><strong>Tab 3: Tanks-in-Series</strong></li>
         <li><strong>Tab 4: Dispersion Model</strong></li>
+        <li><strong>Tab 5: Design &amp; Optimization</strong></li>
       </ul>
-      <p>Tabs 5-7 exist in the application, but they are not the reference scope of this chapter because they are expected to undergo deeper redesign later.</p>
     </section>
 
     <section class="section">
       <h2>2. Engineering Problem Addressed by the Application</h2>
       <p>The application is designed to analyze <strong>non-ideal reactors</strong>. In chemical engineering terms, the core question is:</p>
       <blockquote>
-        <p>Given a residence time distribution and a reaction system, how does non-ideal flow modify conversion compared with ideal reactor assumptions?</p>
+        <p>Given a residence time distribution and a reaction system, how does non-ideal flow modify conversion, selectivity, and yield compared with ideal reactor assumptions?</p>
       </blockquote>
       <p>The software is therefore organized around two complementary tasks:</p>
       <ol>
         <li><strong>Characterize the hydrodynamics</strong> through the residence time distribution, RTD.</li>
-        <li><strong>Propagate the RTD through a reaction model</strong> in order to estimate conversion bounds or conversion in equivalent non-ideal reactor models.</li>
+        <li><strong>Propagate the RTD through a reaction model</strong> in order to estimate conversion bounds, equivalent-model behavior, or optimization trends.</li>
       </ol>
-      <p>This is the reason why the application begins with RTD generation and only afterwards moves to conversion prediction.</p>
+      <p>This is the reason why the application begins with RTD generation and only afterwards moves to conversion prediction or design tasks.</p>
     </section>
 
     <section class="section">
       <h2>3. Global Engineering Workflow</h2>
       <p>From an engineering point of view, the program follows the sequence:</p>
-      <pre><code>Hydrodynamic description -&gt; RTD object -&gt; Reaction system -&gt; Non-ideal reactor model -&gt; Conversion result</code></pre>
+      <pre><code>Hydrodynamic description -&gt; RTD object -&gt; Reaction system + feed stream -&gt; Non-ideal reactor model -&gt; Conversion / selectivity / yield result</code></pre>
       <p>More explicitly:</p>
       <ol>
         <li>The user defines or imports an RTD in Tab 1.</li>
-        <li>The RTD is normalized and converted into its statistical descriptors.</li>
-        <li>The user defines a reactive system through stoichiometry and kinetics.</li>
-        <li>The selected non-ideal model uses the same kinetics and the same RTD to estimate conversion.</li>
+        <li>The RTD is normalized and converted into statistical descriptors.</li>
+        <li>The user defines a <code>ReactionSys</code> and a feed <code>Stream</code>.</li>
+        <li>The selected non-ideal model uses the same chemistry and hydrodynamic information to compute the response.</li>
         <li>The program reports either:
           <ul>
-            <li>conversion bounds (<code>X_seg</code>, <code>X_MM</code>), or</li>
-            <li>conversion in a specific equivalent model (<code>N</code> tanks or dispersion model).</li>
+            <li>mixing bounds (<code>Segregation</code>, <code>Max Mixedness</code>),</li>
+            <li>an equivalent reactor response (<code>TIS</code>, <code>Dispersion</code>),</li>
+            <li>or a design-oriented comparison (<code>Diagnosis &amp; Fit</code>, <code>Optimization</code>, <code>Scale-Up</code>).</li>
           </ul>
         </li>
       </ol>
-      <p>The key design choice is that <strong>hydrodynamics and kinetics are coupled only at the reactor-model stage</strong>, not at the RTD-definition stage.</p>
+      <p>The key design choice is that <strong>hydrodynamics and chemistry are coupled only at the model-evaluation stage</strong>, not while building the RTD itself.</p>
     </section>
 
     <section class="section">
       <h2>4. Common Modeling Assumptions</h2>
-      <p>The current Tabs 1-4 share the following engineering assumptions.</p>
+      <p>The current application shares the following engineering assumptions.</p>
 
-      <h3>4.1 Isothermal operation</h3>
-      <p>The active prediction route is isothermal. Temperature may still exist in the kinetic object, but the non-ideal tabs described here operate without solving an energy balance.</p>
-
-      <h3>4.2 Single feed composition pattern in the UI</h3>
-      <p>The current workflow assumes that the inlet concentration vector is built as:</p>
-      <div class="equation">C<sub>0</sub> = [C<sub>A0</sub>, 0, 0, ...]</div>
-      <p>This means the user directly enters the concentration of the key reactant and the rest of species are initialized at zero in the active tabs.</p>
-
-      <h3>4.3 Internal SI consistency</h3>
+      <h3>4.1 Internal SI consistency</h3>
       <p>All internal calculations are performed in SI units:</p>
       <ul>
         <li>time in <code>s</code></li>
         <li>concentration in <code>mol/m^3</code></li>
         <li>volume in <code>m^3</code></li>
-        <li>flow rate in <code>m^3/s</code></li>
+        <li>volumetric flow rate in <code>m^3/s</code></li>
       </ul>
-      <p>Unit conversion is intentionally isolated in the input and output layers. This is important because it avoids mixing units inside the numerical models.</p>
+      <p>Unit conversion is intentionally isolated in the input and output layers. This avoids mixing units inside the numerical models.</p>
 
-      <h3>4.4 Conversion referred to a key component</h3>
-      <p>The conversion reported by the active models is associated with the key reactant, usually species <code>A</code>:</p>
-      <div class="equation">X = (C<sub>A0</sub> - C<sub>A</sub>) / C<sub>A0</sub></div>
-      <p>For multicomponent systems, the program still computes the full concentration evolution internally where needed, but the reported conversion remains tied to the selected key component.</p>
+      <h3>4.2 Isothermal and steady-state prediction routes</h3>
+      <p>The active prediction and design routes are isothermal. Temperature may still exist in the kinetic object, but the tabs described here do not solve an energy balance.</p>
+      <p>Tabs 2-5 are also evaluated in steady state for the reactor response of interest.</p>
+
+      <h3>4.3 Stoichiometry and kinetics must stay consistent</h3>
+      <p>The numerical models assume that:</p>
+      <ul>
+        <li>the stoichiometric matrix is correctly defined,</li>
+        <li>each kinetic expression matches that stoichiometry,</li>
+        <li>and species indexing is used consistently across <code>ReactionSys</code>, <code>Stream</code>, and all reactor models.</li>
+      </ul>
+      <p>This is especially important for custom kinetics, because the backend reuses the same chemistry across all active models.</p>
+
+      <h3>4.4 Multicomponent feed support with key-component reporting</h3>
+      <p>The current workflow uses a full feed concentration vector taken from a <code>Stream</code> object. The models therefore operate on multicomponent inlet conditions, not only on a single <code>C_A0</code> scalar.</p>
+      <p>Even so, the main conversion metric is still tied to a <strong>key reactant</strong>:</p>
+      <div class="equation">X = (C<sub>A,in</sub> - C<sub>A,out</sub>) / C<sub>A,in</sub></div>
+      <p>For multicomponent systems, the program also keeps outlet concentrations for all species and can derive selectivity and yield where relevant.</p>
     </section>
 
     <section class="section">
       <h2>5. Representation of the Reaction System</h2>
-      <p>The reaction system is defined by two elements:</p>
+      <p>The reaction system is defined by three linked elements:</p>
       <ol>
         <li><strong>Stoichiometric matrix</strong></li>
         <li><strong>Rate law</strong></li>
+        <li><strong>Feed composition vector</strong></li>
       </ol>
 
       <h3>5.1 Stoichiometric matrix</h3>
@@ -238,23 +240,23 @@
       <p>The application uses this matrix to convert reaction rates into species balances.</p>
 
       <h3>5.2 Meaning of the kinetic expression</h3>
-      <p>In the free-kinetics path (<code>Other kinetics</code>), the user defines the <strong>reaction rate of each reaction</strong>, <code>r_i</code>, not directly <code>-r_A</code>.</p>
-      <p>This distinction is essential. If:</p>
+      <p>In the free-kinetics path (<code>Other kinetics</code>), the user defines the <strong>rate of each reaction</strong>, <code>r_i</code>, not directly the disappearance rate of a specific species.</p>
+      <p>If:</p>
       <div class="equation">2A &rarr; B</div>
-      <p>and the rate of disappearance is given in a statement as:</p>
+      <p>and a statement gives:</p>
       <div class="equation">-r<sub>A</sub> = k C<sub>A</sub><sup>2</sup></div>
-      <p>then the reaction-rate expression that must be introduced in the app is:</p>
+      <p>then the reaction-rate expression entered in the app must be:</p>
       <div class="equation">r<sub>1</sub> = (1/2) k C<sub>A</sub><sup>2</sup></div>
       <p>because:</p>
-      <div class="equation">dC<sub>A</sub>/dt = &nu;<sub>A</sub> r<sub>1</sub> = -2 r<sub>1</sub></div>
+      <div class="equation">dC<sub>A</sub>/dt = &nu;<sub>A</sub> r<sub>1</sub> = -2r<sub>1</sub></div>
 
-      <h3>5.3 Why this matters for non-ideal models</h3>
-      <p>Tabs 2-4 do not contain separate hardcoded branches for every reaction order. Instead, they call the same general kinetic object. From an engineering point of view, this means:</p>
+      <h3>5.3 Feed stream</h3>
+      <p>The inlet composition is supplied by a <code>Stream</code> object. This is important because:</p>
       <ul>
-        <li>the hydrodynamic model changes from tab to tab,</li>
-        <li>but the reaction model is kept physically consistent across all of them.</li>
+        <li>Tabs 2-4 use the same concentration vector for all species,</li>
+        <li>Tab 1 can already hold the <code>ReactionSys</code> and <code>Stream</code> that Tab 2 reuses,</li>
+        <li>and Tab 5 reuses the same chemistry for reactive comparison, optimization, and scale-up.</li>
       </ul>
-      <p>This is a very important feature for comparison between non-ideal models.</p>
     </section>
 
     <section class="section">
@@ -286,6 +288,14 @@
       <h3>6.3 Effective volume</h3>
       <p>If the user supplies volumetric flow rate <code>Q_v</code>, the tab also reports:</p>
       <div class="equation">V<sub>eff</sub> = &tau; Q<sub>v</sub></div>
+
+      <h3>6.4 Role as shared source</h3>
+      <p>Tab 1 is not only an RTD editor. It also acts as a practical handoff point:</p>
+      <ul>
+        <li>the RTD is reused by Tabs 2-5,</li>
+        <li>the <code>ReactionSys</code> and <code>Stream</code> loaded in the RTD utilities can be reused directly by Tab 2,</li>
+        <li>and the <code>F(t)</code> query gives a direct physical interpretation of effluent already exited versus fluid still inside the reactor.</li>
+      </ul>
     </section>
 
     <section class="section">
@@ -295,26 +305,16 @@
         <li><strong>Segregation</strong></li>
         <li><strong>Maximum mixedness</strong></li>
       </ul>
+      <p>and compares them with ideal <code>CSTR</code> and <code>PFR</code> references.</p>
 
-      <h3>7.2 Physical interpretation</h3>
-      <ul>
-        <li><strong>Segregation model</strong>: fluid elements of different ages do not micromix with one another before reacting. Each age behaves as a batch microreactor.</li>
-        <li><strong>Maximum mixedness model</strong>: fluid elements mix as intensely as possible while still being compatible with the measured RTD.</li>
-      </ul>
-      <p>Therefore, this tab gives <strong>bounds or limiting references</strong> for the expected conversion under non-ideal flow.</p>
-
-      <h3>7.2 Segregation model</h3>
+      <h3>7.1 Segregation model</h3>
       <p>The model proceeds in two steps.</p>
       <p>First, the intrinsic batch problem is solved:</p>
       <div class="equation">dC/dt = &nu; r(C)</div>
       <p>using the same kinetics defined by the user.</p>
-      <p>This produces a batch conversion history:</p>
-      <div class="equation">X<sub>batch</sub>(t)</div>
-      <p>Then the reactor conversion is computed through RTD weighting:</p>
-      <div class="equation">X<sub>seg</sub> = &int;<sub>0</sub><sup>&infin;</sup> X<sub>batch</sub>(t) E(t) dt</div>
-      <p>This means the reactor is treated as a superposition of non-interacting fluid packets of different ages.</p>
+      <p>Then the outlet state is computed through RTD weighting. In physical terms, the reactor is treated as a superposition of non-interacting fluid packets of different ages.</p>
 
-      <h3>7.3 Maximum mixedness model</h3>
+      <h3>7.2 Maximum mixedness model</h3>
       <p>The maximum-mixedness route uses the life-expectancy coordinate <code>&lambda;</code> and the RTD pair <code>E(&lambda;)</code>, <code>F(&lambda;)</code>.</p>
       <p>Its internal balance includes:</p>
       <ul>
@@ -322,19 +322,28 @@
         <li>and a mixing term proportional to:</li>
       </ul>
       <div class="equation">E(&lambda;) / (1 - F(&lambda;))</div>
-      <p>The exit conversion is the value at:</p>
+      <p>The exit state is recovered at:</p>
       <div class="equation">&lambda; = 0</div>
-      <p>In physical terms, this model represents the opposite limit to segregation: the strongest admissible micromixing consistent with the same macroscopic RTD.</p>
+      <p>In physical terms, this model represents the opposite admissible limit to segregation for the same macroscopic RTD.</p>
 
-      <h3>7.4 Engineering value of comparing both results</h3>
-      <p>If <code>X_seg</code> and <code>X_MM</code> are very close, the effect of micromixing assumptions is weak and the reactor behaves robustly with respect to mixing state.</p>
+      <h3>7.3 Engineering value of the tab</h3>
+      <p>If <code>Segregation</code> and <code>Max Mixedness</code> are close, the effect of micromixing assumptions is weak.</p>
       <p>If the gap is large, then:</p>
       <ul>
         <li>micromixing matters strongly,</li>
-        <li>reaction order and nonlinearity are important,</li>
-        <li>and RTD alone is not enough to identify a unique reactor behavior.</li>
+        <li>reaction nonlinearity is important,</li>
+        <li>and RTD alone is not enough to identify a unique reactor response.</li>
       </ul>
-      <p>This makes Tab 2 especially valuable for diagnosis, not only for calculation.</p>
+      <p>The tab therefore acts as both a predictor and a diagnosis tool.</p>
+
+      <h3>7.4 Current outputs</h3>
+      <p>The active UI reports:</p>
+      <ul>
+        <li>reactant conversion comparison for <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>,</li>
+        <li>outlet concentration comparison for all species,</li>
+        <li>an exit summary table with concentrations and per-reactant conversion,</li>
+        <li>and a compact percentage comparison of non-ideal mixing effects.</li>
+      </ul>
     </section>
 
     <section class="section">
@@ -342,10 +351,10 @@
       <p>This tab approximates the real reactor by a cascade of ideal CSTRs in series.</p>
 
       <h3>8.1 Estimation of the number of tanks</h3>
-      <p>The classical relation between RTD moments and tanks-in-series is used:</p>
+      <p>When the user selects <strong>From Calculated Data</strong>, the classical relation between RTD moments and tanks-in-series is used:</p>
       <div class="equation">N = &tau;<sup>2</sup> / &sigma;<sup>2</sup></div>
-      <p>This links the experimental RTD to the idealized cascade structure.</p>
-      <p>Large <code>N</code> approaches plug flow behavior, while <code>N = 1</code> corresponds to a single ideal CSTR.</p>
+      <p>This links the measured RTD to the equivalent cascade structure.</p>
+      <p>Large <code>N</code> approaches plug-flow behavior, while <code>N = 1</code> corresponds to a single ideal CSTR.</p>
 
       <h3>8.2 Species balance in each tank</h3>
       <p>Each tank is solved with the stationary CSTR balance:</p>
@@ -354,13 +363,13 @@
       <div class="equation">&tau;<sub>i</sub> = &tau;<sub>total</sub> / N</div>
       <p>The outlet of one tank becomes the inlet of the next one.</p>
 
-      <h3>8.3 PFR comparison route</h3>
-      <p>The tab also includes a plug-flow comparison route. This is useful because the series model naturally connects the two classical limits:</p>
+      <h3>8.3 Data flow</h3>
+      <p>In calculated mode, the tab imports:</p>
       <ul>
-        <li><code>N = 1</code> -&gt; CSTR-like behavior</li>
-        <li><code>N &rarr; &infin;</code> -&gt; PFR-like behavior</li>
+        <li><code>N</code> and <code>tau</code> from the RTD in Tab 1,</li>
+        <li>and the chemistry from Tab 2 if a <code>ReactionSys</code> and <code>Stream</code> have already been loaded there.</li>
       </ul>
-      <p>This makes the tab a practical bridge between ideal-reactor intuition and RTD-based non-ideal analysis.</p>
+      <p>This preserves consistency when comparing prediction routes.</p>
     </section>
 
     <section class="section">
@@ -368,66 +377,124 @@
       <p>This tab represents the reactor as a one-dimensional flow with axial dispersion.</p>
 
       <h3>9.1 Governing idea</h3>
-      <p>Instead of describing the reactor as discrete stages, the model uses a continuous hydrodynamic picture. The key parameter is the <strong>Bodenstein number</strong>, <code>Bo</code>, which measures the ratio between convective transport and axial dispersion.</p>
+      <p>The key hydrodynamic parameter is the <strong>Bodenstein number</strong>, <code>Bo</code>, which measures the ratio between convective transport and axial dispersion. The interface also reports <code>Pe = 1/Bo</code>.</p>
       <p>In engineering terms:</p>
       <ul>
-        <li>high <code>Bo</code> means weak backmixing and behavior closer to plug flow,</li>
-        <li>low <code>Bo</code> means strong backmixing and broader RTD behavior.</li>
+        <li>low <code>Bo</code> means weaker dispersion resistance and behavior closer to plug flow in the implementation's convention,</li>
+        <li>high <code>Bo</code> means broader backmixed behavior relative to that limit.</li>
       </ul>
 
       <h3>9.2 Current computational route</h3>
-      <p>The active implementation for Tabs 1-4 does not use separate analytical conversion formulas by reaction order. Instead it:</p>
-      <ol>
-        <li>generates the RTD associated with the selected dispersion parameters,</li>
-        <li>computes the batch conversion history for the chosen kinetics,</li>
-        <li>integrates the RTD against that intrinsic conversion history.</li>
-      </ol>
-      <p>This makes the dispersion model consistent with the same general kinetic framework used in the other tabs.</p>
+      <p>The active implementation builds an RTD associated with the selected dispersion parameters and then solves the reaction problem with the same general kinetic framework used elsewhere.</p>
+      <p>This keeps the dispersion route compatible with multicomponent kinetics rather than restricting it to a small set of analytical formulas.</p>
 
       <h3>9.3 Boundary conditions</h3>
-      <p>The class retains the boundary-condition choice for the RTD model. This matters because open-open and closed-closed formulations do not produce exactly the same RTD shape, especially outside the asymptotic plug-flow limit.</p>
+      <p>The class retains the boundary-condition choice for the RTD model:</p>
+      <ul>
+        <li><code>closed-closed</code></li>
+        <li><code>open-open</code></li>
+      </ul>
+      <p>This matters because both formulations do not produce exactly the same RTD shape outside limiting cases.</p>
+
+      <h3>9.4 Data flow</h3>
+      <p>In calculated mode, the tab imports:</p>
+      <ul>
+        <li><code>tau</code> and a variance-based estimate of <code>Bo</code> from Tab 1,</li>
+        <li>and the chemistry from Tab 2 if available.</li>
+      </ul>
     </section>
 
     <section class="section">
-      <h2>10. Units and Reproducibility</h2>
+      <h2>10. Tab 5 - Design &amp; Optimization</h2>
+      <p>This tab is the current design-oriented workspace of the application. It is intentionally narrower than a full process simulator, but it extends the engineering use of the same RTD and chemistry building blocks.</p>
+
+      <h3>10.1 Diagnosis &amp; Fit</h3>
+      <p>This subarea fits equivalent hydrodynamic families to the RTD from Tab 1:</p>
+      <ul>
+        <li><code>Tanks-in-Series</code></li>
+        <li><code>Axial Dispersion</code></li>
+        <li><code>CSTR + Dead Volume</code></li>
+        <li><code>CSTR + Bypass</code></li>
+        <li><code>CSTR + Dead Volume + Bypass</code></li>
+      </ul>
+      <p>The backend combines direct formulas, heuristic indicators, and lightweight numerical fitting. Its purpose is not to identify a unique physical internals model, but to build a compact equivalent representation that reproduces the observed RTD reasonably well.</p>
+
+      <h3>10.2 Reactive Performance</h3>
+      <p>This subarea reuses:</p>
+      <ul>
+        <li>an RTD from <code>Tab 1</code> or from the fitted equivalent model,</li>
+        <li>a <code>ReactionSys</code>,</li>
+        <li>and a feed <code>Stream</code>.</li>
+      </ul>
+      <p>It then compares:</p>
+      <ul>
+        <li><code>Ideal CSTR</code></li>
+        <li><code>Segregation</code></li>
+        <li><code>Max Mixedness</code></li>
+        <li><code>Ideal PFR</code></li>
+      </ul>
+      <p>The outputs include conversion, selectivity, yield, outlet concentrations, and a direct first-order shortcut when the kinetic structure allows it.</p>
+
+      <h3>10.3 Optimization &amp; Scale-Up</h3>
+      <p>This subarea optimizes equivalent hydrodynamic parameters such as:</p>
+      <ul>
+        <li><code>tau</code></li>
+        <li><code>N</code></li>
+        <li><code>Bo</code></li>
+        <li><code>bypass</code></li>
+        <li><code>activeFraction</code></li>
+        <li><code>recycleRatio</code></li>
+      </ul>
+      <p>The active implementation uses a lightweight penalized search strategy, evaluates constraints on conversion/selectivity/yield or outlet concentration, and can compare pilot and industrial scenarios with the same chemistry.</p>
+      <p>From an engineering standpoint, this tab is useful for:</p>
+      <ul>
+        <li>screening sensitivity to hydrodynamic parameters,</li>
+        <li>comparing equivalent-model families,</li>
+        <li>and building quick what-if scenarios before moving to a more detailed design stage.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>11. Units, Persistence, and Reproducibility</h2>
       <p>From the point of view of engineering reliability, one of the most important implementation choices is the strict separation between:</p>
       <ul>
         <li><strong>input/output units</strong>, which may be selected by the user,</li>
         <li>and <strong>internal calculation units</strong>, which remain SI.</li>
       </ul>
-      <p>This avoids one of the most common sources of reactor-calculation errors: mixing concentration, time or volumetric units inside the rate law or residence-time calculations.</p>
-      <p>The recent unit layer also allows the user to define kinetics in practical engineering units such as:</p>
+      <p>The session system follows the same philosophy:</p>
       <ul>
-        <li><code>mol/L</code></li>
-        <li><code>min</code></li>
-        <li><code>h</code></li>
+        <li>the app saves explicit state snapshots,</li>
+        <li>domain objects such as <code>RTD</code>, <code>ReactionSys</code>, and <code>Stream</code> are serialized to plain structures,</li>
+        <li>and Tab 5 stores its own workspace state through <code>designWorkspace</code>.</li>
       </ul>
-      <p>while keeping the backend numerically consistent.</p>
+      <p>This makes saved sessions more portable and less dependent on MATLAB handle serialization.</p>
     </section>
 
     <section class="section">
-      <h2>11. Current Limitations</h2>
-      <p>The following limitations are important for correct interpretation of the results.</p>
+      <h2>12. Current Limitations</h2>
       <ol>
-        <li>Tabs 1-4 currently use a simplified inlet composition pattern based on <code>C_A0</code>.</li>
-        <li>The active prediction route is isothermal.</li>
-        <li>The quality of the prediction depends strongly on the representativeness of the RTD supplied by the user.</li>
-        <li>The free-kinetics route requires the user to define <code>r_i</code> consistently with the stoichiometric matrix.</li>
-        <li>Tabs 5-7 are not yet aligned with the same level of simplification and should not be used as the reference for the internal architecture described here.</li>
+        <li>The active prediction routes are isothermal and do not solve energy balances.</li>
+        <li>The physical meaning of the answer still depends strongly on the quality of the RTD supplied by the user.</li>
+        <li>Custom kinetics require the user to define <code>r_i</code> consistently with the stoichiometric matrix.</li>
+        <li>The diagnosis flags in Tab 5 are heuristic indicators, not rigorous equipment-fault identifiers.</li>
+        <li>The optimization route is intentionally lightweight and should be treated as a screening tool, not as a final rigorous optimizer.</li>
+        <li>Session load restores the state but does not automatically recompute every tab.</li>
       </ol>
     </section>
 
     <section class="section">
-      <h2>12. File-Level Traceability</h2>
+      <h2>13. File-Level Traceability</h2>
       <p>The main model responsibilities can be traced to the following files:</p>
       <ul>
-        <li><code>RTD.m</code>: RTD construction, normalization and moments</li>
-        <li><code>SegregationModel.m</code>: segregation conversion calculation</li>
-        <li><code>MaxMixednessModel.m</code>: maximum mixedness conversion calculation</li>
-        <li><code>TanksInSeries.m</code>: cascade-of-CSTR equivalent model</li>
-        <li><code>DispersionReactor.m</code>: dispersion RTD and conversion route</li>
+        <li><code>RTD.m</code>: RTD construction, normalization, moments, and equivalent RTD families</li>
+        <li><code>SegregationModel.m</code>: segregation prediction route</li>
+        <li><code>MaxMixednessModel.m</code>: maximum-mixedness prediction route</li>
+        <li><code>TanksInSeries.m</code>: cascade-of-CSTR equivalent model and ideal references</li>
+        <li><code>DispersionReactor.m</code>: dispersion RTD and reactor response helpers</li>
         <li><code>ReactionSys.m</code>: stoichiometry and general kinetics definition</li>
-        <li><code>NonIdealReactorApp.m</code>: orchestration of user input, model execution and output display</li>
+        <li><code>Stream.m</code>: inlet composition container in internal SI units</li>
+        <li><code>DesignWorkspaceHelper.m</code>: backend for Tab 5 fitting, reactive comparison, optimization, and scale-up</li>
+        <li><code>NonIdealReactorApp.m</code>: orchestration of user input, model execution, persistence, and output display</li>
       </ul>
     </section>
   </div>
