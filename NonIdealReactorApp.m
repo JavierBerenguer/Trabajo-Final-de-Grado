@@ -1805,6 +1805,16 @@ classdef NonIdealReactorApp < handle
         end
 
         function text = buildFitSummaryText(~, result)
+            if isfield(result, 'mode') && strcmp(result.mode, 'search')
+                nOk = numel(result.searchResults) ;
+                nSkipped = sum(strcmp({result.searchEntries.status}, 'Skipped')) ;
+                text = sprintf([ ...
+                    'Search completed. Best family: %s. ' ...
+                    'Evaluated = %d. Omitted = %d. ' ...
+                    'Best RMSE = %.6g. Best score = %.6g'], ...
+                    result.searchBestFamily, nOk, nSkipped, result.rmse, result.score) ;
+                return
+            end
             text = sprintf([ ...
                 '%s fitted. RMSE = %.6g. ' ...
                 'Score = %.6g'], ...
@@ -4895,6 +4905,7 @@ classdef NonIdealReactorApp < handle
             D.fit.family = app.DesignUI.Fit.FamilyDropdown.Value ;
             D.fit.boundary = app.DesignUI.Fit.BoundaryDropdown.Value ;
             D.fit.referenceTau = app.captureFieldWithUnit(app.DesignUI.Fit.ReferenceTauField) ;
+            D.fit.searchSelection = app.captureListboxSelection(app.DesignUI.Fit.FamilySearchList) ;
             D.fit.result = app.DesignState.fitResult ;
 
             D.reaction = struct() ;
@@ -4927,8 +4938,13 @@ classdef NonIdealReactorApp < handle
             app.setDropdownValueIfValid(app.DesignUI.Fit.SourceDropdown, app.getStructField(fit, 'source', app.DesignUI.Fit.SourceDropdown.Value)) ;
             app.setDropdownValueIfValid(app.DesignUI.Fit.FamilyDropdown, app.getStructField(fit, 'family', app.DesignUI.Fit.FamilyDropdown.Value)) ;
             app.setDropdownValueIfValid(app.DesignUI.Fit.BoundaryDropdown, app.getStructField(fit, 'boundary', app.DesignUI.Fit.BoundaryDropdown.Value)) ;
-            app.applyFieldWithUnit(app.DesignUI.Fit.ReferenceTauField, app.getStructField(fit, 'referenceTau', struct())) ;
+            refTauState = app.getStructField(fit, 'referenceTau', struct()) ;
+            app.DW_beginReferenceTauProgrammaticUpdate() ;
+            app.applyFieldWithUnit(app.DesignUI.Fit.ReferenceTauField, refTauState) ;
+            app.DW_endReferenceTauProgrammaticUpdate(isstruct(refTauState) && isfield(refTauState, 'value')) ;
             app.DesignState.fitResult = app.getStructField(fit, 'result', []) ;
+            app.DesignUI.Fit.FamilySearchList.UserData = struct('pendingSelection', ...
+                app.getStructField(fit, 'searchSelection', [])) ;
 
             reaction = app.getStructField(snapshot, 'reaction', struct()) ;
             app.setDropdownValueIfValid(app.DesignUI.Reactive.RTDSourceDropdown, app.getStructField(reaction, 'rtdSource', app.DesignUI.Reactive.RTDSourceDropdown.Value)) ;
@@ -4960,7 +4976,8 @@ classdef NonIdealReactorApp < handle
                 return
             end
             snapshot.fit = struct('source', 'Tab 1 RTD', 'family', 'CSTR + Dead Volume', ...
-                'boundary', 'closed-closed', 'referenceTau', struct('value', 1, 'unit', 's'), 'result', []) ;
+                'boundary', 'closed-closed', 'referenceTau', struct(), ...
+                'searchSelection', [], 'result', []) ;
         end
 
         function DW_createFitTab(app)
@@ -4973,6 +4990,7 @@ classdef NonIdealReactorApp < handle
             leftGrid = uigridlayout(left, [6 2]) ;
             leftGrid.RowHeight = {'fit','fit','fit','fit',34,'1x'} ;
             leftGrid.ColumnWidth = {120, '1x'} ;
+            app.DesignUI.Fit.SetupGrid = leftGrid ;
 
             lbl = uilabel(leftGrid, 'Text', 'RTD source:') ;
             app.DesignUI.Fit.SourceDropdown = uidropdown(leftGrid, 'Items', {'Tab 1 RTD'}) ;
@@ -4983,7 +5001,7 @@ classdef NonIdealReactorApp < handle
             lbl = uilabel(leftGrid, 'Text', 'Family:') ;
             app.DesignUI.Fit.FamilyLabel = lbl ;
             app.DesignUI.Fit.FamilyDropdown = uidropdown(leftGrid, ...
-                'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass'}) ;
+                'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass', 'Search best family'}) ;
             app.DesignUI.Fit.FamilyDropdown.Layout.Row = 2 ; app.DesignUI.Fit.FamilyDropdown.Layout.Column = 2 ;
             app.setTooltip('Equivalent hydrodynamic family used to approximate the RTD from Tab 1.', ...
                 lbl, app.DesignUI.Fit.FamilyDropdown) ;
@@ -4998,18 +5016,30 @@ classdef NonIdealReactorApp < handle
             lbl = uilabel(leftGrid, 'Text', 'Ref. tau_total:') ;
             app.DesignUI.Fit.ReferenceTauLabel = lbl ;
             [app.DesignUI.Fit.ReferenceTauField, app.DesignUI.Fit.ReferenceTauGrid] = app.createNumericWithConv(leftGrid, 4, 2, 1.0, 'Time', 'Limits', [0 Inf]) ;
+            refTauData = app.DesignUI.Fit.ReferenceTauField.UserData ;
+            refTauData.manualOverride = false ;
+            refTauData.defaultInitialized = false ;
+            refTauData.suspendTracking = false ;
+            refTauData.defaultValueSI = NaN ;
+            app.DesignUI.Fit.ReferenceTauField.UserData = refTauData ;
+            app.DesignUI.Fit.ReferenceTauField.ValueChangedFcn = @(~,~) app.DW_markReferenceTauEdited() ;
+            if isfield(refTauData, 'unitDropdown') && ~isempty(refTauData.unitDropdown) && isvalid(refTauData.unitDropdown)
+                refTauData.unitDropdown.ValueChangedFcn = @(~,~) app.DW_markReferenceTauEdited() ;
+            end
             app.setTooltip(['Nominal total space time V/Q used when the fit must distinguish total reactor volume from active volume. ' ...
                 'It is required for dead-volume families.'], lbl, app.DesignUI.Fit.ReferenceTauField) ;
+            app.DW_syncDefaultReferenceTau() ;
 
             app.DesignUI.Fit.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Diagnosis & Fit', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runFit()) ;
             app.DesignUI.Fit.RunButton.Layout.Row = 5 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
             app.DesignUI.Fit.RunButton.Tooltip = 'Run the heuristic diagnosis and fit the selected equivalent hydrodynamic model.' ;
 
-            app.DesignUI.Fit.DiagnosticsArea = uitextarea(leftGrid, 'Editable', 'off') ;
-            app.DesignUI.Fit.DiagnosticsArea.Layout.Row = 6 ; app.DesignUI.Fit.DiagnosticsArea.Layout.Column = [1 2] ;
-            app.DesignUI.Fit.DiagnosticsArea.Tooltip = ['Heuristic interpretation of the RTD shape. ' ...
-                'Flags such as dead volume, bypass, channeling or recirculation are qualitative indicators.'] ;
+            app.DesignUI.Fit.FamilySearchList = app.createDisplayMultiSelectControl( ...
+                leftGrid, 6, [1 2], 'Families:', @(~,~) app.DW_handleFitSearchSelection()) ;
+            app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
+            app.DesignUI.Fit.FamilySearchList.Tooltip = 'Select which fitted families are displayed on the comparison plot.' ;
+            app.DesignUI.Fit.FamilySearchList.UserData = struct('familyNames', {{}}, 'pendingSelection', []) ;
 
             right = uipanel(grid, 'Title', 'Fit Results') ;
             right.Layout.Column = 2 ;
@@ -5230,7 +5260,7 @@ classdef NonIdealReactorApp < handle
                 app.updateStatus('Diagnosis and fit completed') ;
             catch ME
                 app.updateStatus('Error') ;
-                uialert(app.UIFigure, ME.message, 'Diagnosis & Fit Error') ;
+                app.showDetailedError(ME, 'Diagnosis & Fit Error') ;
             end
         end
 
@@ -5407,13 +5437,30 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_refreshFitContext(app)
+            app.DW_syncDefaultReferenceTau() ;
             family = app.DesignUI.Fit.FamilyDropdown.Value ;
+            isSearch = strcmp(char(string(family)), 'Search best family') ;
             showBoundary = app.DW_familyNeedsBoundary(family) ;
             showReferenceTau = app.DW_familyNeedsReferenceTau(family) ;
             app.DW_setVisiblePair(app.DesignUI.Fit.BoundaryLabel, app.DesignUI.Fit.BoundaryDropdown, showBoundary) ;
             app.DW_setVisiblePair(app.DesignUI.Fit.ReferenceTauLabel, app.DesignUI.Fit.ReferenceTauField, showReferenceTau) ;
             if isfield(app.DesignUI.Fit, 'ReferenceTauGrid') && ~isempty(app.DesignUI.Fit.ReferenceTauGrid) && isvalid(app.DesignUI.Fit.ReferenceTauGrid)
                 app.DesignUI.Fit.ReferenceTauGrid.Visible = app.ternary(showReferenceTau, 'on', 'off') ;
+            end
+            if isfield(app.DesignUI.Fit, 'SetupGrid') && ~isempty(app.DesignUI.Fit.SetupGrid) && isvalid(app.DesignUI.Fit.SetupGrid)
+                rowHeights = {'fit','fit','fit','fit',34,0} ;
+                if isSearch
+                    rowHeights{6} = '1x' ;
+                end
+                app.DesignUI.Fit.SetupGrid.RowHeight = rowHeights ;
+            end
+            if isfield(app.DesignUI.Fit, 'FamilySearchList') && ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
+                app.DesignUI.Fit.FamilySearchList.Visible = app.ternary(isSearch, 'on', 'off') ;
+                app.DesignUI.Fit.FamilySearchList.Enable = app.ternary(isSearch, 'on', 'off') ;
+                parentGrid = app.DesignUI.Fit.FamilySearchList.Parent ;
+                if ~isempty(parentGrid) && isvalid(parentGrid)
+                    parentGrid.Visible = app.ternary(isSearch, 'on', 'off') ;
+                end
             end
         end
 
@@ -5507,17 +5554,198 @@ classdef NonIdealReactorApp < handle
             result = app.DesignState.fitResult ;
             if isempty(result)
                 app.DesignUI.Fit.ParameterTable.Data = cell(0, 2) ;
-                app.DesignUI.Fit.DiagnosticsArea.Value = {'Run a fit to see heuristic diagnosis and parameter estimates.'} ;
                 app.DesignUI.Fit.SummaryLabel.Text = 'Awaiting RTD fit.' ;
+                app.DesignUI.Fit.ParameterTable.ColumnName = {'Parameter', 'Value'} ;
+                if ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
+                    app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
+                end
+                cla(app.DesignUI.Fit.CompareAxes) ;
                 return
             end
+            resultMode = app.getStructField(result, 'mode', 'single') ;
+            if strcmp(resultMode, 'search')
+                app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryText(result) ;
+                app.DesignUI.Fit.ParameterTable.ColumnName = {'Family', 'RMSE', 'Score'} ;
+                app.DesignUI.Fit.ParameterTable.Data = result.summaryTable ;
+                app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
+                    'Comparison across fitted families sorted by fit quality.', ...
+                    {'Family', 'RMSE', 'Score'}) ;
+                title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t) by family') ;
+                app.DW_refreshFitSearchSelector(result) ;
+                app.DW_refreshFitSearchPlot(result) ;
+                return
+            end
+
             app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryText(result) ;
+            app.DesignUI.Fit.ParameterTable.ColumnName = {'Parameter', 'Value'} ;
             app.DesignUI.Fit.ParameterTable.Data = result.summaryTable ;
-            app.DesignUI.Fit.DiagnosticsArea.Value = result.diagnostics.summaryText ;
+            app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
+            if ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
+                app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
+                app.DesignUI.Fit.FamilySearchList.UserData = struct('familyNames', {{}}, 'pendingSelection', []) ;
+            end
+            title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t)') ;
             cla(app.DesignUI.Fit.CompareAxes) ;
             plot(app.DesignUI.Fit.CompareAxes, result.inputRTD.t, result.inputRTD.Et, 'k-', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'on') ;
             plot(app.DesignUI.Fit.CompareAxes, result.fittedRTD.t, result.fittedRTD.Et, 'b--', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'off') ;
             legend(app.DesignUI.Fit.CompareAxes, {'Input', 'Fitted'}, 'Location', 'best') ; grid(app.DesignUI.Fit.CompareAxes, 'on') ;
+        end
+
+        function DW_refreshFitSearchSelector(app, result)
+            if isempty(app.DesignUI.Fit.FamilySearchList) || ~isvalid(app.DesignUI.Fit.FamilySearchList)
+                return
+            end
+            familyNames = {result.searchResults.family} ;
+            listbox = app.DesignUI.Fit.FamilySearchList ;
+            previousSelection = app.captureListboxSelection(listbox) ;
+            listbox.Items = familyNames ;
+            listbox.ItemsData = 1:numel(familyNames) ;
+            pending = [] ;
+            if isstruct(listbox.UserData) && isfield(listbox.UserData, 'pendingSelection')
+                pending = listbox.UserData.pendingSelection ;
+            end
+            if isempty(pending)
+                pending = previousSelection ;
+            end
+            if isempty(pending)
+                pending = app.getStructField(result, 'searchSelection', 1) ;
+            end
+            app.restoreListboxSelection(listbox, pending) ;
+            if isempty(listbox.Value) && ~isempty(listbox.ItemsData)
+                listbox.Value = listbox.ItemsData(1) ;
+            end
+            listbox.UserData = struct('familyNames', {familyNames}, 'pendingSelection', []) ;
+        end
+
+        function DW_handleFitSearchSelection(app)
+            result = app.DesignState.fitResult ;
+            if isempty(result) || ~strcmp(app.getStructField(result, 'mode', 'single'), 'search')
+                return
+            end
+            app.DW_refreshFitSearchPlot(result) ;
+        end
+
+        function DW_refreshFitSearchPlot(app, result)
+            selectedIdx = app.captureListboxSelection(app.DesignUI.Fit.FamilySearchList) ;
+            if isempty(selectedIdx)
+                selectedIdx = app.getStructField(result, 'searchSelection', 1) ;
+                if ~isempty(app.DesignUI.Fit.FamilySearchList.ItemsData)
+                    app.restoreListboxSelection(app.DesignUI.Fit.FamilySearchList, selectedIdx) ;
+                end
+            end
+            selectedIdx = selectedIdx(selectedIdx >= 1 & selectedIdx <= numel(result.searchResults)) ;
+            if isempty(selectedIdx)
+                selectedIdx = 1 ;
+            end
+            cla(app.DesignUI.Fit.CompareAxes) ;
+            plot(app.DesignUI.Fit.CompareAxes, result.inputRTD.t, result.inputRTD.Et, 'k-', 'LineWidth', 1.4) ;
+            hold(app.DesignUI.Fit.CompareAxes, 'on') ;
+            legendEntries = {'Input'} ;
+            colors = lines(max(numel(selectedIdx), 1)) ;
+            for i = 1:numel(selectedIdx)
+                fitItem = result.searchResults(selectedIdx(i)) ;
+                plot(app.DesignUI.Fit.CompareAxes, fitItem.fittedRTD.t, fitItem.fittedRTD.Et, '--', ...
+                    'LineWidth', 1.2, 'Color', colors(i, :)) ;
+                legendEntries{end + 1} = fitItem.family ; %#ok<AGROW>
+            end
+            hold(app.DesignUI.Fit.CompareAxes, 'off') ;
+            legend(app.DesignUI.Fit.CompareAxes, legendEntries, 'Location', 'best') ;
+            grid(app.DesignUI.Fit.CompareAxes, 'on') ;
+        end
+
+        function clearMultiSelectListbox(~, listbox)
+            if isempty(listbox) || ~isvalid(listbox)
+                return
+            end
+            try
+                listbox.Value = {} ;
+            catch
+            end
+            listbox.Items = {} ;
+            if isprop(listbox, 'ItemsData')
+                listbox.ItemsData = [] ;
+            end
+        end
+
+        function DW_markReferenceTauEdited(app)
+            field = app.DesignUI.Fit.ReferenceTauField ;
+            if isempty(field) || ~isvalid(field)
+                return
+            end
+            fieldData = field.UserData ;
+            if ~isstruct(fieldData)
+                return
+            end
+            if isfield(fieldData, 'suspendTracking') && fieldData.suspendTracking
+                return
+            end
+            fieldData.manualOverride = true ;
+            fieldData.defaultInitialized = true ;
+            field.UserData = fieldData ;
+        end
+
+        function DW_beginReferenceTauProgrammaticUpdate(app)
+            field = app.DesignUI.Fit.ReferenceTauField ;
+            if isempty(field) || ~isvalid(field)
+                return
+            end
+            fieldData = field.UserData ;
+            if ~isstruct(fieldData)
+                fieldData = struct() ;
+            end
+            fieldData.suspendTracking = true ;
+            field.UserData = fieldData ;
+        end
+
+        function DW_endReferenceTauProgrammaticUpdate(app, manualOverride)
+            field = app.DesignUI.Fit.ReferenceTauField ;
+            if isempty(field) || ~isvalid(field)
+                return
+            end
+            fieldData = field.UserData ;
+            if ~isstruct(fieldData)
+                fieldData = struct() ;
+            end
+            fieldData.suspendTracking = false ;
+            fieldData.manualOverride = logical(manualOverride) ;
+            fieldData.defaultInitialized = true ;
+            field.UserData = fieldData ;
+        end
+
+        function DW_syncDefaultReferenceTau(app)
+            field = app.DesignUI.Fit.ReferenceTauField ;
+            if isempty(field) || ~isvalid(field)
+                return
+            end
+            fieldData = field.UserData ;
+            if ~isstruct(fieldData)
+                fieldData = struct() ;
+            end
+            if isfield(fieldData, 'manualOverride') && fieldData.manualOverride
+                return
+            end
+
+            defaultTauSI = 1 ;
+            if ~isempty(app.rtd) && isa(app.rtd, 'RTD') && ~isempty(app.rtd.tau) && isfinite(app.rtd.tau) && app.rtd.tau > 0
+                defaultTauSI = ceil(app.rtd.tau) ;
+            end
+
+            app.DW_beginReferenceTauProgrammaticUpdate() ;
+            fieldData = field.UserData ;
+            if isfield(fieldData, 'unitDropdown') && ~isempty(fieldData.unitDropdown) && isvalid(fieldData.unitDropdown)
+                dd = fieldData.unitDropdown ;
+                if any(strcmp(cellstr(dd.Items), 's'))
+                    dd.Value = 's' ;
+                end
+            end
+            app.setInputFieldValue(field, defaultTauSI) ;
+            fieldData = field.UserData ;
+            fieldData.defaultInitialized = true ;
+            fieldData.defaultValueSI = defaultTauSI ;
+            fieldData.manualOverride = false ;
+            fieldData.suspendTracking = false ;
+            field.UserData = fieldData ;
         end
 
         function DW_refreshReactive(app)
@@ -5592,6 +5820,23 @@ classdef NonIdealReactorApp < handle
                 end
             catch
             end
+        end
+
+        function showDetailedError(app, ME, titleText)
+            try
+                reportText = getReport(ME, 'extended', 'hyperlinks', 'off') ;
+                fprintf(2, '\n[%s]\n%s\n', titleText, reportText) ;
+            catch
+            end
+
+            detail = ME.message ;
+            if ~isempty(ME.stack)
+                topFrame = ME.stack(1) ;
+                detail = sprintf('%s\n\nSource: %s (line %d)', ...
+                    ME.message, topFrame.name, topFrame.line) ;
+            end
+
+            uialert(app.UIFigure, detail, titleText, 'Interpreter', 'none') ;
         end
     end
 

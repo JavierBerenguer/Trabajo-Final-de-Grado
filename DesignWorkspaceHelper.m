@@ -91,7 +91,99 @@ classdef DesignWorkspaceHelper
         end
 
         function fitResult = solveHydroFit(fitSpec)
+            family = char(string(DesignWorkspaceHelper.getStructField( ...
+                fitSpec, 'family', 'Tanks-in-Series'))) ;
+            if strcmp(family, 'Search best family')
+                fitResult = DesignWorkspaceHelper.solveHydroFitSearch(fitSpec) ;
+                return
+            end
+
+            fitResult = DesignWorkspaceHelper.solveSingleHydroFit(fitSpec) ;
+        end
+
+        function fitResult = solveHydroFitSearch(fitSpec)
             rtdObj = DesignWorkspaceHelper.getRequiredRTD(fitSpec) ;
+            candidates = { ...
+                struct('family', 'Tanks-in-Series', 'displayName', 'Tanks-in-Series', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'Axial Dispersion', 'displayName', 'Axial Dispersion closed-closed', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'Axial Dispersion', 'displayName', 'Axial Dispersion open-open', 'boundaryType', 'open-open') ; ...
+                struct('family', 'CSTR + Dead Volume', 'displayName', 'CSTR + Dead Volume', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'CSTR + Bypass', 'displayName', 'CSTR + Bypass', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'CSTR + Dead Volume + Bypass', 'displayName', 'CSTR + Dead Volume + Bypass', 'boundaryType', 'closed-closed') ...
+                } ;
+            referenceTau = DesignWorkspaceHelper.getStructField( ...
+                fitSpec, 'referenceTau', []) ;
+
+            entries = repmat(struct( ...
+                'family', '', ...
+                'displayName', '', ...
+                'status', '', ...
+                'message', '', ...
+                'rmse', NaN, ...
+                'score', NaN, ...
+                'result', []), numel(candidates), 1) ;
+            validResults = cell(0, 1) ;
+
+            for i = 1:numel(candidates)
+                candidate = candidates{i} ;
+                family = candidate.family ;
+                entry = struct('family', family, 'displayName', candidate.displayName, 'status', 'Skipped', ...
+                    'message', '', 'rmse', NaN, 'score', NaN, 'result', []) ;
+                if DesignWorkspaceHelper.familyNeedsReferenceTau(family) && ...
+                        (isempty(referenceTau) || ~isscalar(referenceTau) || referenceTau <= 0)
+                    entry.message = 'Reference tau_total not available.' ;
+                    entries(i) = entry ;
+                    continue
+                end
+
+                try
+                    singleSpec = fitSpec ;
+                    singleSpec.family = family ;
+                    singleSpec.boundaryType = candidate.boundaryType ;
+                    singleSpec.referenceTau = referenceTau ;
+                    result = DesignWorkspaceHelper.solveSingleHydroFit(singleSpec) ;
+                    result.family = candidate.displayName ;
+                    entry.status = 'OK' ;
+                    entry.rmse = result.rmse ;
+                    entry.score = result.score ;
+                    entry.result = result ;
+                    validResults{end + 1, 1} = result ; %#ok<AGROW>
+                catch ME
+                    entry.status = 'Skipped' ;
+                    entry.message = ME.message ;
+                end
+                entries(i) = entry ;
+            end
+
+            if isempty(validResults)
+                error('No family could be fitted with the current context.') ;
+            end
+
+            [sortedResults, sortedEntries, bestIdx] = DesignWorkspaceHelper.rankFitSearchEntries(validResults, entries) ;
+            bestResult = sortedResults(1) ;
+            summaryTable = cell(numel(sortedEntries), 3) ;
+            for i = 1:numel(sortedEntries)
+                summaryTable{i, 1} = sortedEntries(i).displayName ;
+                summaryTable{i, 2} = DesignWorkspaceHelper.formatNumber(sortedEntries(i).rmse) ;
+                summaryTable{i, 3} = DesignWorkspaceHelper.formatNumber(sortedEntries(i).score) ;
+            end
+
+            fitResult = bestResult ;
+            fitResult.mode = 'search' ;
+            fitResult.requestedFamily = 'Search best family' ;
+            fitResult.summaryTable = summaryTable ;
+            fitResult.searchEntries = sortedEntries ;
+            fitResult.searchFamilies = {sortedEntries.displayName} ;
+            fitResult.searchBestFamily = bestResult.family ;
+            fitResult.searchSelection = bestIdx ;
+            fitResult.searchResults = sortedResults ;
+            fitResult.searchDiagnostics = DesignWorkspaceHelper.buildSearchDiagnostics(sortedEntries) ;
+        end
+
+        function fitResult = solveSingleHydroFit(fitSpec)
+            rtdObj = DesignWorkspaceHelper.getRequiredRTD(fitSpec) ;
+            rtdObj.t = DesignWorkspaceHelper.ensureRowVector(rtdObj.t) ;
+            rtdObj.Et = DesignWorkspaceHelper.ensureRowVector(rtdObj.Et) ;
             family = char(string(DesignWorkspaceHelper.getStructField( ...
                 fitSpec, 'family', 'Tanks-in-Series'))) ;
             boundary = char(string(DesignWorkspaceHelper.getStructField( ...
@@ -167,6 +259,7 @@ classdef DesignWorkspaceHelper
             diagnostics = DesignWorkspaceHelper.diagnoseRTD(rtdObj, fitMeta) ;
 
             fitResult = struct() ;
+            fitResult.mode = 'single' ;
             fitResult.family = family ;
             fitResult.parameters = params ;
             fitResult.boundaryType = boundary ;
@@ -189,6 +282,9 @@ classdef DesignWorkspaceHelper
             if nargin < 2
                 fitMeta = struct() ;
             end
+
+            rtdObj.t = DesignWorkspaceHelper.ensureRowVector(rtdObj.t) ;
+            rtdObj.Et = DesignWorkspaceHelper.ensureRowVector(rtdObj.Et) ;
 
             tau = max(rtdObj.tau, 1e-12) ;
             earlyMass = DesignWorkspaceHelper.estimateEarlyMassFraction(rtdObj) ;
@@ -617,15 +713,22 @@ classdef DesignWorkspaceHelper
         function frac = estimateEarlyMassFraction(rtdObj)
             tau = max(rtdObj.tau, 1e-12) ;
             idx = rtdObj.t <= 0.1 * tau ;
-            if ~any(idx)
+            if nnz(idx) < 2
                 frac = 0 ;
                 return
             end
-            frac = trapz(rtdObj.t(idx), rtdObj.Et(idx)) ;
+            tEarly = DesignWorkspaceHelper.ensureRowVector(rtdObj.t(idx)) ;
+            eEarly = DesignWorkspaceHelper.ensureRowVector(rtdObj.Et(idx)) ;
+            frac = trapz(tEarly, eEarly) ;
         end
 
         function nPeaks = countPeaks(y)
             y = DesignWorkspaceHelper.ensureRowVector(y) ;
+            if isempty(y) || ~isnumeric(y)
+                nPeaks = 0 ;
+                return
+            end
+            y = y(isfinite(y)) ;
             if numel(y) < 5
                 nPeaks = 0 ;
                 return
@@ -902,9 +1005,11 @@ classdef DesignWorkspaceHelper
             if isempty(x)
                 return
             end
-            if iscolumn(x)
-                out = x' ;
+            if ~isnumeric(x) && ~islogical(x)
+                out = reshape(x, 1, []) ;
+                return
             end
+            out = double(x(:)).' ;
         end
 
         function txt = formatNumber(value)
@@ -913,6 +1018,43 @@ classdef DesignWorkspaceHelper
             else
                 txt = sprintf('%.6g', value) ;
             end
+        end
+
+        function tf = familyNeedsReferenceTau(family)
+            family = char(string(family)) ;
+            tf = any(strcmp(family, {'CSTR + Dead Volume', 'CSTR + Dead Volume + Bypass'})) ;
+        end
+
+        function [sortedResults, sortedEntries, bestIdx] = rankFitSearchEntries(validResults, entries)
+            validMask = strcmp({entries.status}, 'OK') ;
+            okEntries = entries(validMask) ;
+            skippedEntries = entries(~validMask) ;
+            rmse = [okEntries.rmse] ;
+            score = [okEntries.score] ;
+            order = [(1:numel(okEntries))', rmse(:), -score(:)] ;
+            order = sortrows(order, [2 3 1]) ;
+            okEntries = okEntries(order(:, 1)) ;
+            sortedResults = [validResults{order(:, 1)}] ;
+            sortedEntries = [okEntries ; skippedEntries] ;
+            bestIdx = 1 ;
+        end
+
+        function diagnostics = buildSearchDiagnostics(entries)
+            lines = strings(0, 1) ;
+            okMask = strcmp({entries.status}, 'OK') ;
+            if any(okMask)
+                bestFamily = entries(find(okMask, 1, 'first')).displayName ;
+                lines(end + 1, 1) = "Best family found: " + string(bestFamily) + "."; %#ok<AGROW>
+            end
+            for i = 1:numel(entries)
+                if strcmp(entries(i).status, 'Skipped') && ~isempty(entries(i).message)
+                    lines(end + 1, 1) = string(entries(i).displayName) + ": " + string(entries(i).message); %#ok<AGROW>
+                end
+            end
+            if isempty(lines)
+                lines = "Search completed." ;
+            end
+            diagnostics = struct('summaryText', cellstr(lines)) ;
         end
 
     end

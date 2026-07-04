@@ -60,9 +60,10 @@ classdef RTD
                 error('RTD constructor requires 0 or 2 arguments: RTD(t, Et)') ;
             end
 
-            % Ensure row vectors
-            if iscolumn(t),  t  = t' ;  end
-            if iscolumn(Et), Et = Et' ; end
+            % Flatten vector-like inputs so experimental data with trailing
+            % singleton dimensions cannot break numerical routines.
+            t = RTD.ensure_row_vector(t) ;
+            Et = RTD.ensure_row_vector(Et) ;
 
             if length(t) ~= length(Et)
                 error('Vectors t and Et must have the same length') ;
@@ -482,8 +483,8 @@ classdef RTD
             %   t      - [1 x N] time vector (s)
             %   Cpulse - [1 x N] tracer concentration at outlet
 
-            if iscolumn(t),      t      = t' ;      end
-            if iscolumn(Cpulse), Cpulse = Cpulse' ; end
+            t = RTD.ensure_row_vector(t) ;
+            Cpulse = RTD.ensure_row_vector(Cpulse) ;
 
             if length(t) ~= length(Cpulse)
                 error('Vectors t and Cpulse must have the same length') ;
@@ -515,8 +516,8 @@ classdef RTD
             %   C0    - (optional) inlet tracer concentration. If not given,
             %           C0 = max(Cstep) is used
 
-            if iscolumn(t),     t     = t' ;     end
-            if iscolumn(Cstep), Cstep = Cstep' ; end
+            t = RTD.ensure_row_vector(t) ;
+            Cstep = RTD.ensure_row_vector(Cstep) ;
 
             if length(t) ~= length(Cstep)
                 error('Vectors t and Cstep must have the same length') ;
@@ -714,6 +715,19 @@ classdef RTD
             % as ln(t) at the upper limit). The numerical sigma2 from trapz
             % is a finite approximation due to truncation at 10*tau.
             obj.tau = tau_val ;
+        end
+
+        function out = ensure_row_vector(x)
+            if isempty(x)
+                out = x ;
+                return
+            end
+
+            if ~isvector(x)
+                error('RTD inputs must be one-dimensional vectors.') ;
+            end
+
+            out = reshape(x, 1, []) ;
         end
 
     end
