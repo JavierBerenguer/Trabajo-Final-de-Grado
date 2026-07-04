@@ -74,11 +74,11 @@ app = ReactorApp;
 - Workspace abierto para trabajo no ideal en tres subareas:
   - `Diagnosis & Fit`
   - `Reactive Performance`
-  - `Optimization & Scale-Up`
+  - `Optimization`
 - La caracterizacion RTD se hace en `Tab 1 - RTD Analysis`; Tab 5 ya no duplica esa etapa.
 - `Diagnosis & Fit` ajusta `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass` y `CSTR + Dead Volume + Bypass` a partir de la RTD de Tab 1.
 - `Reactive Performance` compara `Ideal CSTR`, `Segregation`, `Max Mixedness` e `Ideal PFR`, e incluye deteccion directa de 1er orden cuando aplica.
-- `Optimization & Scale-Up` optimiza sobre `tau`, `N`, `Bo`, `bypass`, `activeFraction` y `recycleRatio`, y compara escenarios piloto/industrial.
+- `Optimization` optimiza sobre `tau`, `N`, `Bo`, `bypass`, `activeFraction` y `recycleRatio` reutilizando la quimica cargada en `Reactive Performance`.
 - La persistencia de sesion ya incluye snapshot propio `designWorkspace`.
 
 ## Unidades

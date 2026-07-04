@@ -57,7 +57,7 @@ More explicitly:
 5. The program reports either:
    - mixing bounds (`Segregation`, `Max Mixedness`),
    - an equivalent reactor response (`TIS`, `Dispersion`),
-   - or a design-oriented comparison (`Diagnosis & Fit`, `Optimization`, `Scale-Up`).
+   - or a design-oriented comparison (`Diagnosis & Fit`, `Reactive Performance`, `Optimization`).
 
 The key design choice is that **hydrodynamics and chemistry are coupled only at the model-evaluation stage**, not while building the RTD itself.
 
@@ -414,7 +414,7 @@ It then compares:
 
 The outputs include conversion, selectivity, yield, outlet concentrations, and a direct first-order shortcut when the kinetic structure allows it.
 
-### 10.3 Optimization & Scale-Up
+### 10.3 Optimization
 
 This subarea optimizes equivalent hydrodynamic parameters such as:
 
@@ -425,7 +425,7 @@ This subarea optimizes equivalent hydrodynamic parameters such as:
 - `activeFraction`
 - `recycleRatio`
 
-The active implementation uses a lightweight penalized search strategy, evaluates constraints on conversion/selectivity/yield or outlet concentration, and can compare pilot and industrial scenarios with the same chemistry.
+The active implementation uses a lightweight penalized search strategy, evaluates constraints on conversion/selectivity/yield or outlet concentration, and reuses the same chemistry loaded in `Reactive Performance`.
 
 From an engineering standpoint, this tab is useful for:
 

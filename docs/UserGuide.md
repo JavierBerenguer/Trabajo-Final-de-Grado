@@ -176,14 +176,14 @@ If you later set **Tab 2** to **From Calculated Data**, the RTD, `ReactionSys`, 
 
 - **Diagnosis & Fit:** fit `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass`, and `CSTR + Dead Volume + Bypass` to the RTD from Tab 1.
 - **Reactive Performance:** compare `Ideal CSTR`, `Segregation`, `Max Mixedness`, and `Ideal PFR`, and report conversion, selectivity, yield, and outlet concentrations.
-- **Optimization & Scale-Up:** optimize equivalent hydrodynamic parameters and compare pilot versus industrial scenarios.
+- **Optimization:** optimize equivalent hydrodynamic parameters for the chemistry already loaded in `Reactive Performance`.
 
 ### Typical Workflow
 
 1. In **Tab 1**, generate or import the RTD.
 2. In **Diagnosis & Fit**, choose a family and run the fit if you want an equivalent hydrodynamic model.
 3. In **Reactive Performance**, load a `ReactionSys` and a feed `Stream` from the workspace, choose the key species, and compute the reference models using either `Tab 1 RTD` or `Fitted RTD`.
-4. In **Optimization & Scale-Up**, reuse that same chemistry to optimize `tau`, `N`, `Bo`, `bypass`, `activeFraction`, and `recycleRatio`, or compare pilot and industrial scenarios.
+4. In **Optimization**, reuse that same chemistry to optimize `tau`, `N`, `Bo`, `bypass`, `activeFraction`, and `recycleRatio`.
 
 ### Notes
 

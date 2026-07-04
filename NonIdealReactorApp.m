@@ -1009,7 +1009,8 @@ classdef NonIdealReactorApp < handle
 
             unitDropdown = uidropdown(subGrid, ...
                 'Items', UnitConverterHelper.getUnits(unitCat), ...
-                'Value', UnitConverterHelper.defaultUnit(unitCat)) ;
+                'Value', UnitConverterHelper.defaultUnit(unitCat), ...
+                'Tooltip', 'Choose the input unit for this field. Internal calculations remain in SI units.') ;
             unitDropdown.Layout.Row = 1 ; unitDropdown.Layout.Column = 2 ;
 
             field.UserData = struct( ...
@@ -1068,14 +1069,17 @@ classdef NonIdealReactorApp < handle
             subGrid.Layout.Row = row ;
             subGrid.Layout.Column = col ;
 
-            uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
+            label = uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
             dropdown = uidropdown(subGrid, ...
                 'Items', UnitConverterHelper.getUnits(category), ...
                 'Value', defaultUnit, ...
                 'FontSize', 11, ...
+                'Tooltip', sprintf('Choose the display unit for %s. This only changes how results are shown in the UI.', ...
+                    lower(strrep(labelText, ':', ''))), ...
                 'ValueChangedFcn', callbackFcn) ;
             dropdown.Layout.Row = 1 ;
             dropdown.Layout.Column = 2 ;
+            label.Tooltip = dropdown.Tooltip ;
         end
 
         function dropdown = createDisplayChoiceControl(~, parentGrid, row, col, ...
@@ -1090,14 +1094,17 @@ classdef NonIdealReactorApp < handle
             subGrid.Layout.Row = row ;
             subGrid.Layout.Column = col ;
 
-            uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
+            label = uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
             dropdown = uidropdown(subGrid, ...
                 'Items', items, ...
                 'Value', defaultValue, ...
                 'FontSize', 11, ...
+                'Tooltip', sprintf('Choose the option used for %s.', ...
+                    lower(strrep(labelText, ':', ''))), ...
                 'ValueChangedFcn', callbackFcn) ;
             dropdown.Layout.Row = 1 ;
             dropdown.Layout.Column = 2 ;
+            label.Tooltip = dropdown.Tooltip ;
         end
 
         function listbox = createDisplayMultiSelectControl(~, parentGrid, row, col, ...
@@ -1116,14 +1123,17 @@ classdef NonIdealReactorApp < handle
             subGrid.Layout.Row = row ;
             subGrid.Layout.Column = col ;
 
-            uilabel(subGrid, 'Text', labelText, 'FontSize', 11, ...
+            label = uilabel(subGrid, 'Text', labelText, 'FontSize', 11, ...
                 'FontWeight', 'bold') ;
             listbox = uilistbox(subGrid, ...
                 'Multiselect', 'on', ...
                 'FontSize', 11, ...
+                'Tooltip', sprintf('Select which %s are used in the non-graphical displays for this section.', ...
+                    lower(strrep(labelText, ':', ''))), ...
                 'ValueChangedFcn', callbackFcn) ;
             listbox.Layout.Row = 2 ;
             listbox.Layout.Column = 1 ;
+            label.Tooltip = listbox.Tooltip ;
         end
 
         function value = convertOutputScalar(~, category, siValue, dropdown)
@@ -1786,6 +1796,21 @@ classdef NonIdealReactorApp < handle
             end
         end
 
+        function text = buildTooltipFromColumns(~, introText, columnNames)
+            if isempty(columnNames)
+                text = introText ;
+                return
+            end
+            text = sprintf('%s Columns: %s.', introText, strjoin(columnNames, ', ')) ;
+        end
+
+        function text = buildFitSummaryText(~, result)
+            text = sprintf([ ...
+                '%s fitted. RMSE = %.6g. ' ...
+                'Score = %.6g'], ...
+                result.family, result.rmse, result.score) ;
+        end
+
         function updateConcentrationHeader(app, labelHandle, concDropdown)
             if isempty(labelHandle) || ~isvalid(labelHandle)
                 return
@@ -1887,18 +1912,21 @@ classdef NonIdealReactorApp < handle
                 'ValueChangedFcn', @(~,~) app.RTD_sourceChanged()) ;
             app.RTD_SourceDropdown.Layout.Row = 1 ;
             app.RTD_SourceDropdown.Layout.Column = 2 ;
+            app.setTooltip('Choose how the RTD will be generated or imported.', lbl, app.RTD_SourceDropdown) ;
 
             % Row 2: Tau field
             lbl = uilabel(leftGrid, 'Text', '&tau;:', 'Interpreter', 'html') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
             [app.RTD_TauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 2, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
+            app.setTooltip('Mean residence time used by the selected RTD model.', lbl, app.RTD_TauField) ;
 
             % Row 3: Qv (volumetric flow rate) — always visible
             app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Q<sub>v</sub>:', 'Interpreter', 'html') ;
             app.RTD_QvLabel.Layout.Row = 3 ; app.RTD_QvLabel.Layout.Column = 1 ;
             [app.RTD_QvField, ~] = app.createNumericWithConv( ...
                 leftGrid, 3, 2, 0.001, 'VolumetricFlow', 'Limits', [1e-12 Inf]) ;
+            app.setTooltip('Volumetric flow rate used to infer effective reactor volume from the RTD.', app.RTD_QvLabel, app.RTD_QvField) ;
 
             % Row 4: N field (for Tanks-in-Series) — shares row with Bo
             app.RTD_NLabel = uilabel(leftGrid, 'Text', 'N [tanks]:') ;
@@ -1906,6 +1934,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_NField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 3, 'Limits', [0.1 Inf]) ;
             app.RTD_NField.Layout.Row = 4 ; app.RTD_NField.Layout.Column = 2 ;
+            app.setTooltip('Equivalent number of stirred tanks for the tanks-in-series RTD model.', app.RTD_NLabel, app.RTD_NField) ;
             app.RTD_NLabel.Visible = 'off' ;
             app.RTD_NField.Visible = 'off' ;
 
@@ -1916,6 +1945,7 @@ classdef NonIdealReactorApp < handle
                 'Value', 0.01, 'Limits', [1e-6 Inf], ...
                 'Tooltip', 'Dispersion number Bo = De/(u·L). Bo→0: plug flow, Bo→∞: perfect mixing.') ;
             app.RTD_BoField.Layout.Row = 4 ; app.RTD_BoField.Layout.Column = 2 ;
+            app.setTooltip('Axial dispersion number used by the dispersion RTD model.', app.RTD_BoLabel, app.RTD_BoField) ;
             app.RTD_BoLabel.Visible = 'off' ;
             app.RTD_BoField.Visible = 'off' ;
 
@@ -1934,6 +1964,8 @@ classdef NonIdealReactorApp < handle
                 'Items', UnitConverterHelper.getUnits('Time'), ...
                 'Value', 's') ;
             app.RTD_ExpTUnitDropdown.Layout.Row = 1 ; app.RTD_ExpTUnitDropdown.Layout.Column = 2 ;
+            app.setTooltip('Workspace variable that contains the experimental time vector, plus its unit.', ...
+                app.RTD_ExpTVarLabel, app.RTD_ExpTVarField, app.RTD_ExpTUnitDropdown) ;
             app.RTD_ExpTVarLabel.Visible = 'off' ;
             expTGrid.Visible = 'off' ;
 
@@ -1943,6 +1975,8 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpCVarField = uieditfield(leftGrid, 'text', ...
                 'Value', 'C_exp') ;
             app.RTD_ExpCVarField.Layout.Row = 6 ; app.RTD_ExpCVarField.Layout.Column = 2 ;
+            app.setTooltip('Workspace variable that contains the experimental tracer signal C(t).', ...
+                app.RTD_ExpCVarLabel, app.RTD_ExpCVarField) ;
             app.RTD_ExpCVarLabel.Visible = 'off' ;
             app.RTD_ExpCVarField.Visible = 'off' ;
 
@@ -1951,6 +1985,8 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpC0Label.Layout.Row = 7 ; app.RTD_ExpC0Label.Layout.Column = 1 ;
             [app.RTD_ExpC0Field, tmpSG] = app.createNumericWithConv( ...
                 leftGrid, 7, 2, 1, 'RawScalar', 'Limits', [0 Inf]) ;
+            app.setTooltip('Tracer concentration for the inlet step experiment. Use the same units as the imported C(t).', ...
+                app.RTD_ExpC0Label, app.RTD_ExpC0Field) ;
             app.RTD_ExpC0Label.Visible = 'off' ;
             tmpSG.Visible = 'off' ;
 
@@ -1963,6 +1999,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.RTD_importFromFile()) ;
             app.RTD_ImportButton.Layout.Row = 8 ;
             app.RTD_ImportButton.Layout.Column = [1 2] ;
+            app.RTD_ImportButton.Tooltip = 'Import experimental RTD data from a file and store a local copy in the session.' ;
             app.RTD_ImportButton.Visible = 'off' ;
 
             % Row 9: Import status label
@@ -1970,6 +2007,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_ImportLabel.Layout.Row = 9 ;
             app.RTD_ImportLabel.Layout.Column = [1 2] ;
             app.RTD_ImportLabel.FontColor = [0 0.5 0] ;
+            app.RTD_ImportLabel.Tooltip = 'Shows the status of the experimental RTD data currently loaded.' ;
             app.RTD_ImportLabel.Visible = 'off' ;
 
             % Rows 4-7: Custom equation fields (for C(t) Equation)
@@ -1983,6 +2021,7 @@ classdef NonIdealReactorApp < handle
                 'Value', '5*exp(-2.5*t)', ...
                 'Tooltip', 'Use "t" as variable in the selected time unit. Example: 5*exp(-2.5*t)') ;
             app.RTD_EqField.Layout.Row = 4 ; app.RTD_EqField.Layout.Column = 2 ;
+            app.setTooltip('Expression used to generate the tracer response C(t) as a function of time.', app.RTD_EqLabel, app.RTD_EqField) ;
             app.RTD_EqField.Visible = 'off' ;
 
             app.RTD_EqTStartLabel = uilabel(leftGrid, 'Text', 't start:') ;
@@ -1992,6 +2031,7 @@ classdef NonIdealReactorApp < handle
                 'Value', '0', ...
                 'Tooltip', 'Accepts simple arithmetic expressions in the selected time unit.') ;
             app.RTD_EqTStartField.Layout.Row = 5 ; app.RTD_EqTStartField.Layout.Column = 2 ;
+            app.setTooltip('Initial time used to sample the C(t) equation.', app.RTD_EqTStartLabel, app.RTD_EqTStartField) ;
             app.RTD_EqTStartField.Visible = 'off' ;
 
             app.RTD_EqTEndLabel = uilabel(leftGrid, 'Text', 't end:') ;
@@ -2001,6 +2041,7 @@ classdef NonIdealReactorApp < handle
                 'Value', '10', ...
                 'Tooltip', 'Accepts simple arithmetic expressions in the selected time unit.') ;
             app.RTD_EqTEndField.Layout.Row = 6 ; app.RTD_EqTEndField.Layout.Column = 2 ;
+            app.setTooltip('Final time used to sample the C(t) equation.', app.RTD_EqTEndLabel, app.RTD_EqTEndField) ;
             app.RTD_EqTEndField.Visible = 'off' ;
 
             app.RTD_EqTimeUnitLabel = uilabel(leftGrid, 'Text', 'Time unit:') ;
@@ -2012,6 +2053,8 @@ classdef NonIdealReactorApp < handle
                 'Tooltip', 'Defines the units of t start, t end, and the variable t in C(t).') ;
             app.RTD_EqTimeUnitDropdown.Layout.Row = 7 ;
             app.RTD_EqTimeUnitDropdown.Layout.Column = 2 ;
+            app.setTooltip('Time unit used by the C(t) equation and its sampling interval.', ...
+                app.RTD_EqTimeUnitLabel, app.RTD_EqTimeUnitDropdown) ;
             app.RTD_EqTimeUnitDropdown.Visible = 'off' ;
 
             app.RTD_EqNptsLabel = uilabel(leftGrid, 'Text', 'N points:') ;
@@ -2020,6 +2063,8 @@ classdef NonIdealReactorApp < handle
             app.RTD_EqNptsField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 500, 'Limits', [10 10000]) ;
             app.RTD_EqNptsField.Layout.Row = 8 ; app.RTD_EqNptsField.Layout.Column = 2 ;
+            app.setTooltip('Number of points used to discretize the C(t) equation before building the RTD.', ...
+                app.RTD_EqNptsLabel, app.RTD_EqNptsField) ;
             app.RTD_EqNptsField.Visible = 'off' ;
 
             % Rows 4-9: Tabular Input components (hidden by default)
@@ -2035,6 +2080,8 @@ classdef NonIdealReactorApp < handle
                 'Tooltip', 'Pulse: enter C(t) directly. Step: enter cumulative C(t) response to a step input.', ...
                 'ValueChangedFcn', @(~,~) app.RTD_dataTypeChanged()) ;
             app.RTD_DataTypeDropdown.Layout.Row = 4 ; app.RTD_DataTypeDropdown.Layout.Column = 2 ;
+            app.setTooltip('Choose whether the tabular signal represents a pulse response or a step response.', ...
+                app.RTD_DataTypeLabel, app.RTD_DataTypeDropdown) ;
             app.RTD_DataTypeDropdown.Visible = 'off' ;
 
             % Row 5: C0 for step input (reuse same row as ExpC0)
@@ -2057,6 +2104,7 @@ classdef NonIdealReactorApp < handle
                 'BackgroundColor', [0.85 0.95 0.85], ...
                 'ButtonPushedFcn', @(~,~) app.RTD_addTableRow()) ;
             app.RTD_AddRowButton.Layout.Row = 9 ; app.RTD_AddRowButton.Layout.Column = 1 ;
+            app.RTD_AddRowButton.Tooltip = 'Append one empty row to the tabular RTD input.' ;
             app.RTD_AddRowButton.Visible = 'off' ;
 
             app.RTD_RemoveRowButton = uibutton(leftGrid, 'push', ...
@@ -2064,6 +2112,7 @@ classdef NonIdealReactorApp < handle
                 'BackgroundColor', [0.95 0.85 0.85], ...
                 'ButtonPushedFcn', @(~,~) app.RTD_removeTableRow()) ;
             app.RTD_RemoveRowButton.Layout.Row = 9 ; app.RTD_RemoveRowButton.Layout.Column = 2 ;
+            app.RTD_RemoveRowButton.Tooltip = 'Remove the last row from the tabular RTD input.' ;
             app.RTD_RemoveRowButton.Visible = 'off' ;
 
             % Row 10: Generate button
@@ -2075,6 +2124,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.RTD_generate()) ;
             app.RTD_GenerateButton.Layout.Row = 10 ;
             app.RTD_GenerateButton.Layout.Column = [1 2] ;
+            app.RTD_GenerateButton.Tooltip = 'Generate or import the RTD and update the plots and characteristic moments.' ;
 
             % Row 11-12: Display units
             lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
@@ -2161,6 +2211,7 @@ classdef NonIdealReactorApp < handle
                 'Value', 'RTD_1') ;
             app.RTD_ExportNameField.Layout.Row = 20 ;
             app.RTD_ExportNameField.Layout.Column = 2 ;
+            app.setTooltip('Workspace variable name used when exporting the current RTD object.', lbl, app.RTD_ExportNameField) ;
 
             % Row 21: Export button
             app.RTD_ExportButton = uibutton(leftGrid, 'push', ...
@@ -2171,6 +2222,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.RTD_export()) ;
             app.RTD_ExportButton.Layout.Row = 21 ;
             app.RTD_ExportButton.Layout.Column = [1 2] ;
+            app.RTD_ExportButton.Tooltip = 'Export the current RTD object to the MATLAB workspace using the chosen variable name.' ;
 
             % ---- RIGHT PANEL (PLOTS) ----
             rightPanel = uipanel(mainGrid, 'Title', 'RTD Plots') ;
@@ -2285,6 +2337,7 @@ classdef NonIdealReactorApp < handle
                 'WordWrap', 'on') ;
             app.RTD_RSStatusLabel.Layout.Row = 8 ;
             app.RTD_RSStatusLabel.Layout.Column = [1 2] ;
+            app.RTD_RSStatusLabel.Tooltip = 'Shows whether a Reaction System is loaded and ready to be reused by later tabs.' ;
 
             lbl = uilabel(queryGrid, 'Text', 'Feed Stream', 'FontWeight', 'bold') ;
             lbl.Layout.Row = 9 ;
@@ -2323,6 +2376,7 @@ classdef NonIdealReactorApp < handle
                 'WordWrap', 'on') ;
             app.RTD_StreamStatusLabel.Layout.Row = 12 ;
             app.RTD_StreamStatusLabel.Layout.Column = [1 2] ;
+            app.RTD_StreamStatusLabel.Tooltip = 'Shows whether a feed Stream is loaded and ready to be reused by later tabs.' ;
 
         end
 
@@ -3010,6 +3064,8 @@ classdef NonIdealReactorApp < handle
                 'Items', {'Manual', 'From Calculated Data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.Pred_inputMethodChanged()) ;
+            app.setTooltip('Choose whether Prediction uses manual inputs or reuses RTD data generated in Tab 1.', ...
+                lbl, app.Pred_InputMethodDropdown) ;
             app.Pred_RefreshButton = uibutton(methodSubGrid, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
                 'Tooltip', 'Refresh imported data from Tab 1', ...
@@ -3025,6 +3081,8 @@ classdef NonIdealReactorApp < handle
                 'FontColor', [0.8 0 0]) ;
             app.Pred_RTDStatusLabel.Layout.Row = 2 ;
             app.Pred_RTDStatusLabel.Layout.Column = 2 ;
+            app.setTooltip('Shows which RTD is currently available for prediction calculations.', ...
+                lbl, app.Pred_RTDStatusLabel) ;
 
             % Row 3: Reaction System header
             lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
@@ -3065,6 +3123,7 @@ classdef NonIdealReactorApp < handle
                 'Text', 'No Reaction System loaded', 'FontColor', [0.6 0 0]) ;
             app.Pred_RSStatusLabel.Layout.Row = 6 ;
             app.Pred_RSStatusLabel.Layout.Column = [1 2] ;
+            app.Pred_RSStatusLabel.Tooltip = 'Shows whether a Reaction System is loaded for the prediction models.' ;
 
             % Row 7: Feed Stream header
             lbl = uilabel(leftGrid, 'Text', 'Feed Stream:', 'FontWeight', 'bold') ;
@@ -3104,6 +3163,7 @@ classdef NonIdealReactorApp < handle
                 'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
             app.Pred_StreamStatusLabel.Layout.Row = 10 ;
             app.Pred_StreamStatusLabel.Layout.Column = [1 2] ;
+            app.Pred_StreamStatusLabel.Tooltip = 'Shows whether a feed Stream is loaded for the prediction models.' ;
 
             % Row 11: Compute button
             app.Pred_ComputeButton = uibutton(leftGrid, 'push', ...
@@ -3114,6 +3174,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.Pred_compute()) ;
             app.Pred_ComputeButton.Layout.Row = 11 ;
             app.Pred_ComputeButton.Layout.Column = [1 2] ;
+            app.Pred_ComputeButton.Tooltip = 'Run the four reference prediction models with the currently loaded RTD, chemistry and feed.' ;
 
             % Row 12: Display units title
             lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
@@ -3628,6 +3689,8 @@ classdef NonIdealReactorApp < handle
                 'Items', {'Manual', 'From Calculated Data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.TIS_NMethodChanged()) ;
+            app.setTooltip('Choose whether N and tau are entered manually or inferred from previously calculated data.', ...
+                lbl, app.TIS_NMethodDropdown) ;
             app.TIS_RefreshButton = uibutton(methodSubGrid, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
                 'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
@@ -3647,6 +3710,7 @@ classdef NonIdealReactorApp < handle
                 'Text', 'RTD: not loaded', 'FontColor', [0.6 0 0]) ;
             app.TIS_RTDStatusLabel.Layout.Row = 3 ;
             app.TIS_RTDStatusLabel.Layout.Column = [1 2] ;
+            app.TIS_RTDStatusLabel.Tooltip = 'Shows the RTD source currently imported into the tanks-in-series model.' ;
             app.TIS_RTDStatusLabel.Visible = 'off' ;
 
             % Row 4: tau
@@ -3656,6 +3720,8 @@ classdef NonIdealReactorApp < handle
                 leftGrid, 4, 2, 10, 'Time', ...
                 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Total mean residence time: tau = V_total / Q.') ;
+            app.setTooltip('Total mean residence time assigned to the equivalent tanks-in-series reactor.', ...
+                app.TIS_tauLabel, app.TIS_tauField) ;
 
             % Row 5: Reaction System header
             lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
@@ -3696,6 +3762,7 @@ classdef NonIdealReactorApp < handle
                 'Text', 'No Reaction System loaded', 'FontColor', [0.6 0 0]) ;
             app.TIS_RSStatusLabel.Layout.Row = 8 ;
             app.TIS_RSStatusLabel.Layout.Column = [1 2] ;
+            app.TIS_RSStatusLabel.Tooltip = 'Shows whether a Reaction System is loaded for the tanks-in-series calculation.' ;
 
             % Row 9: Feed Stream header
             lbl = uilabel(leftGrid, 'Text', 'Feed Stream:', 'FontWeight', 'bold') ;
@@ -3735,6 +3802,7 @@ classdef NonIdealReactorApp < handle
                 'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
             app.TIS_StreamStatusLabel.Layout.Row = 12 ;
             app.TIS_StreamStatusLabel.Layout.Column = [1 2] ;
+            app.TIS_StreamStatusLabel.Tooltip = 'Shows whether a feed Stream is loaded for the tanks-in-series calculation.' ;
 
             % Row 13: Compute button
             app.TIS_ComputeButton = uibutton(leftGrid, 'push', ...
@@ -3745,6 +3813,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.TIS_compute()) ;
             app.TIS_ComputeButton.Layout.Row = 13 ;
             app.TIS_ComputeButton.Layout.Column = [1 2] ;
+            app.TIS_ComputeButton.Tooltip = 'Compute the tanks-in-series reactor and compare it with ideal CSTR and PFR references.' ;
 
             % Row 14: Display units title
             lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
@@ -4198,6 +4267,8 @@ classdef NonIdealReactorApp < handle
                 'Items', {'Manual', 'From Calculated Data'}, ...
                 'Value', 'Manual', ...
                 'ValueChangedFcn', @(~,~) app.Disp_inputMethodChanged()) ;
+            app.setTooltip('Choose whether dispersion inputs are entered manually or reused from previously calculated data.', ...
+                lbl, app.Disp_InputMethodDropdown) ;
             app.Disp_RefreshButton = uibutton(methodSubGridD, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
                 'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
@@ -4209,6 +4280,7 @@ classdef NonIdealReactorApp < handle
                 'Text', '', 'FontColor', [0 0.5 0]) ;
             app.Disp_RTDStatusLabel.Layout.Row = 2 ;
             app.Disp_RTDStatusLabel.Layout.Column = [1 2] ;
+            app.Disp_RTDStatusLabel.Tooltip = 'Shows the RTD source currently imported into the dispersion model.' ;
             app.Disp_RTDStatusLabel.Visible = 'off' ;
 
             % Row 3: Bo
@@ -4226,6 +4298,7 @@ classdef NonIdealReactorApp < handle
             lbl.Layout.Row = 4 ; lbl.Layout.Column = 1 ;
             app.Disp_PeLabel = uilabel(leftGrid, 'Text', sprintf('%.2f', 1/0.025)) ;
             app.Disp_PeLabel.Layout.Row = 4 ; app.Disp_PeLabel.Layout.Column = 2 ;
+            app.setTooltip('Peclet number corresponding to the current Bo value. Pe = 1 / Bo.', lbl, app.Disp_PeLabel) ;
 
             % Row 5: Boundary conditions
             app.Disp_BCLabel = uilabel(leftGrid, 'Text', 'Boundary:') ;
@@ -4235,6 +4308,7 @@ classdef NonIdealReactorApp < handle
                 'Value', 'closed-closed', ...
                 'Tooltip', 'closed-closed: confined reactor (Danckwerts). open-open: open reactor (Gaussian approximation).') ;
             app.Disp_BCDropdown.Layout.Row = 5 ; app.Disp_BCDropdown.Layout.Column = 2 ;
+            app.setTooltip('Boundary condition used by the axial dispersion model.', app.Disp_BCLabel, app.Disp_BCDropdown) ;
 
             % Row 6: tau
             app.Disp_tauLabel = uilabel(leftGrid, 'Text', '&tau;:', 'Interpreter', 'html') ;
@@ -4243,6 +4317,7 @@ classdef NonIdealReactorApp < handle
                 leftGrid, 6, 2, 10, 'Time', ...
                 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Mean residence time: tau = V/Q = L/u.') ;
+            app.setTooltip('Mean residence time assigned to the dispersion reactor.', app.Disp_tauLabel, app.Disp_tauField) ;
 
             % Row 7: Reaction System header
             lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
@@ -4283,6 +4358,7 @@ classdef NonIdealReactorApp < handle
                 'Text', 'No Reaction System loaded', 'FontColor', [0.6 0 0]) ;
             app.Disp_RSStatusLabel.Layout.Row = 10 ;
             app.Disp_RSStatusLabel.Layout.Column = [1 2] ;
+            app.Disp_RSStatusLabel.Tooltip = 'Shows whether a Reaction System is loaded for the dispersion calculation.' ;
 
             % Row 11: Feed Stream header
             lbl = uilabel(leftGrid, 'Text', 'Feed Stream:', 'FontWeight', 'bold') ;
@@ -4322,6 +4398,7 @@ classdef NonIdealReactorApp < handle
                 'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
             app.Disp_StreamStatusLabel.Layout.Row = 14 ;
             app.Disp_StreamStatusLabel.Layout.Column = [1 2] ;
+            app.Disp_StreamStatusLabel.Tooltip = 'Shows whether a feed Stream is loaded for the dispersion calculation.' ;
 
             % Row 15: Compute button
             app.Disp_ComputeButton = uibutton(leftGrid, 'push', ...
@@ -4332,6 +4409,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.Disp_compute()) ;
             app.Disp_ComputeButton.Layout.Row = 15 ;
             app.Disp_ComputeButton.Layout.Column = [1 2] ;
+            app.Disp_ComputeButton.Tooltip = 'Compute the axial dispersion reactor and compare it with the ideal references.' ;
 
             % Row 16: Display units title
             lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
@@ -4837,9 +4915,7 @@ classdef NonIdealReactorApp < handle
             D.optimization.objective = app.DesignUI.Optimization.ObjectiveDropdown.Value ;
             D.optimization.decisionTable = app.DesignUI.Optimization.DecisionTable.Data ;
             D.optimization.constraintTable = app.DesignUI.Optimization.ConstraintTable.Data ;
-            D.optimization.scaleTable = app.DesignUI.Optimization.ScaleTable.Data ;
             D.optimization.result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
-            D.optimization.scaleResult = app.getStructField(app.DesignState.lastSolutions, 'scaleUpResult', []) ;
         end
 
         function DW_applySnapshot(app, snapshot)
@@ -4872,9 +4948,7 @@ classdef NonIdealReactorApp < handle
             app.setDropdownValueIfValid(app.DesignUI.Optimization.ObjectiveDropdown, app.getStructField(opt, 'objective', app.DesignUI.Optimization.ObjectiveDropdown.Value)) ;
             app.DesignUI.Optimization.DecisionTable.Data = app.getStructField(opt, 'decisionTable', app.DesignUI.Optimization.DecisionTable.Data) ;
             app.DesignUI.Optimization.ConstraintTable.Data = app.getStructField(opt, 'constraintTable', app.DesignUI.Optimization.ConstraintTable.Data) ;
-            app.DesignUI.Optimization.ScaleTable.Data = app.getStructField(opt, 'scaleTable', app.DesignUI.Optimization.ScaleTable.Data) ;
             app.DesignState.lastSolutions.optimizationResult = app.getStructField(opt, 'result', []) ;
-            app.DesignState.lastSolutions.scaleUpResult = app.getStructField(opt, 'scaleResult', []) ;
 
             app.DW_refreshChemicalSelectors() ;
             app.DW_refreshAll() ;
@@ -4900,28 +4974,42 @@ classdef NonIdealReactorApp < handle
             leftGrid.RowHeight = {'fit','fit','fit','fit',34,'1x'} ;
             leftGrid.ColumnWidth = {120, '1x'} ;
 
-            uilabel(leftGrid, 'Text', 'RTD source:') ;
+            lbl = uilabel(leftGrid, 'Text', 'RTD source:') ;
             app.DesignUI.Fit.SourceDropdown = uidropdown(leftGrid, 'Items', {'Tab 1 RTD'}) ;
             app.DesignUI.Fit.SourceDropdown.Layout.Row = 1 ; app.DesignUI.Fit.SourceDropdown.Layout.Column = 2 ;
+            app.setTooltip('Choose which RTD is fitted in this workspace. At present the source is the RTD from Tab 1.', ...
+                lbl, app.DesignUI.Fit.SourceDropdown) ;
 
-            uilabel(leftGrid, 'Text', 'Family:') ;
+            lbl = uilabel(leftGrid, 'Text', 'Family:') ;
+            app.DesignUI.Fit.FamilyLabel = lbl ;
             app.DesignUI.Fit.FamilyDropdown = uidropdown(leftGrid, ...
                 'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass'}) ;
             app.DesignUI.Fit.FamilyDropdown.Layout.Row = 2 ; app.DesignUI.Fit.FamilyDropdown.Layout.Column = 2 ;
+            app.setTooltip('Equivalent hydrodynamic family used to approximate the RTD from Tab 1.', ...
+                lbl, app.DesignUI.Fit.FamilyDropdown) ;
 
-            uilabel(leftGrid, 'Text', 'Boundary:') ;
+            lbl = uilabel(leftGrid, 'Text', 'Boundary:') ;
+            app.DesignUI.Fit.BoundaryLabel = lbl ;
             app.DesignUI.Fit.BoundaryDropdown = uidropdown(leftGrid, 'Items', {'closed-closed', 'open-open'}) ;
             app.DesignUI.Fit.BoundaryDropdown.Layout.Row = 3 ; app.DesignUI.Fit.BoundaryDropdown.Layout.Column = 2 ;
+            app.setTooltip('Boundary condition used when the selected family needs an axial dispersion assumption.', ...
+                lbl, app.DesignUI.Fit.BoundaryDropdown) ;
 
-            uilabel(leftGrid, 'Text', 'Ref. tau_total:') ;
-            [app.DesignUI.Fit.ReferenceTauField, ~] = app.createNumericWithConv(leftGrid, 4, 2, 1.0, 'Time', 'Limits', [0 Inf]) ;
+            lbl = uilabel(leftGrid, 'Text', 'Ref. tau_total:') ;
+            app.DesignUI.Fit.ReferenceTauLabel = lbl ;
+            [app.DesignUI.Fit.ReferenceTauField, app.DesignUI.Fit.ReferenceTauGrid] = app.createNumericWithConv(leftGrid, 4, 2, 1.0, 'Time', 'Limits', [0 Inf]) ;
+            app.setTooltip(['Nominal total space time V/Q used when the fit must distinguish total reactor volume from active volume. ' ...
+                'It is required for dead-volume families.'], lbl, app.DesignUI.Fit.ReferenceTauField) ;
 
             app.DesignUI.Fit.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Diagnosis & Fit', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runFit()) ;
             app.DesignUI.Fit.RunButton.Layout.Row = 5 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.RunButton.Tooltip = 'Run the heuristic diagnosis and fit the selected equivalent hydrodynamic model.' ;
 
             app.DesignUI.Fit.DiagnosticsArea = uitextarea(leftGrid, 'Editable', 'off') ;
             app.DesignUI.Fit.DiagnosticsArea.Layout.Row = 6 ; app.DesignUI.Fit.DiagnosticsArea.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.DiagnosticsArea.Tooltip = ['Heuristic interpretation of the RTD shape. ' ...
+                'Flags such as dead volume, bypass, channeling or recirculation are qualitative indicators.'] ;
 
             right = uipanel(grid, 'Title', 'Fit Results') ;
             right.Layout.Column = 2 ;
@@ -4930,10 +5018,16 @@ classdef NonIdealReactorApp < handle
 
             app.DesignUI.Fit.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting RTD fit.', 'WordWrap', 'on') ;
             app.DesignUI.Fit.SummaryLabel.Layout.Row = 1 ;
+            app.DesignUI.Fit.SummaryLabel.Tooltip = ['Fit summary. RMSE is the root mean square error between the input and fitted E(t). ' ...
+                'Score is a dimensionless similarity indicator based on curve SSE.'] ;
             app.DesignUI.Fit.ParameterTable = uitable(rightGrid, 'ColumnName', {'Parameter', 'Value'}, 'RowName', {}) ;
             app.DesignUI.Fit.ParameterTable.Layout.Row = 2 ;
+            app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
             app.DesignUI.Fit.CompareAxes = uiaxes(rightGrid) ; title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t)') ;
             app.DesignUI.Fit.CompareAxes.Layout.Row = 3 ;
+            app.DesignUI.Fit.FamilyDropdown.ValueChangedFcn = @(~,~) app.DW_refreshFitContext() ;
+            app.DW_refreshFitContext() ;
         end
 
         function DW_createReactiveTab(app)
@@ -4947,40 +5041,59 @@ classdef NonIdealReactorApp < handle
             leftGrid.RowHeight = {'fit','fit','fit','fit','fit','fit','fit','fit',34,'1x'} ;
             leftGrid.ColumnWidth = {130, '1x'} ;
 
-            uilabel(leftGrid, 'Text', 'RTD source:') ;
+            lbl = uilabel(leftGrid, 'Text', 'RTD source:') ;
             app.DesignUI.Reactive.RTDSourceDropdown = uidropdown(leftGrid, 'Items', {'Fitted RTD', 'Tab 1 RTD'}) ;
             app.DesignUI.Reactive.RTDSourceDropdown.Layout.Row = 1 ; app.DesignUI.Reactive.RTDSourceDropdown.Layout.Column = 2 ;
+            app.setTooltip('Choose whether reactive calculations use the RTD fitted in this tab or the original RTD from Tab 1.', ...
+                lbl, app.DesignUI.Reactive.RTDSourceDropdown) ;
 
-            uilabel(leftGrid, 'Text', 'ReactionSys var:') ;
+            lbl = uilabel(leftGrid, 'Text', 'ReactionSys var:') ;
             app.DesignUI.Reactive.RSNameField = uieditfield(leftGrid, 'text', 'Value', 'RS') ;
             app.DesignUI.Reactive.RSNameField.Layout.Row = 2 ; app.DesignUI.Reactive.RSNameField.Layout.Column = 2 ;
-            uilabel(leftGrid, 'Text', 'Feed Stream var:') ;
+            app.setTooltip('Workspace variable name of the ReactionSys object used for reactive calculations.', ...
+                lbl, app.DesignUI.Reactive.RSNameField) ;
+            lbl = uilabel(leftGrid, 'Text', 'Feed Stream var:') ;
             app.DesignUI.Reactive.StreamNameField = uieditfield(leftGrid, 'text', 'Value', 'Feed') ;
             app.DesignUI.Reactive.StreamNameField.Layout.Row = 3 ; app.DesignUI.Reactive.StreamNameField.Layout.Column = 2 ;
+            app.setTooltip('Workspace variable name of the feed Stream used for reactive calculations.', ...
+                lbl, app.DesignUI.Reactive.StreamNameField) ;
 
             app.DesignUI.Reactive.RSLoadButton = uibutton(leftGrid, 'push', 'Text', 'Load ReactionSys', ...
                 'ButtonPushedFcn', @(~,~) app.DW_loadReactionSystem()) ;
             app.DesignUI.Reactive.RSLoadButton.Layout.Row = 4 ; app.DesignUI.Reactive.RSLoadButton.Layout.Column = [1 2] ;
+            app.DesignUI.Reactive.RSLoadButton.Tooltip = 'Load the ReactionSys object named above from the MATLAB workspace.' ;
             app.DesignUI.Reactive.StreamLoadButton = uibutton(leftGrid, 'push', 'Text', 'Load Feed Stream', ...
                 'ButtonPushedFcn', @(~,~) app.DW_loadFeedStream()) ;
             app.DesignUI.Reactive.StreamLoadButton.Layout.Row = 5 ; app.DesignUI.Reactive.StreamLoadButton.Layout.Column = [1 2] ;
+            app.DesignUI.Reactive.StreamLoadButton.Tooltip = 'Load the feed Stream object named above from the MATLAB workspace.' ;
 
-            uilabel(leftGrid, 'Text', 'Key reactant:') ;
+            lbl = uilabel(leftGrid, 'Text', 'Key reactant:') ;
+            app.DesignUI.Reactive.KeyComponentLabel = lbl ;
             app.DesignUI.Reactive.KeyComponentDropdown = uidropdown(leftGrid, 'Items', {'1'}, 'ItemsData', 1, 'Value', 1) ;
             app.DesignUI.Reactive.KeyComponentDropdown.Layout.Row = 6 ; app.DesignUI.Reactive.KeyComponentDropdown.Layout.Column = 2 ;
-            uilabel(leftGrid, 'Text', 'Desired product:') ;
+            app.setTooltip('Main reactant used to report conversion X across the reactive models.', ...
+                lbl, app.DesignUI.Reactive.KeyComponentDropdown) ;
+            lbl = uilabel(leftGrid, 'Text', 'Desired product:') ;
+            app.DesignUI.Reactive.DesiredProductLabel = lbl ;
             app.DesignUI.Reactive.DesiredProductDropdown = uidropdown(leftGrid, 'Items', {'2'}, 'ItemsData', 2, 'Value', 2) ;
             app.DesignUI.Reactive.DesiredProductDropdown.Layout.Row = 7 ; app.DesignUI.Reactive.DesiredProductDropdown.Layout.Column = 2 ;
-            uilabel(leftGrid, 'Text', 'Byproduct:') ;
+            app.setTooltip('Product used to compute selectivity and yield in the summary tables.', ...
+                lbl, app.DesignUI.Reactive.DesiredProductDropdown) ;
+            lbl = uilabel(leftGrid, 'Text', 'Byproduct:') ;
+            app.DesignUI.Reactive.ByproductLabel = lbl ;
             app.DesignUI.Reactive.ByproductDropdown = uidropdown(leftGrid, 'Items', {'3'}, 'ItemsData', 3, 'Value', 3) ;
             app.DesignUI.Reactive.ByproductDropdown.Layout.Row = 8 ; app.DesignUI.Reactive.ByproductDropdown.Layout.Column = 2 ;
+            app.setTooltip('Competing product used when selectivity must distinguish desired product from side production.', ...
+                lbl, app.DesignUI.Reactive.ByproductDropdown) ;
 
             app.DesignUI.Reactive.ComputeButton = uibutton(leftGrid, 'push', 'Text', 'Compute Reactive Performance', ...
                 'ButtonPushedFcn', @(~,~) app.DW_computeReactive()) ;
             app.DesignUI.Reactive.ComputeButton.Layout.Row = 9 ; app.DesignUI.Reactive.ComputeButton.Layout.Column = [1 2] ;
+            app.DesignUI.Reactive.ComputeButton.Tooltip = 'Compute conversion, selectivity, yield and outlet concentrations for the reactive reference models.' ;
 
             app.DesignUI.Reactive.StatusArea = uitextarea(leftGrid, 'Editable', 'off', 'Value', {'Load a ReactionSys and a liquid Feed Stream.'}) ;
             app.DesignUI.Reactive.StatusArea.Layout.Row = 10 ; app.DesignUI.Reactive.StatusArea.Layout.Column = [1 2] ;
+            app.DesignUI.Reactive.StatusArea.Tooltip = 'Status area for loaded chemistry, feed stream and the latest reactive calculation summary.' ;
 
             right = uipanel(grid, 'Title', 'Reactive Results') ;
             right.Layout.Column = 2 ;
@@ -4989,92 +5102,118 @@ classdef NonIdealReactorApp < handle
 
             app.DesignUI.Reactive.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting reactive calculation.', 'WordWrap', 'on') ;
             app.DesignUI.Reactive.SummaryLabel.Layout.Row = 1 ;
+            app.DesignUI.Reactive.SummaryLabel.Tooltip = 'Short summary of conversion X, selectivity and yield for the current reactive calculation.' ;
             app.DesignUI.Reactive.ResultTable = uitable(rightGrid, 'ColumnName', {'Model', 'X', 'Selectivity', 'Yield'}, 'RowName', {}) ;
             app.DesignUI.Reactive.ResultTable.Layout.Row = 2 ;
+            app.DesignUI.Reactive.ResultTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Reactive-performance summary by model. X denotes conversion of the key reactant.', ...
+                {'Model', 'X', 'Selectivity', 'Yield'}) ;
             app.DesignUI.Reactive.CoutTable = uitable(rightGrid, 'ColumnName', {'Component', 'C_in', 'Seg', 'MM', 'CSTR', 'PFR'}, 'RowName', {}) ;
             app.DesignUI.Reactive.CoutTable.Layout.Row = 3 ;
+            app.DesignUI.Reactive.CoutTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Outlet concentration table. C_in is the feed concentration and each model column is the predicted outlet concentration.', ...
+                {'Component', 'C_in', 'Seg', 'MM', 'CSTR', 'PFR'}) ;
             app.DesignUI.Reactive.Axes = uiaxes(rightGrid) ; title(app.DesignUI.Reactive.Axes, 'Conversion comparison') ;
             app.DesignUI.Reactive.Axes.Layout.Row = 4 ;
+            app.DW_refreshReactiveContext() ;
         end
 
         function DW_createOptimizationTab(app)
-            tab = uitab(app.DesignUI.TabGroup, 'Title', 'Optimization & Scale-Up') ;
+            tab = uitab(app.DesignUI.TabGroup, 'Title', 'Optimization') ;
             grid = uigridlayout(tab, [1 2]) ;
             grid.ColumnWidth = {430, '1x'} ;
 
             left = uipanel(grid, 'Title', 'Optimization Setup') ;
             left.Layout.Column = 1 ;
-            leftGrid = uigridlayout(left, [8 1]) ;
-            leftGrid.RowHeight = {'fit','fit',150,120,34,'fit',150,'1x'} ;
+            leftGrid = uigridlayout(left, [5 1]) ;
+            leftGrid.RowHeight = {'fit', 190, 150, 34, '1x'} ;
 
-            headerGrid = uigridlayout(leftGrid, [2 2]) ;
+            headerGrid = uigridlayout(leftGrid, [4 2]) ;
+            headerGrid.RowHeight = {'fit', 'fit', 'fit', 'fit'} ;
             headerGrid.Layout.Row = 1 ;
-            uilabel(headerGrid, 'Text', 'Family:') ;
+            lbl = uilabel(headerGrid, 'Text', 'Family:') ;
             app.DesignUI.Optimization.FamilyDropdown = uidropdown(headerGrid, ...
                 'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass'}) ;
             app.DesignUI.Optimization.FamilyDropdown.Layout.Row = 1 ; app.DesignUI.Optimization.FamilyDropdown.Layout.Column = 2 ;
-            uilabel(headerGrid, 'Text', 'Reaction mode:') ;
+            app.setTooltip('Hydrodynamic family explored during optimization.', ...
+                lbl, app.DesignUI.Optimization.FamilyDropdown) ;
+            lbl = uilabel(headerGrid, 'Text', 'Reaction mode:') ;
             app.DesignUI.Optimization.ReactionModeDropdown = uidropdown(headerGrid, 'Items', {'Segregation', 'Max Mixedness'}) ;
             app.DesignUI.Optimization.ReactionModeDropdown.Layout.Row = 2 ; app.DesignUI.Optimization.ReactionModeDropdown.Layout.Column = 2 ;
+            app.setTooltip('Reactive model used when evaluating each hydrodynamic scenario.', ...
+                lbl, app.DesignUI.Optimization.ReactionModeDropdown) ;
 
-            boundaryGrid = uigridlayout(leftGrid, [1 2]) ;
-            boundaryGrid.Layout.Row = 2 ;
-            uilabel(boundaryGrid, 'Text', 'Boundary / Objective:') ;
-            subGrid = uigridlayout(boundaryGrid, [1 2]) ;
-            subGrid.ColumnWidth = {'1x', '1x'} ;
-            app.DesignUI.Optimization.BoundaryDropdown = uidropdown(subGrid, 'Items', {'closed-closed', 'open-open'}) ;
-            app.DesignUI.Optimization.ObjectiveDropdown = uidropdown(subGrid, ...
+            boundaryGrid = uigridlayout(headerGrid, [1 2]) ;
+            boundaryGrid.Layout.Row = 3 ;
+            boundaryGrid.Layout.Column = [1 2] ;
+            boundaryGrid.ColumnWidth = {120, '1x'} ;
+            app.DesignUI.Optimization.BoundaryGrid = boundaryGrid ;
+            lbl = uilabel(boundaryGrid, 'Text', 'Boundary:') ;
+            app.DesignUI.Optimization.BoundaryLabel = lbl ;
+            app.DesignUI.Optimization.BoundaryDropdown = uidropdown(boundaryGrid, 'Items', {'closed-closed', 'open-open'}) ;
+
+            lbl2 = uilabel(headerGrid, 'Text', 'Objective:') ;
+            lbl2.Layout.Row = 4 ; lbl2.Layout.Column = 1 ;
+            app.DesignUI.Optimization.ObjectiveLabel = lbl2 ;
+            app.DesignUI.Optimization.ObjectiveDropdown = uidropdown(headerGrid, ...
                 'Items', {'Max conversion', 'Max selectivity', 'Max yield', 'Min residence time', 'Min recycle ratio'}) ;
+            app.DesignUI.Optimization.ObjectiveDropdown.Layout.Row = 4 ;
+            app.DesignUI.Optimization.ObjectiveDropdown.Layout.Column = 2 ;
+            app.setTooltip('Boundary condition for dispersion-based families and optimization objective for the search.', ...
+                lbl, app.DesignUI.Optimization.BoundaryDropdown, lbl2, app.DesignUI.Optimization.ObjectiveDropdown) ;
 
             app.DesignUI.Optimization.DecisionTable = uitable(leftGrid, ...
                 'ColumnName', {'Use', 'Variable', 'Initial', 'Lower', 'Upper'}, ...
                 'ColumnEditable', [true false true true true], ...
                 'RowName', {}, ...
-                'Data', {true, 'tau', 60, 1, 1000; true, 'N', 4, 1, 25; false, 'Bo', 0.05, 1e-5, 2; false, 'bypass', 0, 0, 0.8; false, 'activeFraction', 1, 0.1, 1; false, 'recycleRatio', 0, 0, 5}) ;
-            app.DesignUI.Optimization.DecisionTable.Layout.Row = 3 ;
+                'Data', {true, 'tau', 60, 1, 1000; true, 'N', 4, 1, 25; false, 'Bo', 0.05, 1e-5, 2; false, 'bypass', 0, 0, 0.8; false, 'activeFraction', 1, 0.1, 1; false, 'recycleRatio', 0, 0, 5}, ...
+                'CellEditCallback', @(src,event) app.DW_handleDecisionTableEdit(src, event)) ;
+            app.DesignUI.Optimization.DecisionTable.Layout.Row = 2 ;
+            app.DesignUI.Optimization.DecisionTable.Tooltip = app.buildTooltipFromColumns( ...
+                ['Decision variables enabled for optimization. Some rows become inactive depending on the selected family. bypass is the feed fraction that avoids the main reactor, ' ...
+                'activeFraction is the fraction of active reactor volume, and recycleRatio is recycle flow divided by net outlet flow.'], ...
+                {'Use', 'Variable', 'Initial', 'Lower', 'Upper'}) ;
 
             app.DesignUI.Optimization.ConstraintTable = uitable(leftGrid, ...
                 'ColumnName', {'Use', 'Metric', 'SpeciesIdx', 'Type', 'Value'}, ...
                 'ColumnEditable', [true true true true true], ...
                 'RowName', {}, ...
                 'Data', {true, 'Conversion', 1, 'Lower bound', 0.5; false, 'Selectivity', 2, 'Lower bound', 0.5; false, 'Yield', 2, 'Lower bound', 0.2; false, 'C_out', 2, 'Lower bound', 0}) ;
-            app.DesignUI.Optimization.ConstraintTable.Layout.Row = 4 ;
+            app.DesignUI.Optimization.ConstraintTable.Layout.Row = 3 ;
+            app.DesignUI.Optimization.ConstraintTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Optional optimization constraints. SpeciesIdx points to the component associated with the selected metric.', ...
+                {'Use', 'Metric', 'SpeciesIdx', 'Type', 'Value'}) ;
 
             app.DesignUI.Optimization.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Optimization', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runOptimization()) ;
-            app.DesignUI.Optimization.RunButton.Layout.Row = 5 ;
-
-            app.DesignUI.Optimization.ScaleHeader = uilabel(leftGrid, 'Text', ...
-                'Scale-up uses the same chemistry loaded in Reactive Performance. Pilot vs industrial scenarios:', ...
-                'WordWrap', 'on') ;
-            app.DesignUI.Optimization.ScaleHeader.Layout.Row = 6 ;
-
-            app.DesignUI.Optimization.ScaleTable = uitable(leftGrid, ...
-                'ColumnName', {'Parameter', 'Pilot', 'Industrial'}, ...
-                'ColumnEditable', [false true true], ...
-                'RowName', {}, ...
-                'Data', {'tau', 60, 120; 'N', 6, 3; 'Bo', 0.02, 0.08; 'bypass', 0.00, 0.10; 'activeFraction', 1.0, 0.85; 'recycleRatio', 0.0, 0.0}) ;
-            app.DesignUI.Optimization.ScaleTable.Layout.Row = 7 ;
-
-            app.DesignUI.Optimization.ScaleButton = uibutton(leftGrid, 'push', 'Text', 'Compare Scale-Up', ...
-                'ButtonPushedFcn', @(~,~) app.DW_compareScaleUp()) ;
-            app.DesignUI.Optimization.ScaleButton.Layout.Row = 8 ;
+            app.DesignUI.Optimization.RunButton.Layout.Row = 4 ;
+            app.DesignUI.Optimization.RunButton.Tooltip = 'Run the constrained optimization using the active decision variables and objective.' ;
 
             right = uipanel(grid, 'Title', 'Optimization Results') ;
             right.Layout.Column = 2 ;
-            rightGrid = uigridlayout(right, [5 1]) ;
-            rightGrid.RowHeight = {'fit', 140, 140, 120, '1x'} ;
+            rightGrid = uigridlayout(right, [4 1]) ;
+            rightGrid.RowHeight = {'fit', 170, 170, '1x'} ;
 
             app.DesignUI.Optimization.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting optimization.', 'WordWrap', 'on') ;
             app.DesignUI.Optimization.SummaryLabel.Layout.Row = 1 ;
+            app.DesignUI.Optimization.SummaryLabel.Tooltip = 'Optimization summary comparing baseline and optimum performance for the selected objective.' ;
             app.DesignUI.Optimization.ComparisonTable = uitable(rightGrid, 'ColumnName', {'Metric', 'Baseline', 'Optimum'}, 'RowName', {}) ;
             app.DesignUI.Optimization.ComparisonTable.Layout.Row = 2 ;
+            app.DesignUI.Optimization.ComparisonTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Comparison between the starting point and the optimized solution. Baseline is the initial scenario and Optimum is the best penalized solution found.', ...
+                {'Metric', 'Baseline', 'Optimum'}) ;
             app.DesignUI.Optimization.ConstraintResultTable = uitable(rightGrid, 'ColumnName', {'Metric', 'Value', 'Target', 'Satisfied'}, 'RowName', {}) ;
             app.DesignUI.Optimization.ConstraintResultTable.Layout.Row = 3 ;
+            app.DesignUI.Optimization.ConstraintResultTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Constraint evaluation at the optimized solution. Satisfied indicates whether each target is met.', ...
+                {'Metric', 'Value', 'Target', 'Satisfied'}) ;
             app.DesignUI.Optimization.SensitivityTable = uitable(rightGrid, 'ColumnName', {'Variable', 'Base', 'Sensitivity'}, 'RowName', {}) ;
             app.DesignUI.Optimization.SensitivityTable.Layout.Row = 4 ;
-            app.DesignUI.Optimization.ScaleResultArea = uitextarea(rightGrid, 'Editable', 'off') ;
-            app.DesignUI.Optimization.ScaleResultArea.Layout.Row = 5 ;
+            app.DesignUI.Optimization.SensitivityTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Local sensitivity of the objective around the optimized point. Base is the variable value and Sensitivity shows the local response trend.', ...
+                {'Variable', 'Base', 'Sensitivity'}) ;
+            app.DesignUI.Optimization.FamilyDropdown.ValueChangedFcn = @(~,~) app.DW_refreshOptimizationContext() ;
+            app.DW_refreshOptimizationContext() ;
         end
 
         function DW_runFit(app)
@@ -5180,35 +5319,6 @@ classdef NonIdealReactorApp < handle
             end
         end
 
-        function DW_compareScaleUp(app)
-            try
-                app.updateStatus('Comparing pilot and industrial scenarios...') ;
-                RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
-                F = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
-                if isempty(RS) || isempty(F)
-                    error('Scale-up reuses the chemistry loaded in Reactive Performance. Load RS and Feed first.') ;
-                end
-                [pilotParams, industrialParams] = app.DW_parseScaleTable() ;
-                spec = struct( ...
-                    'family', app.DesignUI.Optimization.FamilyDropdown.Value, ...
-                    'reactionMode', app.DesignUI.Optimization.ReactionModeDropdown.Value, ...
-                    'boundaryType', app.DesignUI.Optimization.BoundaryDropdown.Value, ...
-                    'RS', RS, ...
-                    'C0', F.concentration(:)', ...
-                    'keyComponentIndex', app.DesignUI.Reactive.KeyComponentDropdown.Value, ...
-                    'desiredProductIndex', app.DesignUI.Reactive.DesiredProductDropdown.Value, ...
-                    'byproductIndex', app.DesignUI.Reactive.ByproductDropdown.Value, ...
-                    'pilotParams', pilotParams, ...
-                    'industrialParams', industrialParams) ;
-                app.DesignState.lastSolutions.scaleUpResult = DesignWorkspaceHelper.compareScaleUp(spec) ;
-                app.DW_refreshOptimization() ;
-                app.updateStatus('Scale-up comparison completed') ;
-            catch ME
-                app.updateStatus('Error') ;
-                uialert(app.UIFigure, ME.message, 'Scale-Up Error') ;
-            end
-        end
-
         function rtdObj = DW_resolveRTDSource(app, sourceLabel)
             switch char(string(sourceLabel))
                 case 'Fitted RTD'
@@ -5245,18 +5355,149 @@ classdef NonIdealReactorApp < handle
             end
         end
 
-        function [pilotParams, industrialParams] = DW_parseScaleTable(app)
-            data = app.DesignUI.Optimization.ScaleTable.Data ;
-            pilotParams = struct() ;
-            industrialParams = struct() ;
+        function relevant = DW_relevantOptimizationVariables(~, family)
+            relevant = {'tau', 'recycleRatio'} ;
+            switch char(string(family))
+                case 'Tanks-in-Series'
+                    relevant = {'tau', 'N', 'recycleRatio'} ;
+                case 'Axial Dispersion'
+                    relevant = {'tau', 'Bo', 'recycleRatio'} ;
+                case 'CSTR + Dead Volume'
+                    relevant = {'tau', 'activeFraction', 'recycleRatio'} ;
+                case 'CSTR + Bypass'
+                    relevant = {'tau', 'bypass', 'recycleRatio'} ;
+                case 'CSTR + Dead Volume + Bypass'
+                    relevant = {'tau', 'activeFraction', 'bypass', 'recycleRatio'} ;
+            end
+        end
+
+        function tf = DW_familyNeedsBoundary(~, family)
+            tf = strcmp(char(string(family)), 'Axial Dispersion') ;
+        end
+
+        function tf = DW_familyNeedsReferenceTau(~, family)
+            family = char(string(family)) ;
+            tf = any(strcmp(family, {'CSTR + Dead Volume', 'CSTR + Dead Volume + Bypass'})) ;
+        end
+
+        function DW_setVisiblePair(app, labelHandle, controlHandle, isVisible)
+            state = 'off' ;
+            if isVisible
+                state = 'on' ;
+            end
+            if ~isempty(labelHandle) && isvalid(labelHandle)
+                labelHandle.Visible = state ;
+            end
+            if ~isempty(controlHandle) && isvalid(controlHandle)
+                controlHandle.Visible = state ;
+            end
+            if ~isempty(controlHandle) && isvalid(controlHandle) && isprop(controlHandle, 'Enable')
+                controlHandle.Enable = state ;
+            end
+            if ~isempty(controlHandle) && isvalid(controlHandle)
+                userData = controlHandle.UserData ;
+                if isstruct(userData) && isfield(userData, 'unitDropdown')
+                    dd = userData.unitDropdown ;
+                    if ~isempty(dd) && isvalid(dd)
+                        dd.Visible = state ;
+                        dd.Enable = state ;
+                    end
+                end
+            end
+        end
+
+        function DW_refreshFitContext(app)
+            family = app.DesignUI.Fit.FamilyDropdown.Value ;
+            showBoundary = app.DW_familyNeedsBoundary(family) ;
+            showReferenceTau = app.DW_familyNeedsReferenceTau(family) ;
+            app.DW_setVisiblePair(app.DesignUI.Fit.BoundaryLabel, app.DesignUI.Fit.BoundaryDropdown, showBoundary) ;
+            app.DW_setVisiblePair(app.DesignUI.Fit.ReferenceTauLabel, app.DesignUI.Fit.ReferenceTauField, showReferenceTau) ;
+            if isfield(app.DesignUI.Fit, 'ReferenceTauGrid') && ~isempty(app.DesignUI.Fit.ReferenceTauGrid) && isvalid(app.DesignUI.Fit.ReferenceTauGrid)
+                app.DesignUI.Fit.ReferenceTauGrid.Visible = app.ternary(showReferenceTau, 'on', 'off') ;
+            end
+        end
+
+        function DW_refreshReactiveContext(app)
+            RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+            hasRS = ~isempty(RS) && isa(RS, 'ReactionSys') ;
+            app.DesignUI.Reactive.KeyComponentDropdown.Enable = app.ternary(hasRS, 'on', 'off') ;
+            app.DesignUI.Reactive.DesiredProductDropdown.Enable = app.ternary(hasRS, 'on', 'off') ;
+            app.DesignUI.Reactive.ByproductDropdown.Enable = app.ternary(hasRS, 'on', 'off') ;
+            if ~hasRS
+                return
+            end
+
+            nComp = max(RS.nComponents, 1) ;
+            app.DesignUI.Reactive.KeyComponentDropdown.Enable = app.ternary(nComp >= 1, 'on', 'off') ;
+            app.DesignUI.Reactive.DesiredProductDropdown.Enable = app.ternary(nComp >= 2, 'on', 'off') ;
+            app.DesignUI.Reactive.ByproductDropdown.Enable = app.ternary(nComp >= 3, 'on', 'off') ;
+        end
+
+        function DW_applyOptimizationTableStyles(app, relevantRows)
+            try
+                removeStyle(app.DesignUI.Optimization.DecisionTable) ;
+            catch
+            end
+            try
+                inactiveRows = setdiff(1:size(app.DesignUI.Optimization.DecisionTable.Data, 1), relevantRows) ;
+                if isempty(inactiveRows)
+                    return
+                end
+                style = uistyle('BackgroundColor', [0.94 0.94 0.94], 'FontColor', [0.45 0.45 0.45]) ;
+                addStyle(app.DesignUI.Optimization.DecisionTable, style, 'row', inactiveRows) ;
+            catch
+            end
+        end
+
+        function DW_refreshOptimizationContext(app)
+            family = app.DesignUI.Optimization.FamilyDropdown.Value ;
+            showBoundary = app.DW_familyNeedsBoundary(family) ;
+            app.DesignUI.Optimization.BoundaryGrid.Visible = app.ternary(showBoundary, 'on', 'off') ;
+            app.DesignUI.Optimization.BoundaryLabel.Visible = app.ternary(showBoundary, 'on', 'off') ;
+            app.DesignUI.Optimization.BoundaryDropdown.Visible = app.ternary(showBoundary, 'on', 'off') ;
+            app.DesignUI.Optimization.BoundaryDropdown.Enable = app.ternary(showBoundary, 'on', 'off') ;
+
+            relevant = app.DW_relevantOptimizationVariables(family) ;
+            data = app.DesignUI.Optimization.DecisionTable.Data ;
+            relevantRows = [] ;
             for i = 1:size(data, 1)
-                name = char(string(data{i, 1})) ;
-                pilotParams.(name) = double(data{i, 2}) ;
-                industrialParams.(name) = double(data{i, 3}) ;
+                variableName = char(string(data{i, 2})) ;
+                if any(strcmp(variableName, relevant))
+                    relevantRows(end+1) = i ; %#ok<AGROW>
+                else
+                    data{i, 1} = false ;
+                end
+            end
+            app.DesignUI.Optimization.DecisionTable.Data = data ;
+            app.DesignUI.Optimization.DecisionTable.UserData = struct('relevantRows', relevantRows, 'family', family) ;
+            app.DW_applyOptimizationTableStyles(relevantRows) ;
+        end
+
+        function DW_handleDecisionTableEdit(app, src, event)
+            relevantRows = [] ;
+            if isstruct(src.UserData) && isfield(src.UserData, 'relevantRows')
+                relevantRows = src.UserData.relevantRows ;
+            end
+            rowIdx = event.Indices(1) ;
+            if any(relevantRows == rowIdx)
+                return
+            end
+            src.Data{rowIdx, event.Indices(2)} = event.PreviousData ;
+            app.updateStatus('That decision variable is inactive for the selected family') ;
+        end
+
+        function out = ternary(~, condition, trueValue, falseValue)
+            if condition
+                out = trueValue ;
+            else
+                out = falseValue ;
             end
         end
 
         function DW_refreshAll(app)
+            app.DW_refreshFitContext() ;
+            app.DW_refreshReactiveContext() ;
+            app.DW_refreshOptimizationContext() ;
             app.DW_refreshFit() ;
             app.DW_refreshReactive() ;
             app.DW_refreshOptimization() ;
@@ -5267,10 +5508,10 @@ classdef NonIdealReactorApp < handle
             if isempty(result)
                 app.DesignUI.Fit.ParameterTable.Data = cell(0, 2) ;
                 app.DesignUI.Fit.DiagnosticsArea.Value = {'Run a fit to see heuristic diagnosis and parameter estimates.'} ;
+                app.DesignUI.Fit.SummaryLabel.Text = 'Awaiting RTD fit.' ;
                 return
             end
-            app.DesignUI.Fit.SummaryLabel.Text = sprintf('%s fitted. RMSE = %.6g, score = %.6g.', ...
-                result.family, result.rmse, result.score) ;
+            app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryText(result) ;
             app.DesignUI.Fit.ParameterTable.Data = result.summaryTable ;
             app.DesignUI.Fit.DiagnosticsArea.Value = result.diagnostics.summaryText ;
             cla(app.DesignUI.Fit.CompareAxes) ;
@@ -5281,6 +5522,7 @@ classdef NonIdealReactorApp < handle
 
         function DW_refreshReactive(app)
             app.DW_refreshChemicalSelectors() ;
+            app.DW_refreshReactiveContext() ;
             result = app.getStructField(app.DesignState.lastSolutions, 'reactiveResult', []) ;
             if isempty(result)
                 app.DesignUI.Reactive.ResultTable.Data = cell(0, 4) ;
@@ -5302,32 +5544,25 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_refreshOptimization(app)
+            app.DW_refreshOptimizationContext() ;
             result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
             if isempty(result)
                 app.DesignUI.Optimization.ComparisonTable.Data = cell(0, 3) ;
                 app.DesignUI.Optimization.ConstraintResultTable.Data = cell(0, 4) ;
                 app.DesignUI.Optimization.SensitivityTable.Data = cell(0, 3) ;
+                app.DesignUI.Optimization.SummaryLabel.Text = 'Awaiting optimization.' ;
             else
                 app.DesignUI.Optimization.SummaryLabel.Text = result.summaryText ;
                 app.DesignUI.Optimization.ComparisonTable.Data = result.comparisonTable ;
                 app.DesignUI.Optimization.ConstraintResultTable.Data = result.constraintTable ;
                 app.DesignUI.Optimization.SensitivityTable.Data = result.sensitivityTable ;
             end
-            scaleResult = app.getStructField(app.DesignState.lastSolutions, 'scaleUpResult', []) ;
-            if isempty(scaleResult)
-                app.DesignUI.Optimization.ScaleResultArea.Value = {'Run "Compare Scale-Up" to evaluate pilot vs industrial hydrodynamic scenarios.'} ;
-            else
-                lines = {scaleResult.summaryText; ''; 'Pilot vs Industrial:'} ;
-                for i = 1:size(scaleResult.comparisonTable, 1)
-                    lines{end+1, 1} = sprintf('%s: %s -> %s', scaleResult.comparisonTable{i, 1}, scaleResult.comparisonTable{i, 2}, scaleResult.comparisonTable{i, 3}) ; %#ok<AGROW>
-                end
-                app.DesignUI.Optimization.ScaleResultArea.Value = lines ;
-            end
         end
 
         function DW_refreshChemicalSelectors(app)
             RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
             if isempty(RS)
+                app.DW_refreshReactiveContext() ;
                 return
             end
             nComp = RS.nComponents ;
@@ -5346,6 +5581,7 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.KeyComponentDropdown.Value = min(max(app.DesignState.reactionSpec.keyComponentIndex, 1), nComp) ;
             app.DesignUI.Reactive.DesiredProductDropdown.Value = min(max(app.DesignState.reactionSpec.desiredProductIndex, 1), nComp) ;
             app.DesignUI.Reactive.ByproductDropdown.Value = min(max(app.DesignState.reactionSpec.byproductIndex, 1), nComp) ;
+            app.DW_refreshReactiveContext() ;
         end
 
         function label = getComponentLabel(~, RS, idx)

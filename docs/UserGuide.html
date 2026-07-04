@@ -312,7 +312,7 @@ app = NonIdealReactorApp;</code></pre>
       <ul>
         <li><strong>Diagnosis &amp; Fit:</strong> fit <code>Tanks-in-Series</code>, <code>Axial Dispersion</code>, <code>CSTR + Dead Volume</code>, <code>CSTR + Bypass</code>, and <code>CSTR + Dead Volume + Bypass</code> to the RTD from Tab 1.</li>
         <li><strong>Reactive Performance:</strong> compare <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>, and report conversion, selectivity, yield, and outlet concentrations.</li>
-        <li><strong>Optimization &amp; Scale-Up:</strong> optimize equivalent hydrodynamic parameters and compare pilot versus industrial scenarios.</li>
+        <li><strong>Optimization:</strong> optimize equivalent hydrodynamic parameters for the chemistry already loaded in <code>Reactive Performance</code>.</li>
       </ul>
 
       <h3>Typical Workflow</h3>
@@ -320,7 +320,7 @@ app = NonIdealReactorApp;</code></pre>
         <li>In <strong>Tab 1</strong>, generate or import the RTD.</li>
         <li>In <strong>Diagnosis &amp; Fit</strong>, choose a family and run the fit if you want an equivalent hydrodynamic model.</li>
         <li>In <strong>Reactive Performance</strong>, load a <code>ReactionSys</code> and a feed <code>Stream</code> from the workspace, choose the key species, and compute the reference models using either <code>Tab 1 RTD</code> or <code>Fitted RTD</code>.</li>
-        <li>In <strong>Optimization &amp; Scale-Up</strong>, reuse that same chemistry to optimize <code>tau</code>, <code>N</code>, <code>Bo</code>, <code>bypass</code>, <code>activeFraction</code>, and <code>recycleRatio</code>, or compare pilot and industrial scenarios.</li>
+        <li>In <strong>Optimization</strong>, reuse that same chemistry to optimize <code>tau</code>, <code>N</code>, <code>Bo</code>, <code>bypass</code>, <code>activeFraction</code>, and <code>recycleRatio</code>.</li>
       </ol>
 
       <h3>Notes</h3>

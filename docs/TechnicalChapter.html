@@ -182,7 +182,7 @@
           <ul>
             <li>mixing bounds (<code>Segregation</code>, <code>Max Mixedness</code>),</li>
             <li>an equivalent reactor response (<code>TIS</code>, <code>Dispersion</code>),</li>
-            <li>or a design-oriented comparison (<code>Diagnosis &amp; Fit</code>, <code>Optimization</code>, <code>Scale-Up</code>).</li>
+            <li>or a design-oriented comparison (<code>Diagnosis &amp; Fit</code>, <code>Reactive Performance</code>, <code>Optimization</code>).</li>
           </ul>
         </li>
       </ol>
@@ -435,7 +435,7 @@
       </ul>
       <p>The outputs include conversion, selectivity, yield, outlet concentrations, and a direct first-order shortcut when the kinetic structure allows it.</p>
 
-      <h3>10.3 Optimization &amp; Scale-Up</h3>
+      <h3>10.3 Optimization</h3>
       <p>This subarea optimizes equivalent hydrodynamic parameters such as:</p>
       <ul>
         <li><code>tau</code></li>
@@ -445,7 +445,7 @@
         <li><code>activeFraction</code></li>
         <li><code>recycleRatio</code></li>
       </ul>
-      <p>The active implementation uses a lightweight penalized search strategy, evaluates constraints on conversion/selectivity/yield or outlet concentration, and can compare pilot and industrial scenarios with the same chemistry.</p>
+      <p>The active implementation uses a lightweight penalized search strategy, evaluates constraints on conversion/selectivity/yield or outlet concentration, and reuses the same chemistry loaded in <code>Reactive Performance</code>.</p>
       <p>From an engineering standpoint, this tab is useful for:</p>
       <ul>
         <li>screening sensitivity to hydrodynamic parameters,</li>
