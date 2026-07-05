@@ -70,6 +70,12 @@ classdef MaxMixednessModel
             idx_key = obj.keyComponentIndex ;
             CA0 = C0(idx_key) ;
 
+            if numel(t_rtd) < 2 || numel(Et) < 2 || numel(Ft) < 2 || ...
+                    ~all(isfinite(t_rtd)) || ~all(isfinite(Et)) || ~all(isfinite(Ft)) || ...
+                    max(t_rtd) <= min(t_rtd)
+                error('RTD must contain at least two finite time samples with positive span.') ;
+            end
+
             E_interp = griddedInterpolant(t_rtd, Et, 'pchip', 'nearest') ;
             F_interp = griddedInterpolant(t_rtd, Ft, 'pchip', 'nearest') ;
 

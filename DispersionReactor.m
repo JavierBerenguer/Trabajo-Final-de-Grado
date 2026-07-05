@@ -75,6 +75,12 @@ classdef DispersionReactor < Reactor
             t_rtd = rtd_obj.t ;
             Et = rtd_obj.Et ;
 
+            if numel(t_rtd) < 2 || numel(Et) < 2 || ...
+                    ~all(isfinite(t_rtd)) || ~all(isfinite(Et)) || ...
+                    max(t_rtd) <= min(t_rtd)
+                error('RTD must contain at least two finite time samples with positive span.') ;
+            end
+
             stoich = RS.stochiometricMatrix ;
             nComp = length(C0) ;
             T = 298.15 ;

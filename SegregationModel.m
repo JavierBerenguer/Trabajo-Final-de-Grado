@@ -88,6 +88,12 @@ classdef SegregationModel
             T = 298.15 ;  % isothermal — Ea=0 so T value is irrelevant
             idx_key = obj.keyComponentIndex ;
 
+            if numel(t_rtd) < 2 || numel(Et) < 2 || ...
+                    ~all(isfinite(t_rtd)) || ~all(isfinite(Et)) || ...
+                    max(t_rtd) <= min(t_rtd)
+                error('RTD must contain at least two finite time samples with positive span.') ;
+            end
+
             % Solve batch ODE
             odeOpts = odeset('NonNegative', 1:nComp, 'RelTol', 1e-8) ;
             [t_ode, C_ode] = ode45(@(t, C) batch_ode(C), ...

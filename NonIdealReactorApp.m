@@ -41,12 +41,7 @@ classdef NonIdealReactorApp < handle
         RTD_ExpC0Label
         RTD_ImportButton
         RTD_ImportLabel
-        RTD_EqLabel
-        RTD_EqField
-        RTD_EqTStartLabel
-        RTD_EqTStartField
-        RTD_EqTEndLabel
-        RTD_EqTEndField
+        RTD_EqTable
         RTD_EqTimeUnitLabel
         RTD_EqTimeUnitDropdown
         RTD_EqNptsLabel
@@ -201,6 +196,7 @@ classdef NonIdealReactorApp < handle
         DesignTab
         DesignUI = struct()
         DesignState = struct()
+        RestartInProgress = false
     end
 
     methods (Access = public)
@@ -236,6 +232,9 @@ classdef NonIdealReactorApp < handle
                 'MenuSelectedFcn', @(~,~) app.showTechnicalGuide()) ;
             uimenu(mHelp, 'Text', 'About', ...
                 'MenuSelectedFcn', @(~,~) app.showAbout()) ;
+            uimenu(mHelp, 'Text', 'Hard Restart (Debug)', ...
+                'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~) app.hardRestartDebug()) ;
 
             % Status bar at bottom
             app.StatusBar = uilabel(app.UIFigure, ...
@@ -308,11 +307,84 @@ classdef NonIdealReactorApp < handle
         end
 
         function restartApp(app)
+            app.requestAppRestart(false) ;
+        end
+
+        function hardRestartDebug(app)
+            if isempty(app.UIFigure) || ~isvalid(app.UIFigure)
+                return
+            end
+
+            choice = uiconfirm(app.UIFigure, ...
+                ['Use this only if the app is stuck and normal Restart does not work.' newline newline ...
+                 'Hard Restart closes the app, clears loaded app class/function definitions, and tries to reopen it automatically.' newline ...
+                 'The MATLAB workspace is preserved, but project objects already stored there may need to be reloaded.'], ...
+                'Hard Restart (Debug)', ...
+                'Options', {'Continue', 'Cancel'}, ...
+                'DefaultOption', 2, ...
+                'CancelOption', 2, ...
+                'Icon', 'warning') ;
+            if ~strcmp(choice, 'Continue')
+                return
+            end
+
+            app.requestAppRestart(true) ;
+        end
+
+        function requestAppRestart(app, hardMode)
+            if app.RestartInProgress
+                return
+            end
+
+            app.RestartInProgress = true ;
+            try
+                app.scheduleRestartCommand(hardMode) ;
+                app.closeFigureForRestart() ;
+            catch ME
+                app.RestartInProgress = false ;
+                if hardMode
+                    app.showDetailedError(ME, 'Hard Restart Error') ;
+                else
+                    app.showDetailedError(ME, 'Restart Error') ;
+                end
+            end
+        end
+
+        function closeFigureForRestart(app)
             if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
-                delete(app.UIFigure) ;
+                fig = app.UIFigure ;
+                try
+                    fig.SizeChangedFcn = [] ;
+                catch
+                end
+                try
+                    delete(fig) ;
+                catch
+                end
             end
             drawnow ;
-            NonIdealReactorApp() ;
+            pause(0.05) ;
+            drawnow ;
+        end
+
+        function scheduleRestartCommand(app, hardMode)
+            restartTag = 'NonIdealReactorAppRestartTimer' ;
+            try
+                staleTimers = timerfindall('Tag', restartTag) ;
+                if ~isempty(staleTimers)
+                    stop(staleTimers) ;
+                    delete(staleTimers) ;
+                end
+            catch
+            end
+
+            restartTimer = timer( ...
+                'ExecutionMode', 'singleShot', ...
+                'StartDelay', 0.05, ...
+                'Tag', restartTag, ...
+                'TimerFcn', @(src,~) nonIdealReactorAppRestartTimerFcn(src, app.getAppRoot(), hardMode, restartTag), ...
+                'StopFcn', @(src,~) delete(src)) ;
+            start(restartTimer) ;
         end
 
         function rootDir = getAppRoot(~)
@@ -574,6 +646,193 @@ classdef NonIdealReactorApp < handle
             end
         end
 
+        function data = defaultRTDEquationTableData(~)
+            data = {
+                '5*exp(-2.5*t)', '0', '10'
+                '', '', ''
+                '', '', ''} ;
+        end
+
+        function data = normalizeRTDEquationTableData(app, rawData)
+            defaultData = app.defaultRTDEquationTableData() ;
+
+            if nargin < 2 || isempty(rawData)
+                data = defaultData ;
+                return
+            end
+
+            if istable(rawData)
+                rawData = table2cell(rawData) ;
+            elseif ~iscell(rawData)
+                rawData = num2cell(rawData) ;
+            end
+
+            if isempty(rawData)
+                data = defaultData ;
+                return
+            end
+
+            nRows = size(rawData, 1) ;
+            nCols = min(size(rawData, 2), 3) ;
+            data = cell(max(nRows, 1), 3) ;
+            data(:, :) = {''} ;
+            data(:, 1:nCols) = rawData(:, 1:nCols) ;
+
+            hasContent = false ;
+            for iRow = 1:size(data, 1)
+                for iCol = 1:3
+                    value = data{iRow, iCol} ;
+                    if isnumeric(value) && ~isempty(value)
+                        hasContent = true ;
+                        break
+                    end
+                    if ischar(value) || isstring(value)
+                        if strlength(strtrim(string(value))) > 0
+                            hasContent = true ;
+                            break
+                        end
+                    end
+                end
+                if hasContent
+                    break
+                end
+            end
+
+            if ~hasContent
+                data = defaultData ;
+            end
+        end
+
+        function data = getRTDEquationTableDataFromSnapshot(app, rtdSnapshot)
+            data = app.getStructField(rtdSnapshot, 'equationTable', []) ;
+            if ~isempty(data)
+                data = app.normalizeRTDEquationTableData(data) ;
+                return
+            end
+
+            eqExpr = app.getStructField(rtdSnapshot, 'equation', '5*exp(-2.5*t)') ;
+            eqTStart = app.getStructField(rtdSnapshot, 'equationTStart', '0') ;
+            eqTEnd = app.getStructField(rtdSnapshot, 'equationTEnd', '10') ;
+            data = app.defaultRTDEquationTableData() ;
+            data(1, :) = {eqExpr, eqTStart, eqTEnd} ;
+        end
+
+        function [tUser, cData] = buildRTDEquationSignal(app)
+            rawData = app.normalizeRTDEquationTableData(app.RTD_EqTable.Data) ;
+            nPtsTotal = max(10, round(app.RTD_EqNptsField.Value)) ;
+
+            segments = struct('expr', {}, 'tStart', {}, 'tEnd', {}) ;
+            for iRow = 1:size(rawData, 1)
+                exprValue = rawData{iRow, 1} ;
+                tStartValue = rawData{iRow, 2} ;
+                tEndValue = rawData{iRow, 3} ;
+
+                exprText = strtrim(char(string(exprValue))) ;
+                tStartText = strtrim(char(string(tStartValue))) ;
+                tEndText = strtrim(char(string(tEndValue))) ;
+                isBlankRow = isempty(exprText) && isempty(tStartText) && isempty(tEndText) ;
+                if isBlankRow
+                    continue
+                end
+                if isempty(exprText) || isempty(tStartText) || isempty(tEndText)
+                    error('Each piecewise C(t) row must define C(t), t start, and t end.') ;
+                end
+
+                tStart = InputLayerHelper.parseArithmeticExpression(tStartText) ;
+                tEnd = InputLayerHelper.parseArithmeticExpression(tEndText) ;
+                if ~isfinite(tStart) || ~isfinite(tEnd)
+                    error('Piecewise C(t) limits must be finite numbers.') ;
+                end
+                if tEnd <= tStart
+                    error('Each piecewise C(t) segment must satisfy t end > t start.') ;
+                end
+
+                segments(end + 1) = struct( ...
+                    'expr', exprText, ...
+                    'tStart', tStart, ...
+                    'tEnd', tEnd) ; %#ok<AGROW>
+            end
+
+            if isempty(segments)
+                error('Add at least one valid C(t) segment before generating the RTD.') ;
+            end
+
+            [~, sortIdx] = sort([segments.tStart]) ;
+            segments = segments(sortIdx) ;
+
+            for iSeg = 2:numel(segments)
+                if segments(iSeg).tStart < segments(iSeg - 1).tEnd
+                    error('Piecewise C(t) segments cannot overlap. Check t start and t end values.') ;
+                end
+            end
+
+            fullSpan = segments(end).tEnd - segments(1).tStart ;
+            if fullSpan <= 0
+                error('The piecewise C(t) definition must span a positive time interval.') ;
+            end
+
+            tUser = [] ;
+            cData = [] ;
+            previousEnd = [] ;
+            for iSeg = 1:numel(segments)
+                if ~isempty(previousEnd) && segments(iSeg).tStart > previousEnd
+                    gapSpan = segments(iSeg).tStart - previousEnd ;
+                    gapPts = max(2, round(nPtsTotal * gapSpan / fullSpan)) ;
+                    gapT = linspace(previousEnd, segments(iSeg).tStart, gapPts) ;
+                    gapC = zeros(size(gapT)) ;
+                    [tUser, cData] = app.appendRTDSignalChunk(tUser, cData, gapT, gapC) ;
+                end
+
+                segSpan = segments(iSeg).tEnd - segments(iSeg).tStart ;
+                segPts = max(2, round(nPtsTotal * segSpan / fullSpan)) ;
+                t = linspace(segments(iSeg).tStart, segments(iSeg).tEnd, segPts) ;
+                exprText = segments(iSeg).expr ;
+                try
+                    cSegment = eval(exprText) ;
+                catch evalErr
+                    error('Error evaluating piecewise equation "%s": %s', ...
+                        exprText, evalErr.message) ;
+                end
+
+                if isnumeric(cSegment) && isscalar(cSegment)
+                    cSegment = repmat(cSegment, size(t)) ;
+                end
+                if ~isnumeric(cSegment)
+                    error('Each piecewise C(t) equation must return numeric values.') ;
+                end
+
+                cSegment = cSegment(:).' ;
+                if numel(cSegment) ~= numel(t)
+                    error(['Each piecewise C(t) equation must return a scalar or a vector ' ...
+                        'with the same size as t. Use element-wise operators (.*  ./  .^).']) ;
+                end
+
+                [tUser, cData] = app.appendRTDSignalChunk(tUser, cData, t, cSegment) ;
+                previousEnd = segments(iSeg).tEnd ;
+            end
+
+            cData = max(cData, 0) ;
+        end
+
+        function [tData, cData] = appendRTDSignalChunk(~, tData, cData, tChunk, cChunk)
+            tChunk = reshape(tChunk, 1, []) ;
+            cChunk = reshape(cChunk, 1, []) ;
+            if isempty(tChunk)
+                return
+            end
+
+            if ~isempty(tData)
+                tol = max(1e-12, 1e-9 * max(1, abs(tData(end)))) ;
+                if abs(tChunk(1) - tData(end)) <= tol
+                    tChunk = tChunk(2:end) ;
+                    cChunk = cChunk(2:end) ;
+                end
+            end
+
+            tData = [tData, tChunk] ;
+            cData = [cData, cChunk] ;
+        end
+
         function assignExperimentalWorkspaceData(app, rtdSnapshot)
             expData = app.getStructField(rtdSnapshot, 'experimentalWorkspaceData', struct()) ;
             if ~isstruct(expData)
@@ -646,36 +905,34 @@ classdef NonIdealReactorApp < handle
             snapshot.shared = struct( ...
                 'rtd', app.serializeValueObject(app.rtd)) ;
 
-            snapshot.rtd = struct( ...
-                'source', app.RTD_SourceDropdown.Value, ...
-                'tauField', app.captureFieldWithUnit(app.RTD_TauField), ...
-                'qvField', app.captureFieldWithUnit(app.RTD_QvField), ...
-                'nValue', app.RTD_NField.Value, ...
-                'boValue', app.RTD_BoField.Value, ...
-                'expTVar', app.RTD_ExpTVarField.Value, ...
-                'expTUnit', app.RTD_ExpTUnitDropdown.Value, ...
-                'expCVar', app.RTD_ExpCVarField.Value, ...
-                'expC0Field', app.captureFieldWithUnit(app.RTD_ExpC0Field), ...
-                'equation', app.RTD_EqField.Value, ...
-                'equationTStart', app.RTD_EqTStartField.Value, ...
-                'equationTEnd', app.RTD_EqTEndField.Value, ...
-                'equationTimeUnit', app.RTD_EqTimeUnitDropdown.Value, ...
-                'equationNpts', app.RTD_EqNptsField.Value, ...
-                'dataType', app.RTD_DataTypeDropdown.Value, ...
-                'dataTable', app.RTD_DataTable.Data, ...
-                'exportName', app.RTD_ExportNameField.Value, ...
-                'exportCounter', app.RTD_ExportCounter, ...
-                'displayTimeUnit', app.getControlValue(rtdTimeControl, 's'), ...
-                'displayVolumeUnit', app.getControlValue(rtdVolumeControl, 'm^3'), ...
-                'fQueryValue', app.RTD_FQueryInputField.Value, ...
-                'rs', app.serializeValueObject(app.RTD_RS), ...
-                'rsName', app.RTD_RSNameField.Value, ...
-                'feedStream', app.serializeValueObject(app.RTD_feedStream), ...
-                'streamName', app.RTD_StreamNameField.Value, ...
-                'experimentalWorkspaceData', expWorkspaceData, ...
-                'importLabel', app.captureLabelState(app.RTD_ImportLabel), ...
-                'rsStatus', app.captureLabelState(app.RTD_RSStatusLabel), ...
-                'streamStatus', app.captureLabelState(app.RTD_StreamStatusLabel)) ;
+            snapshot.rtd = struct() ;
+            snapshot.rtd.source = app.RTD_SourceDropdown.Value ;
+            snapshot.rtd.tauField = app.captureFieldWithUnit(app.RTD_TauField) ;
+            snapshot.rtd.qvField = app.captureFieldWithUnit(app.RTD_QvField) ;
+            snapshot.rtd.nValue = app.RTD_NField.Value ;
+            snapshot.rtd.boValue = app.RTD_BoField.Value ;
+            snapshot.rtd.expTVar = app.RTD_ExpTVarField.Value ;
+            snapshot.rtd.expTUnit = app.RTD_ExpTUnitDropdown.Value ;
+            snapshot.rtd.expCVar = app.RTD_ExpCVarField.Value ;
+            snapshot.rtd.expC0Field = app.captureFieldWithUnit(app.RTD_ExpC0Field) ;
+            snapshot.rtd.equationTable = app.RTD_EqTable.Data ;
+            snapshot.rtd.equationTimeUnit = app.RTD_EqTimeUnitDropdown.Value ;
+            snapshot.rtd.equationNpts = app.RTD_EqNptsField.Value ;
+            snapshot.rtd.dataType = app.RTD_DataTypeDropdown.Value ;
+            snapshot.rtd.dataTable = app.RTD_DataTable.Data ;
+            snapshot.rtd.exportName = app.RTD_ExportNameField.Value ;
+            snapshot.rtd.exportCounter = app.RTD_ExportCounter ;
+            snapshot.rtd.displayTimeUnit = app.getControlValue(rtdTimeControl, 's') ;
+            snapshot.rtd.displayVolumeUnit = app.getControlValue(rtdVolumeControl, 'm^3') ;
+            snapshot.rtd.fQueryValue = app.RTD_FQueryInputField.Value ;
+            snapshot.rtd.rs = app.serializeValueObject(app.RTD_RS) ;
+            snapshot.rtd.rsName = app.RTD_RSNameField.Value ;
+            snapshot.rtd.feedStream = app.serializeValueObject(app.RTD_feedStream) ;
+            snapshot.rtd.streamName = app.RTD_StreamNameField.Value ;
+            snapshot.rtd.experimentalWorkspaceData = expWorkspaceData ;
+            snapshot.rtd.importLabel = app.captureLabelState(app.RTD_ImportLabel) ;
+            snapshot.rtd.rsStatus = app.captureLabelState(app.RTD_RSStatusLabel) ;
+            snapshot.rtd.streamStatus = app.captureLabelState(app.RTD_StreamStatusLabel) ;
 
             snapshot.prediction = struct( ...
                 'inputMethod', app.Pred_InputMethodDropdown.Value, ...
@@ -759,9 +1016,7 @@ classdef NonIdealReactorApp < handle
             app.setDropdownValueIfValid(app.RTD_ExpTUnitDropdown, app.getStructField(rtdSnapshot, 'expTUnit', app.RTD_ExpTUnitDropdown.Value)) ;
             app.RTD_ExpCVarField.Value = app.getStructField(rtdSnapshot, 'expCVar', app.RTD_ExpCVarField.Value) ;
             app.applyFieldWithUnit(app.RTD_ExpC0Field, app.getStructField(rtdSnapshot, 'expC0Field', struct())) ;
-            app.RTD_EqField.Value = app.getStructField(rtdSnapshot, 'equation', app.RTD_EqField.Value) ;
-            app.RTD_EqTStartField.Value = app.getStructField(rtdSnapshot, 'equationTStart', app.RTD_EqTStartField.Value) ;
-            app.RTD_EqTEndField.Value = app.getStructField(rtdSnapshot, 'equationTEnd', app.RTD_EqTEndField.Value) ;
+            app.RTD_EqTable.Data = app.getRTDEquationTableDataFromSnapshot(rtdSnapshot) ;
             app.setDropdownValueIfValid(app.RTD_EqTimeUnitDropdown, app.getStructField(rtdSnapshot, 'equationTimeUnit', app.RTD_EqTimeUnitDropdown.Value)) ;
             app.RTD_EqNptsField.Value = app.getStructField(rtdSnapshot, 'equationNpts', app.RTD_EqNptsField.Value) ;
             app.setDropdownValueIfValid(app.RTD_DataTypeDropdown, app.getStructField(rtdSnapshot, 'dataType', app.RTD_DataTypeDropdown.Value)) ;
@@ -1240,6 +1495,8 @@ classdef NonIdealReactorApp < handle
                             c.X_disp, c.X_cstr, c.X_pfr, ...
                             c.C_out_disp, c.C_out_cstr, c.C_out_pfr, c.bcType) ;
                     end
+                case 'DesignFit'
+                    app.DW_refreshFit() ;
             end
         end
 
@@ -1821,6 +2078,91 @@ classdef NonIdealReactorApp < handle
                 result.family, result.rmse, result.score) ;
         end
 
+        function text = buildFitSummaryTextWithUnits(app, result, timeDropdown)
+            rmseDisplay = app.convertOutputFromTime('timeInverse', result.rmse, timeDropdown) ;
+            rmseUnit = app.timeInverseUnitName(timeDropdown) ;
+            if isfield(result, 'mode') && strcmp(result.mode, 'search')
+                nOk = numel(result.searchResults) ;
+                nSkipped = sum(strcmp({result.searchEntries.status}, 'Skipped')) ;
+                text = sprintf([ ...
+                    'Search completed. Best family: %s. ' ...
+                    'Evaluated = %d. Omitted = %d. ' ...
+                    'Best RMSE = %.6g %s. Best score = %.6g'], ...
+                    result.searchBestFamily, nOk, nSkipped, rmseDisplay, rmseUnit, result.score) ;
+                return
+            end
+            text = sprintf([ ...
+                '%s fitted. RMSE = %.6g %s. ' ...
+                'Score = %.6g'], ...
+                result.family, rmseDisplay, rmseUnit, result.score) ;
+        end
+
+        function tableData = DW_buildFitParameterTableData(app, result, timeDropdown)
+            params = app.getStructField(result, 'parameters', struct()) ;
+            fields = fieldnames(params) ;
+            tableData = cell(numel(fields), 2) ;
+            for i = 1:numel(fields)
+                fieldName = fields{i} ;
+                fieldValue = params.(fieldName) ;
+                [labelText, valueText] = app.DW_formatFitParameter(fieldName, fieldValue, timeDropdown) ;
+                tableData{i, 1} = labelText ;
+                tableData{i, 2} = valueText ;
+            end
+        end
+
+        function [labelText, valueText] = DW_formatFitParameter(app, fieldName, fieldValue, timeDropdown)
+            timeUnit = app.getControlValue(timeDropdown, 's') ;
+            switch fieldName
+                case {'tau', 'tau_nominal', 'tau_active'}
+                    labelText = sprintf('%s [%s]', fieldName, timeUnit) ;
+                    valueDisplay = app.convertOutputFromTime('time', fieldValue, timeDropdown) ;
+                    valueText = sprintf('%.6g', valueDisplay) ;
+                case {'N', 'Pe', 'activeFraction', 'deadFraction', 'bypassFraction'}
+                    labelText = sprintf('%s [-]', fieldName) ;
+                    valueText = sprintf('%.6g', fieldValue) ;
+                case 'Bo'
+                    labelText = 'Bo [-]' ;
+                    valueText = sprintf('%.6g', fieldValue) ;
+                otherwise
+                    labelText = fieldName ;
+                    if isnumeric(fieldValue) && isscalar(fieldValue)
+                        valueText = sprintf('%.6g', fieldValue) ;
+                    else
+                        valueText = char(string(fieldValue)) ;
+                    end
+            end
+        end
+
+        function text = DW_formatFitDisplayNumber(~, value)
+            if isempty(value) || any(~isfinite(value))
+                text = '-' ;
+            else
+                text = sprintf('%.6g', value) ;
+            end
+        end
+
+        function tableData = DW_buildFitSearchSummaryTable(app, result, timeDropdown)
+            entries = app.getStructField(result, 'searchEntries', struct([])) ;
+            tableData = cell(numel(entries), 3) ;
+            for i = 1:numel(entries)
+                tableData{i, 1} = entries(i).displayName ;
+                rmseDisplay = app.convertOutputFromTime('timeInverse', entries(i).rmse, timeDropdown) ;
+                tableData{i, 2} = app.DW_formatFitDisplayNumber(rmseDisplay) ;
+                tableData{i, 3} = app.DW_formatFitDisplayNumber(entries(i).score) ;
+            end
+        end
+
+        function names = DW_fitSearchColumnNames(app, timeDropdown)
+            names = {'Family', sprintf('RMSE [%s]', app.timeInverseUnitName(timeDropdown)), 'Score [-]'} ;
+        end
+
+        function DW_applyFitAxesLabels(app, titleText)
+            timeDD = app.getDisplayControl('DesignFit', 'time') ;
+            title(app.DesignUI.Fit.CompareAxes, titleText) ;
+            xlabel(app.DesignUI.Fit.CompareAxes, app.axisLabelWithUnit('t', timeDD)) ;
+            ylabel(app.DesignUI.Fit.CompareAxes, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+        end
+
         function updateConcentrationHeader(app, labelHandle, concDropdown)
             if isempty(labelHandle) || ~isvalid(labelHandle)
                 return
@@ -2020,39 +2362,17 @@ classdef NonIdealReactorApp < handle
             app.RTD_ImportLabel.Tooltip = 'Shows the status of the experimental RTD data currently loaded.' ;
             app.RTD_ImportLabel.Visible = 'off' ;
 
-            % Rows 4-7: Custom equation fields (for C(t) Equation)
-            % These share rows with N/Bo and Exp fields (never visible at same time)
-            app.RTD_EqLabel = uilabel(leftGrid, 'Text', 'C(t) =') ;
-            app.RTD_EqLabel.Layout.Row = 4 ; app.RTD_EqLabel.Layout.Column = 1 ;
-            app.RTD_EqLabel.FontWeight = 'bold' ;
-            app.RTD_EqLabel.Visible = 'off' ;
-
-            app.RTD_EqField = uieditfield(leftGrid, 'text', ...
-                'Value', '5*exp(-2.5*t)', ...
-                'Tooltip', 'Use "t" as variable in the selected time unit. Example: 5*exp(-2.5*t)') ;
-            app.RTD_EqField.Layout.Row = 4 ; app.RTD_EqField.Layout.Column = 2 ;
-            app.setTooltip('Expression used to generate the tracer response C(t) as a function of time.', app.RTD_EqLabel, app.RTD_EqField) ;
-            app.RTD_EqField.Visible = 'off' ;
-
-            app.RTD_EqTStartLabel = uilabel(leftGrid, 'Text', 't start:') ;
-            app.RTD_EqTStartLabel.Layout.Row = 5 ; app.RTD_EqTStartLabel.Layout.Column = 1 ;
-            app.RTD_EqTStartLabel.Visible = 'off' ;
-            app.RTD_EqTStartField = uieditfield(leftGrid, 'text', ...
-                'Value', '0', ...
-                'Tooltip', 'Accepts simple arithmetic expressions in the selected time unit.') ;
-            app.RTD_EqTStartField.Layout.Row = 5 ; app.RTD_EqTStartField.Layout.Column = 2 ;
-            app.setTooltip('Initial time used to sample the C(t) equation.', app.RTD_EqTStartLabel, app.RTD_EqTStartField) ;
-            app.RTD_EqTStartField.Visible = 'off' ;
-
-            app.RTD_EqTEndLabel = uilabel(leftGrid, 'Text', 't end:') ;
-            app.RTD_EqTEndLabel.Layout.Row = 6 ; app.RTD_EqTEndLabel.Layout.Column = 1 ;
-            app.RTD_EqTEndLabel.Visible = 'off' ;
-            app.RTD_EqTEndField = uieditfield(leftGrid, 'text', ...
-                'Value', '10', ...
-                'Tooltip', 'Accepts simple arithmetic expressions in the selected time unit.') ;
-            app.RTD_EqTEndField.Layout.Row = 6 ; app.RTD_EqTEndField.Layout.Column = 2 ;
-            app.setTooltip('Final time used to sample the C(t) equation.', app.RTD_EqTEndLabel, app.RTD_EqTEndField) ;
-            app.RTD_EqTEndField.Visible = 'off' ;
+            % Rows 4-6: Piecewise C(t) table (for C(t) Equation)
+            app.RTD_EqTable = uitable(leftGrid, ...
+                'ColumnName', {'C(t)', 't start', 't end'}, ...
+                'ColumnEditable', [true true true], ...
+                'Data', app.defaultRTDEquationTableData(), ...
+                'RowName', {}, ...
+                'Tooltip', ['Define one C(t) expression per time interval. Use "t" as variable in the selected time unit. ' ...
+                    'Leave unused rows blank.']) ;
+            app.RTD_EqTable.Layout.Row = [4 6] ;
+            app.RTD_EqTable.Layout.Column = [1 2] ;
+            app.RTD_EqTable.Visible = 'off' ;
 
             app.RTD_EqTimeUnitLabel = uilabel(leftGrid, 'Text', 'Time unit:') ;
             app.RTD_EqTimeUnitLabel.Layout.Row = 7 ; app.RTD_EqTimeUnitLabel.Layout.Column = 1 ;
@@ -2060,10 +2380,10 @@ classdef NonIdealReactorApp < handle
             app.RTD_EqTimeUnitDropdown = uidropdown(leftGrid, ...
                 'Items', UnitConverterHelper.getUnits('Time'), ...
                 'Value', 's', ...
-                'Tooltip', 'Defines the units of t start, t end, and the variable t in C(t).') ;
+                'Tooltip', 'Defines the units shared by all t start, t end, and t values used in the piecewise C(t) table.') ;
             app.RTD_EqTimeUnitDropdown.Layout.Row = 7 ;
             app.RTD_EqTimeUnitDropdown.Layout.Column = 2 ;
-            app.setTooltip('Time unit used by the C(t) equation and its sampling interval.', ...
+            app.setTooltip('Time unit used by every piecewise C(t) segment and by the generated RTD timeline.', ...
                 app.RTD_EqTimeUnitLabel, app.RTD_EqTimeUnitDropdown) ;
             app.RTD_EqTimeUnitDropdown.Visible = 'off' ;
 
@@ -2073,7 +2393,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_EqNptsField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 500, 'Limits', [10 10000]) ;
             app.RTD_EqNptsField.Layout.Row = 8 ; app.RTD_EqNptsField.Layout.Column = 2 ;
-            app.setTooltip('Number of points used to discretize the C(t) equation before building the RTD.', ...
+            app.setTooltip('Approximate total number of points used to discretize all piecewise C(t) segments before building the RTD.', ...
                 app.RTD_EqNptsLabel, app.RTD_EqNptsField) ;
             app.RTD_EqNptsField.Visible = 'off' ;
 
@@ -2410,12 +2730,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpC0Field.Parent.Visible = 'off' ;
             app.RTD_ImportButton.Visible = 'off' ;
             app.RTD_ImportLabel.Visible = 'off' ;
-            app.RTD_EqLabel.Visible = 'off' ;
-            app.RTD_EqField.Visible = 'off' ;
-            app.RTD_EqTStartLabel.Visible = 'off' ;
-            app.RTD_EqTStartField.Visible = 'off' ;
-            app.RTD_EqTEndLabel.Visible = 'off' ;
-            app.RTD_EqTEndField.Visible = 'off' ;
+            app.RTD_EqTable.Visible = 'off' ;
             app.RTD_EqTimeUnitLabel.Visible = 'off' ;
             app.RTD_EqTimeUnitDropdown.Visible = 'off' ;
             app.RTD_EqNptsLabel.Visible = 'off' ;
@@ -2425,6 +2740,10 @@ classdef NonIdealReactorApp < handle
             app.RTD_DataTable.Visible = 'off' ;
             app.RTD_AddRowButton.Visible = 'off' ;
             app.RTD_RemoveRowButton.Visible = 'off' ;
+            app.RTD_AddRowButton.Text = '+ Row' ;
+            app.RTD_RemoveRowButton.Text = '- Row' ;
+            app.RTD_AddRowButton.Tooltip = 'Append one empty row to the active table input.' ;
+            app.RTD_RemoveRowButton.Tooltip = 'Remove the last row from the active table input.' ;
 
             % Show tau for all analytical models
             tauVisible = 'on' ;
@@ -2462,16 +2781,17 @@ classdef NonIdealReactorApp < handle
                     tauVisible = 'off' ;
 
                 case 'C(t) Equation'
-                    app.RTD_EqLabel.Visible = 'on' ;
-                    app.RTD_EqField.Visible = 'on' ;
-                    app.RTD_EqTStartLabel.Visible = 'on' ;
-                    app.RTD_EqTStartField.Visible = 'on' ;
-                    app.RTD_EqTEndLabel.Visible = 'on' ;
-                    app.RTD_EqTEndField.Visible = 'on' ;
+                    app.RTD_EqTable.Visible = 'on' ;
                     app.RTD_EqTimeUnitLabel.Visible = 'on' ;
                     app.RTD_EqTimeUnitDropdown.Visible = 'on' ;
                     app.RTD_EqNptsLabel.Visible = 'on' ;
                     app.RTD_EqNptsField.Visible = 'on' ;
+                    app.RTD_AddRowButton.Visible = 'on' ;
+                    app.RTD_RemoveRowButton.Visible = 'on' ;
+                    app.RTD_AddRowButton.Text = '+ Segment' ;
+                    app.RTD_RemoveRowButton.Text = '- Segment' ;
+                    app.RTD_AddRowButton.Tooltip = 'Append one empty segment to the piecewise C(t) table.' ;
+                    app.RTD_RemoveRowButton.Tooltip = 'Remove the last segment row from the piecewise C(t) table.' ;
                     tauVisible = 'off' ;
 
                 case 'Tabular Input'
@@ -2505,20 +2825,31 @@ classdef NonIdealReactorApp < handle
         end
 
         function RTD_addTableRow(app)
-            % Add a row to the tabular input data table
-            currentData = app.RTD_DataTable.Data ;
-            if iscell(currentData)
-                app.RTD_DataTable.Data = [currentData ; cell(1, 2)] ;
-            else
-                app.RTD_DataTable.Data = [currentData ; {[], []}] ;
+            % Add a row to the active table input
+            targetTable = app.RTD_DataTable ;
+            newRow = cell(1, 2) ;
+            if strcmp(app.RTD_SourceDropdown.Value, 'C(t) Equation')
+                targetTable = app.RTD_EqTable ;
+                newRow = cell(1, 3) ;
             end
+
+            currentData = targetTable.Data ;
+            if ~iscell(currentData)
+                currentData = num2cell(currentData) ;
+            end
+            targetTable.Data = [currentData ; newRow] ;
         end
 
         function RTD_removeTableRow(app)
-            % Remove the last row from the tabular input data table
-            currentData = app.RTD_DataTable.Data ;
+            % Remove the last row from the active table input
+            targetTable = app.RTD_DataTable ;
+            if strcmp(app.RTD_SourceDropdown.Value, 'C(t) Equation')
+                targetTable = app.RTD_EqTable ;
+            end
+
+            currentData = targetTable.Data ;
             if size(currentData, 1) > 1
-                app.RTD_DataTable.Data = currentData(1:end-1, :) ;
+                targetTable.Data = currentData(1:end-1, :) ;
             end
         end
 
@@ -2571,35 +2902,8 @@ classdef NonIdealReactorApp < handle
                         app.rtd = RTD.from_step(t_data, C_data, C0) ;
 
                     case 'C(t) Equation'
-                        eq_str = app.RTD_EqField.Value ;
                         t_unit = app.RTD_EqTimeUnitDropdown.Value ;
-                        t_start_user = InputLayerHelper.parseArithmeticExpression(app.RTD_EqTStartField.Value) ;
-                        t_end_user = InputLayerHelper.parseArithmeticExpression(app.RTD_EqTEndField.Value) ;
-                        n_pts = round(app.RTD_EqNptsField.Value) ;
-
-                        if t_end_user <= t_start_user
-                            error('t end must be greater than t start for C(t) Equation.') ;
-                        end
-
-                        % Evaluate C(t) in the user-selected time unit, then
-                        % convert the timeline to SI before creating the RTD.
-                        t = linspace(t_start_user, t_end_user, n_pts) ;
-                        try
-                            C_data = eval(eq_str) ;
-                        catch evalErr
-                            error('Error evaluating equation "%s": %s', ...
-                                eq_str, evalErr.message) ;
-                        end
-
-                        % Validate result
-                        if ~isnumeric(C_data) || length(C_data) ~= length(t)
-                            error('The equation must return a numeric vector of the same size as t. Make sure you use element-wise operators (.*  ./  .^)') ;
-                        end
-
-                        % Ensure non-negative
-                        C_data = max(C_data, 0) ;
-
-                        % Build RTD from pulse response
+                        [t, C_data] = app.buildRTDEquationSignal() ;
                         t_si = UnitConverterHelper.convertToSI('Time', t, t_unit) ;
                         app.rtd = RTD.from_pulse(t_si, C_data) ;
 
@@ -2833,6 +3137,15 @@ classdef NonIdealReactorApp < handle
             fData = app.rtd.Ft(:) ;
 
             if isempty(tData) || isempty(fData)
+                app.RTD_FQueryValueLabel.Text = '--' ;
+                app.RTD_FQueryComplementLabel.Text = '--' ;
+                app.RTD_clearFQueryOverlay() ;
+                return
+            end
+
+            if numel(tData) < 2 || numel(fData) < 2 || ...
+                    ~all(isfinite(tData)) || ~all(isfinite(fData)) || ...
+                    tData(end) <= tData(1)
                 app.RTD_FQueryValueLabel.Text = '--' ;
                 app.RTD_FQueryComplementLabel.Text = '--' ;
                 app.RTD_clearFQueryOverlay() ;
@@ -3403,6 +3716,7 @@ classdef NonIdealReactorApp < handle
             app.Pred_RefreshButton.Visible = refreshState ;
 
             if useCalculated
+                app.Pred_clearComputedResults() ;
                 app.Pred_syncFromRTDTab() ;
             else
                 if ~isempty(app.Pred_RS)
@@ -3419,6 +3733,34 @@ classdef NonIdealReactorApp < handle
                         app.RTD_SourceDropdown.Value, app.rtd.tau, app.rtd.sigma2) ;
                     app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
                 end
+            end
+        end
+
+        function Pred_clearComputedResults(app)
+            app.seg_model = [] ;
+            app.mm_model = [] ;
+
+            if ~isempty(app.Pred_SharedLegend) && isvalid(app.Pred_SharedLegend)
+                delete(app.Pred_SharedLegend) ;
+            end
+            app.Pred_SharedLegend = [] ;
+
+            if ~isempty(app.Pred_AxesXbatch) && isvalid(app.Pred_AxesXbatch)
+                cla(app.Pred_AxesXbatch) ;
+            end
+            if ~isempty(app.Pred_AxesIntegrand) && isvalid(app.Pred_AxesIntegrand)
+                cla(app.Pred_AxesIntegrand) ;
+            end
+            if ~isempty(app.Pred_C_exitTable) && isvalid(app.Pred_C_exitTable)
+                app.Pred_C_exitTable.Data = cell(0, 11) ;
+            end
+            if ~isempty(app.Pred_MixingEffectTable) && isvalid(app.Pred_MixingEffectTable)
+                app.Pred_MixingEffectTable.Data = cell(0, 5) ;
+                app.Pred_MixingEffectTable.Visible = 'off' ;
+            end
+            if ~isempty(app.Pred_MixingEffectLabel) && isvalid(app.Pred_MixingEffectLabel)
+                app.Pred_MixingEffectLabel.Text = 'Compute a case to populate this comparison.' ;
+                app.Pred_MixingEffectLabel.Visible = 'on' ;
             end
         end
 
@@ -3441,6 +3783,7 @@ classdef NonIdealReactorApp < handle
                 infoLines{end+1} = sprintf('RS: %s', app.RTD_RSNameField.Value) ;
             else
                 app.Pred_RS = [] ;
+                app.Pred_RSNameField.Value = '' ;
                 app.Pred_RSStatusLabel.Text = 'Tab 1 has no Reaction System loaded' ;
                 app.Pred_RSStatusLabel.FontColor = [0.8 0 0] ;
                 infoLines{end+1} = 'RS: not loaded' ;
@@ -3455,6 +3798,7 @@ classdef NonIdealReactorApp < handle
                 infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
             else
                 app.Pred_feedStream = [] ;
+                app.Pred_StreamNameField.Value = '' ;
                 app.Pred_StreamStatusLabel.Text = 'Tab 1 has no feed stream loaded' ;
                 app.Pred_StreamStatusLabel.FontColor = [0.8 0 0] ;
                 infoLines{end+1} = 'Stream: not loaded' ;
@@ -3703,7 +4047,7 @@ classdef NonIdealReactorApp < handle
                 lbl, app.TIS_NMethodDropdown) ;
             app.TIS_RefreshButton = uibutton(methodSubGrid, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
-                'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
+                'Tooltip', 'Refresh imported data from Tab 1', ...
                 'Visible', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.TIS_NMethodChanged()) ;
 
@@ -3940,58 +4284,89 @@ classdef NonIdealReactorApp < handle
                 app.TIS_tauField.Enable = 'off' ;
                 app.TIS_RTDStatusLabel.Visible = 'on' ;
                 app.TIS_RefreshButton.Visible = 'on' ;
-
-                infoLines = {} ;
-
-                if ~isempty(app.rtd) && app.rtd.sigma2 > 0
-                    N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
-                    app.TIS_NField.Value = N_from_rtd ;
-                    app.setInputFieldValue(app.TIS_tauField, app.rtd.tau) ;
-                    infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
-                        app.rtd.tau, N_from_rtd) ;
-                else
-                    infoLines{end+1} = 'RTD: not loaded' ;
-                end
-
-                % Import RS from Prediction Models tab (if loaded)
-                if ~isempty(app.Pred_RS)
-                    app.TIS_RS = app.Pred_RS ;
-                    app.TIS_RSNameField.Value = app.Pred_RSNameField.Value ;
-                    nR = app.Pred_RS.nReactions ;
-                    nC = app.Pred_RS.nComponents ;
-                    app.TIS_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', nR, nC) ;
-                    app.TIS_RSStatusLabel.FontColor = [0 0.5 0] ;
-                    app.TIS_RSEditButton.Enable = 'on' ;
-                    infoLines{end+1} = sprintf('RS: %s', app.Pred_RSNameField.Value) ;
-                else
-                    infoLines{end+1} = 'RS: not loaded' ;
-                end
-
-                % Import feed Stream from Prediction Models tab
-                if ~isempty(app.Pred_feedStream)
-                    app.TIS_feedStream = app.Pred_feedStream ;
-                    app.TIS_StreamNameField.Value = app.Pred_StreamNameField.Value ;
-                    app.TIS_StreamEditButton.Enable = 'on' ;
-                    C_str = sprintf('%.4g  ', app.Pred_feedStream.concentration) ;
-                    app.TIS_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
-                    app.TIS_StreamStatusLabel.FontColor = [0 0.5 0] ;
-                    infoLines{end+1} = 'Stream: from Prediction' ;
-                else
-                    infoLines{end+1} = 'Stream: not loaded' ;
-                end
-
-                if any(contains(infoLines, 'not loaded'))
-                    app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
-                else
-                    app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
-                end
-                app.TIS_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
+                app.TIS_clearComputedResults() ;
+                app.TIS_syncFromRTDTab() ;
             else
                 app.TIS_NField.Enable = 'on' ;
                 app.TIS_tauField.Enable = 'on' ;
                 app.TIS_RTDStatusLabel.Visible = 'off' ;
                 app.TIS_RefreshButton.Visible = 'off' ;
             end
+        end
+
+        function TIS_clearComputedResults(app)
+            if isfield(app.DisplayCache, 'TIS')
+                app.DisplayCache.TIS = [] ;
+            end
+
+            if ~isempty(app.TIS_AxesEt) && isvalid(app.TIS_AxesEt)
+                cla(app.TIS_AxesEt) ;
+            end
+            if ~isempty(app.TIS_AxesXvsN) && isvalid(app.TIS_AxesXvsN)
+                cla(app.TIS_AxesXvsN) ;
+            end
+            if ~isempty(app.TIS_AxesComparison) && isvalid(app.TIS_AxesComparison)
+                cla(app.TIS_AxesComparison) ;
+            end
+            if ~isempty(app.TIS_C_exitTable) && isvalid(app.TIS_C_exitTable)
+                app.TIS_C_exitTable.Data = cell(0, 9) ;
+            end
+        end
+
+        function TIS_syncFromRTDTab(app)
+            infoLines = {} ;
+
+            if ~isempty(app.rtd) && app.rtd.sigma2 > 0
+                N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
+                app.TIS_NField.Value = N_from_rtd ;
+                app.setInputFieldValue(app.TIS_tauField, app.rtd.tau) ;
+                infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
+                    app.rtd.tau, N_from_rtd) ;
+            else
+                infoLines{end+1} = 'RTD: not loaded' ;
+            end
+
+            if ~isempty(app.RTD_RS)
+                app.TIS_RS = app.RTD_RS ;
+                app.TIS_RSNameField.Value = app.RTD_RSNameField.Value ;
+                nR = app.RTD_RS.nReactions ;
+                nC = app.RTD_RS.nComponents ;
+                app.TIS_RSStatusLabel.Text = sprintf('From Tab 1: %d reactions, %d components', nR, nC) ;
+                app.TIS_RSStatusLabel.FontColor = [0 0.5 0] ;
+                app.TIS_RSEditButton.Enable = 'on' ;
+                infoLines{end+1} = sprintf('RS: %s', app.RTD_RSNameField.Value) ;
+            else
+                app.TIS_RS = [] ;
+                app.TIS_RSNameField.Value = '' ;
+                app.TIS_RSStatusLabel.Text = 'Tab 1 has no Reaction System loaded' ;
+                app.TIS_RSStatusLabel.FontColor = [0.8 0 0] ;
+                app.TIS_RSEditButton.Enable = 'off' ;
+                infoLines{end+1} = 'RS: not loaded' ;
+            end
+
+            if ~isempty(app.RTD_feedStream)
+                app.TIS_feedStream = app.RTD_feedStream ;
+                app.TIS_StreamNameField.Value = app.RTD_StreamNameField.Value ;
+                app.TIS_StreamEditButton.Enable = 'on' ;
+                C_str = sprintf('%.4g  ', app.RTD_feedStream.concentration) ;
+                app.TIS_StreamStatusLabel.Text = sprintf('(from Tab 1, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                app.TIS_StreamStatusLabel.FontColor = [0 0.5 0] ;
+                infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
+            else
+                app.TIS_feedStream = [] ;
+                app.TIS_StreamNameField.Value = '' ;
+                app.TIS_StreamStatusLabel.Text = 'Tab 1 has no feed stream loaded' ;
+                app.TIS_StreamStatusLabel.FontColor = [0.8 0 0] ;
+                app.TIS_StreamEditButton.Enable = 'off' ;
+                infoLines{end+1} = 'Stream: not loaded' ;
+            end
+
+            if any(contains(infoLines, 'not loaded'))
+                app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
+            else
+                app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
+            end
+            app.TIS_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
         end
 
         function TIS_loadRS(app)
@@ -4281,7 +4656,7 @@ classdef NonIdealReactorApp < handle
                 lbl, app.Disp_InputMethodDropdown) ;
             app.Disp_RefreshButton = uibutton(methodSubGridD, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
-                'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
+                'Tooltip', 'Refresh imported data from Tab 1', ...
                 'Visible', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Disp_inputMethodChanged()) ;
 
@@ -4574,6 +4949,9 @@ classdef NonIdealReactorApp < handle
                 app.Disp_tauField.Enable = 'off' ;
                 app.Disp_RTDStatusLabel.Visible = 'on' ;
                 app.Disp_RefreshButton.Visible = 'on' ;
+                app.Disp_clearComputedResults() ;
+                app.Disp_syncFromRTDTab() ;
+                return
 
                 infoLines = {} ;
 
@@ -4645,6 +5023,100 @@ classdef NonIdealReactorApp < handle
                 app.Disp_RTDStatusLabel.Visible = 'off' ;
                 app.Disp_RefreshButton.Visible = 'off' ;
             end
+        end
+
+        function Disp_clearComputedResults(app)
+            app.disp_reactor = [] ;
+            if isfield(app.DisplayCache, 'Dispersion')
+                app.DisplayCache.Dispersion = [] ;
+            end
+
+            if ~isempty(app.Disp_AxesEt) && isvalid(app.Disp_AxesEt)
+                cla(app.Disp_AxesEt) ;
+            end
+            if ~isempty(app.Disp_AxesXvsBo) && isvalid(app.Disp_AxesXvsBo)
+                cla(app.Disp_AxesXvsBo) ;
+            end
+            if ~isempty(app.Disp_AxesComparison) && isvalid(app.Disp_AxesComparison)
+                cla(app.Disp_AxesComparison) ;
+            end
+            if ~isempty(app.Disp_C_exitTable) && isvalid(app.Disp_C_exitTable)
+                app.Disp_C_exitTable.Data = cell(0, 9) ;
+            end
+        end
+
+        function Disp_syncFromRTDTab(app)
+            infoLines = {} ;
+
+            if ~isempty(app.rtd) && app.rtd.sigma2 > 0
+                app.setInputFieldValue(app.Disp_tauField, app.rtd.tau) ;
+                sigma2_theta = app.rtd.sigma2 / app.rtd.tau^2 ;
+                bcType = app.Disp_BCDropdown.Value ;
+                Bo_calc = app.compute_Bo_from_variance(sigma2_theta, bcType) ;
+
+                if isnan(Bo_calc) || isinf(Bo_calc) || Bo_calc < 1e-6 || Bo_calc > 100
+                    msg = sprintf(['Calculated Bo = %g is outside the valid range [1e-6, 100].\n\n' ...
+                        'Possible causes:\n' ...
+                        '  - Near-ideal RTD (PFR-like): variance is too small, leading to Bo ~= 0.\n' ...
+                        '  - Invalid RTD data: sigma^2 or tau contain NaN/Inf values.\n' ...
+                        '  - Very large dispersion: variance is too high, producing Bo > 100.\n\n' ...
+                        'Current RTD values: sigma^2 = %.4g, tau = %.4g'], ...
+                        Bo_calc, app.rtd.sigma2, app.rtd.tau) ;
+                    uialert(app.UIFigure, msg, 'Bo Out of Range', 'Icon', 'warning') ;
+                    app.Disp_PeLabel.Text = '--' ;
+                    infoLines{end+1} = 'RTD: invalid imported Bo' ;
+                else
+                    app.Disp_BoField.Value = Bo_calc ;
+                    app.Disp_updatePe() ;
+                    infoLines{end+1} = sprintf('RTD: tau=%.2f, Bo=%.4g', ...
+                        app.rtd.tau, Bo_calc) ;
+                end
+            else
+                app.Disp_PeLabel.Text = '--' ;
+                infoLines{end+1} = 'RTD: not loaded' ;
+            end
+
+            if ~isempty(app.RTD_RS)
+                app.Disp_RS = app.RTD_RS ;
+                app.Disp_RSNameField.Value = app.RTD_RSNameField.Value ;
+                nR = app.Disp_RS.nReactions ;
+                nC = app.Disp_RS.nComponents ;
+                app.Disp_RSStatusLabel.Text = sprintf('From Tab 1: %d reactions, %d components', nR, nC) ;
+                app.Disp_RSStatusLabel.FontColor = [0 0.5 0] ;
+                app.Disp_RSEditButton.Enable = 'on' ;
+                infoLines{end+1} = sprintf('RS: %s', app.RTD_RSNameField.Value) ;
+            else
+                app.Disp_RS = [] ;
+                app.Disp_RSNameField.Value = '' ;
+                app.Disp_RSStatusLabel.Text = 'Tab 1 has no Reaction System loaded' ;
+                app.Disp_RSStatusLabel.FontColor = [0.8 0 0] ;
+                app.Disp_RSEditButton.Enable = 'off' ;
+                infoLines{end+1} = 'RS: not loaded' ;
+            end
+
+            if ~isempty(app.RTD_feedStream)
+                app.Disp_feedStream = app.RTD_feedStream ;
+                app.Disp_StreamNameField.Value = app.RTD_StreamNameField.Value ;
+                app.Disp_StreamEditButton.Enable = 'on' ;
+                C_str = sprintf('%.4g  ', app.RTD_feedStream.concentration) ;
+                app.Disp_StreamStatusLabel.Text = sprintf('(from Tab 1, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                app.Disp_StreamStatusLabel.FontColor = [0 0.5 0] ;
+                infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
+            else
+                app.Disp_feedStream = [] ;
+                app.Disp_StreamNameField.Value = '' ;
+                app.Disp_StreamStatusLabel.Text = 'Tab 1 has no feed stream loaded' ;
+                app.Disp_StreamStatusLabel.FontColor = [0.8 0 0] ;
+                app.Disp_StreamEditButton.Enable = 'off' ;
+                infoLines{end+1} = 'Stream: not loaded' ;
+            end
+
+            if any(contains(infoLines, {'not loaded', 'invalid'}))
+                app.Disp_RTDStatusLabel.FontColor = [0.8 0 0] ;
+            else
+                app.Disp_RTDStatusLabel.FontColor = [0 0.5 0] ;
+            end
+            app.Disp_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
         end
 
         function Disp_compute(app)
@@ -4905,6 +5377,7 @@ classdef NonIdealReactorApp < handle
             D.fit.family = app.DesignUI.Fit.FamilyDropdown.Value ;
             D.fit.boundary = app.DesignUI.Fit.BoundaryDropdown.Value ;
             D.fit.referenceTau = app.captureFieldWithUnit(app.DesignUI.Fit.ReferenceTauField) ;
+            D.fit.displayTimeUnit = app.getControlValue(app.getDisplayControl('DesignFit', 'time'), 's') ;
             D.fit.searchSelection = app.captureListboxSelection(app.DesignUI.Fit.FamilySearchList) ;
             D.fit.result = app.DesignState.fitResult ;
 
@@ -4942,6 +5415,8 @@ classdef NonIdealReactorApp < handle
             app.DW_beginReferenceTauProgrammaticUpdate() ;
             app.applyFieldWithUnit(app.DesignUI.Fit.ReferenceTauField, refTauState) ;
             app.DW_endReferenceTauProgrammaticUpdate(isstruct(refTauState) && isfield(refTauState, 'value')) ;
+            fitTimeControl = app.getDisplayControl('DesignFit', 'time') ;
+            app.setDropdownValueIfValid(fitTimeControl, app.getStructField(fit, 'displayTimeUnit', app.getControlValue(fitTimeControl, 's'))) ;
             app.DesignState.fitResult = app.getStructField(fit, 'result', []) ;
             app.DesignUI.Fit.FamilySearchList.UserData = struct('pendingSelection', ...
                 app.getStructField(fit, 'searchSelection', [])) ;
@@ -5043,19 +5518,30 @@ classdef NonIdealReactorApp < handle
 
             right = uipanel(grid, 'Title', 'Fit Results') ;
             right.Layout.Column = 2 ;
-            rightGrid = uigridlayout(right, [3 1]) ;
-            rightGrid.RowHeight = {'fit', 170, '1x'} ;
+            rightGrid = uigridlayout(right, [4 1]) ;
+            rightGrid.RowHeight = {'fit', 'fit', 170, '1x'} ;
 
             app.DesignUI.Fit.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting RTD fit.', 'WordWrap', 'on') ;
             app.DesignUI.Fit.SummaryLabel.Layout.Row = 1 ;
             app.DesignUI.Fit.SummaryLabel.Tooltip = ['Fit summary. RMSE is the root mean square error between the input and fitted E(t). ' ...
                 'Score is a dimensionless similarity indicator based on curve SSE.'] ;
+
+            fitUnitsGrid = uigridlayout(rightGrid, [1 1], ...
+                'ColumnWidth', {'fit'}, ...
+                'Padding', [0 0 0 0], ...
+                'RowSpacing', 0, ...
+                'ColumnSpacing', 0) ;
+            fitUnitsGrid.Layout.Row = 2 ;
+            app.DisplayControls.DesignFit.time = app.createDisplayUnitControl( ...
+                fitUnitsGrid, 1, 1, 'Display time:', 'Time', 's', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
+
             app.DesignUI.Fit.ParameterTable = uitable(rightGrid, 'ColumnName', {'Parameter', 'Value'}, 'RowName', {}) ;
-            app.DesignUI.Fit.ParameterTable.Layout.Row = 2 ;
+            app.DesignUI.Fit.ParameterTable.Layout.Row = 3 ;
             app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
                 'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
             app.DesignUI.Fit.CompareAxes = uiaxes(rightGrid) ; title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t)') ;
-            app.DesignUI.Fit.CompareAxes.Layout.Row = 3 ;
+            app.DesignUI.Fit.CompareAxes.Layout.Row = 4 ;
+            app.DW_applyFitAxesLabels('Input vs fitted E(t)') ;
             app.DesignUI.Fit.FamilyDropdown.ValueChangedFcn = @(~,~) app.DW_refreshFitContext() ;
             app.DW_refreshFitContext() ;
         end
@@ -5552,6 +6038,7 @@ classdef NonIdealReactorApp < handle
 
         function DW_refreshFit(app)
             result = app.DesignState.fitResult ;
+            timeDD = app.getDisplayControl('DesignFit', 'time') ;
             if isempty(result)
                 app.DesignUI.Fit.ParameterTable.Data = cell(0, 2) ;
                 app.DesignUI.Fit.SummaryLabel.Text = 'Awaiting RTD fit.' ;
@@ -5560,36 +6047,41 @@ classdef NonIdealReactorApp < handle
                     app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
                 end
                 cla(app.DesignUI.Fit.CompareAxes) ;
+                app.DW_applyFitAxesLabels('Input vs fitted E(t)') ;
                 return
             end
             resultMode = app.getStructField(result, 'mode', 'single') ;
             if strcmp(resultMode, 'search')
-                app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryText(result) ;
-                app.DesignUI.Fit.ParameterTable.ColumnName = {'Family', 'RMSE', 'Score'} ;
-                app.DesignUI.Fit.ParameterTable.Data = result.summaryTable ;
+                app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryTextWithUnits(result, timeDD) ;
+                app.DesignUI.Fit.ParameterTable.ColumnName = app.DW_fitSearchColumnNames(timeDD) ;
+                app.DesignUI.Fit.ParameterTable.Data = app.DW_buildFitSearchSummaryTable(result, timeDD) ;
                 app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
                     'Comparison across fitted families sorted by fit quality.', ...
-                    {'Family', 'RMSE', 'Score'}) ;
-                title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t) by family') ;
+                    app.DesignUI.Fit.ParameterTable.ColumnName) ;
+                app.DW_applyFitAxesLabels('Input vs fitted E(t) by family') ;
                 app.DW_refreshFitSearchSelector(result) ;
                 app.DW_refreshFitSearchPlot(result) ;
                 return
             end
 
-            app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryText(result) ;
+            app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryTextWithUnits(result, timeDD) ;
             app.DesignUI.Fit.ParameterTable.ColumnName = {'Parameter', 'Value'} ;
-            app.DesignUI.Fit.ParameterTable.Data = result.summaryTable ;
+            app.DesignUI.Fit.ParameterTable.Data = app.DW_buildFitParameterTableData(result, timeDD) ;
             app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
                 'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
             if ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
                 app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
                 app.DesignUI.Fit.FamilySearchList.UserData = struct('familyNames', {{}}, 'pendingSelection', []) ;
             end
-            title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t)') ;
             cla(app.DesignUI.Fit.CompareAxes) ;
-            plot(app.DesignUI.Fit.CompareAxes, result.inputRTD.t, result.inputRTD.Et, 'k-', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'on') ;
-            plot(app.DesignUI.Fit.CompareAxes, result.fittedRTD.t, result.fittedRTD.Et, 'b--', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'off') ;
+            inputT = app.convertOutputVectorFromTime('time', result.inputRTD.t, timeDD) ;
+            inputE = app.convertOutputVectorFromTime('timeInverse', result.inputRTD.Et, timeDD) ;
+            fittedT = app.convertOutputVectorFromTime('time', result.fittedRTD.t, timeDD) ;
+            fittedE = app.convertOutputVectorFromTime('timeInverse', result.fittedRTD.Et, timeDD) ;
+            plot(app.DesignUI.Fit.CompareAxes, inputT, inputE, 'k-', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'on') ;
+            plot(app.DesignUI.Fit.CompareAxes, fittedT, fittedE, 'b--', 'LineWidth', 1.2) ; hold(app.DesignUI.Fit.CompareAxes, 'off') ;
             legend(app.DesignUI.Fit.CompareAxes, {'Input', 'Fitted'}, 'Location', 'best') ; grid(app.DesignUI.Fit.CompareAxes, 'on') ;
+            app.DW_applyFitAxesLabels('Input vs fitted E(t)') ;
         end
 
         function DW_refreshFitSearchSelector(app, result)
@@ -5627,6 +6119,7 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_refreshFitSearchPlot(app, result)
+            timeDD = app.getDisplayControl('DesignFit', 'time') ;
             selectedIdx = app.captureListboxSelection(app.DesignUI.Fit.FamilySearchList) ;
             if isempty(selectedIdx)
                 selectedIdx = app.getStructField(result, 'searchSelection', 1) ;
@@ -5639,19 +6132,24 @@ classdef NonIdealReactorApp < handle
                 selectedIdx = 1 ;
             end
             cla(app.DesignUI.Fit.CompareAxes) ;
-            plot(app.DesignUI.Fit.CompareAxes, result.inputRTD.t, result.inputRTD.Et, 'k-', 'LineWidth', 1.4) ;
+            inputT = app.convertOutputVectorFromTime('time', result.inputRTD.t, timeDD) ;
+            inputE = app.convertOutputVectorFromTime('timeInverse', result.inputRTD.Et, timeDD) ;
+            plot(app.DesignUI.Fit.CompareAxes, inputT, inputE, 'k-', 'LineWidth', 1.4) ;
             hold(app.DesignUI.Fit.CompareAxes, 'on') ;
             legendEntries = {'Input'} ;
             colors = lines(max(numel(selectedIdx), 1)) ;
             for i = 1:numel(selectedIdx)
                 fitItem = result.searchResults(selectedIdx(i)) ;
-                plot(app.DesignUI.Fit.CompareAxes, fitItem.fittedRTD.t, fitItem.fittedRTD.Et, '--', ...
+                fittedT = app.convertOutputVectorFromTime('time', fitItem.fittedRTD.t, timeDD) ;
+                fittedE = app.convertOutputVectorFromTime('timeInverse', fitItem.fittedRTD.Et, timeDD) ;
+                plot(app.DesignUI.Fit.CompareAxes, fittedT, fittedE, '--', ...
                     'LineWidth', 1.2, 'Color', colors(i, :)) ;
                 legendEntries{end + 1} = fitItem.family ; %#ok<AGROW>
             end
             hold(app.DesignUI.Fit.CompareAxes, 'off') ;
             legend(app.DesignUI.Fit.CompareAxes, legendEntries, 'Location', 'best') ;
             grid(app.DesignUI.Fit.CompareAxes, 'on') ;
+            app.DW_applyFitAxesLabels('Input vs fitted E(t) by family') ;
         end
 
         function clearMultiSelectListbox(~, listbox)
@@ -5859,19 +6357,24 @@ classdef NonIdealReactorApp < handle
                 case 'closed-closed'
                     % Define f(Bo) = 2*Bo - 2*Bo^2*(1-exp(-1/Bo)) - sigma2_theta
                     f = @(Bo_val) 2*Bo_val - 2*Bo_val^2*(1 - exp(-1/Bo_val)) - sigma2_theta ;
-
-                    % Initial guess from open-open approximation
-                    Bo0 = sigma2_theta / 2 ;
-                    if Bo0 < 1e-6
-                        Bo0 = 1e-6 ;
-                    end
+                    lowerBound = 1e-8 ;
+                    upperBound = max(1, sigma2_theta + 1) ;
 
                     try
-                        Bo = fzero(f, Bo0) ;
+                        fLow = f(lowerBound) ;
+                        fHigh = f(upperBound) ;
+                        while ~isfinite(fHigh) || sign(fLow) == sign(fHigh)
+                            upperBound = upperBound * 2 ;
+                            if upperBound > 1e6
+                                error('Could not bracket a physical Bo root for the current variance.') ;
+                            end
+                            fHigh = f(upperBound) ;
+                        end
+                        Bo = fzero(f, [lowerBound, upperBound]) ;
                     catch
-                        % Fallback: use approximation
-                        Bo = Bo0 ;
-                        warning('Could not solve for Bo. Using approximation Bo = sigma2_theta/2') ;
+                        % Fallback: use open-open approximation
+                        Bo = max(sigma2_theta / 2, lowerBound) ;
+                        warning('Could not solve for closed-closed Bo. Using approximation Bo = sigma2_theta/2') ;
                     end
 
                     % Ensure positive
@@ -6014,5 +6517,47 @@ classdef NonIdealReactorApp < handle
 
     end
 
+end
+
+function nonIdealReactorAppRestartTimerFcn(~, rootDir, hardMode, restartTag)
+try
+    if nargin >= 2 && ~isempty(rootDir)
+        addpath(rootDir) ;
+    end
+
+    if hardMode
+        clear functions ;
+        clear classes ;
+        rehash ;
+    end
+
+    NonIdealReactorApp() ;
+catch ME
+    try
+        errordlg({ ...
+            'Restart failed. Launch NonIdealReactorApp manually from the MATLAB Command Window.', ...
+            '', ...
+            ME.message}, ...
+            ternaryRestartTitle(hardMode)) ;
+    catch
+        disp(getReport(ME, 'extended', 'hyperlinks', 'off')) ;
+    end
+end
+
+try
+    staleTimers = timerfindall('Tag', restartTag) ;
+    if ~isempty(staleTimers)
+        stop(staleTimers) ;
+    end
+catch
+end
+end
+
+function titleText = ternaryRestartTitle(hardMode)
+if hardMode
+    titleText = 'Hard Restart Error' ;
+else
+    titleText = 'Restart Error' ;
+end
 end
 
