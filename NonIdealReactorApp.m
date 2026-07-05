@@ -212,6 +212,8 @@ classdef NonIdealReactorApp < handle
 
             % Menu bar
             mFile = uimenu(app.UIFigure, 'Text', 'File') ;
+            uimenu(mFile, 'Text', 'New', ...
+                'MenuSelectedFcn', @(~,~) NonIdealReactorApp()) ;
             uimenu(mFile, 'Text', 'Guardar', ...
                 'MenuSelectedFcn', @(~,~) app.saveSession()) ;
             uimenu(mFile, 'Text', 'Cargar', ...
@@ -1278,6 +1280,18 @@ classdef NonIdealReactorApp < handle
             value = InputLayerHelper.readFieldToSI(field) ;
         end
 
+        function value = readOptionalInputField(~, field)
+            value = [] ;
+            if isempty(field) || ~isvalid(field)
+                return
+            end
+            rawValue = strtrim(char(string(field.Value))) ;
+            if isempty(rawValue)
+                return
+            end
+            value = InputLayerHelper.readFieldToSI(field) ;
+        end
+
         function setInputFieldValue(~, field, siValue)
             InputLayerHelper.setFieldFromSI(field, siValue) ;
         end
@@ -1497,6 +1511,10 @@ classdef NonIdealReactorApp < handle
                     end
                 case 'DesignFit'
                     app.DW_refreshFit() ;
+                case 'DesignReactive'
+                    app.DW_refreshReactive() ;
+                case 'DesignOptimization'
+                    app.DW_refreshOptimization() ;
             end
         end
 
@@ -2097,32 +2115,35 @@ classdef NonIdealReactorApp < handle
                 result.family, rmseDisplay, rmseUnit, result.score) ;
         end
 
-        function tableData = DW_buildFitParameterTableData(app, result, timeDropdown)
+        function tableData = DW_buildFitParameterTableData(app, result, timeDropdown, volumeDropdown)
             params = app.getStructField(result, 'parameters', struct()) ;
             fields = fieldnames(params) ;
             tableData = cell(numel(fields), 2) ;
             for i = 1:numel(fields)
                 fieldName = fields{i} ;
                 fieldValue = params.(fieldName) ;
-                [labelText, valueText] = app.DW_formatFitParameter(fieldName, fieldValue, timeDropdown) ;
+                [labelText, valueText] = app.DW_formatFitParameter(fieldName, fieldValue, timeDropdown, volumeDropdown) ;
                 tableData{i, 1} = labelText ;
                 tableData{i, 2} = valueText ;
             end
         end
 
-        function [labelText, valueText] = DW_formatFitParameter(app, fieldName, fieldValue, timeDropdown)
+        function [labelText, valueText] = DW_formatFitParameter(app, fieldName, fieldValue, timeDropdown, volumeDropdown)
             timeUnit = app.getControlValue(timeDropdown, 's') ;
             switch fieldName
-                case {'tau', 'tau_nominal', 'tau_active'}
+                case {'tau', 'tau_nominal', 'tau_active', 'tau_total', 'tau_pfr', 'tau_cstr', 'tau_pfr_active', 'tau_cstr_active'}
                     labelText = sprintf('%s [%s]', fieldName, timeUnit) ;
                     valueDisplay = app.convertOutputFromTime('time', fieldValue, timeDropdown) ;
                     valueText = sprintf('%.6g', valueDisplay) ;
-                case {'N', 'Pe', 'activeFraction', 'deadFraction', 'bypassFraction'}
+                case {'N', 'Pe', 'activeFraction', 'deadFraction', 'bypassFraction', 'pfrFraction', 'cstrFraction', 'pfrResidenceFraction', 'cstrResidenceFraction', 'splitToPFR', 'splitToCSTR'}
                     labelText = sprintf('%s [-]', fieldName) ;
                     valueText = sprintf('%.6g', fieldValue) ;
                 case 'Bo'
                     labelText = 'Bo [-]' ;
                     valueText = sprintf('%.6g', fieldValue) ;
+                case {'V_total', 'V_active', 'V_dead'}
+                    labelText = sprintf('%s [%s]', fieldName, app.getControlValue(volumeDropdown, 'm^3')) ;
+                    valueText = sprintf('%.6g', app.convertOutputScalar('Volume', fieldValue, volumeDropdown)) ;
                 otherwise
                     labelText = fieldName ;
                     if isnumeric(fieldValue) && isscalar(fieldValue)
@@ -2161,6 +2182,192 @@ classdef NonIdealReactorApp < handle
             title(app.DesignUI.Fit.CompareAxes, titleText) ;
             xlabel(app.DesignUI.Fit.CompareAxes, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.DesignUI.Fit.CompareAxes, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+        end
+
+        function tableData = DW_buildReactiveSummaryTable(app, result)
+            metrics = app.getStructField(result, 'metrics', struct()) ;
+            tableData = { ...
+                'Ideal CSTR', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'cstr', struct()), 'conversion', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'cstr', struct()), 'selectivity', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'cstr', struct()), 'yield', NaN)) ; ...
+                'Segregation', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'segregation', struct()), 'conversion', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'segregation', struct()), 'selectivity', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'segregation', struct()), 'yield', NaN)) ; ...
+                'Max Mixedness', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'maxMixedness', struct()), 'conversion', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'maxMixedness', struct()), 'selectivity', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'maxMixedness', struct()), 'yield', NaN)) ; ...
+                'Ideal PFR', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'pfr', struct()), 'conversion', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'pfr', struct()), 'selectivity', NaN)), ...
+                app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(metrics, 'pfr', struct()), 'yield', NaN))} ;
+        end
+
+        function tableData = DW_buildReactiveCoutTable(app, result, RS, C0, concDropdown)
+            if isempty(RS) || isempty(C0)
+                tableData = app.getStructField(result, 'coutTable', cell(0, 6)) ;
+                return
+            end
+
+            nComp = numel(C0) ;
+            rowLabels = cell(1, nComp) ;
+            for i = 1:nComp
+                rowLabels{i} = app.getComponentLabel(RS, i) ;
+            end
+            seriesData = [C0(:), result.segregation.C_exit(:), result.maxMixedness.C_exit(:), ...
+                result.cstr.C_out(:), result.pfr.C_out(:)] ;
+            concDisplay = reshape(app.convertOutputConcentration(seriesData(:)', concDropdown), size(seriesData)) ;
+            tableData = cell(nComp, 6) ;
+            for i = 1:nComp
+                tableData{i, 1} = rowLabels{i} ;
+                for j = 1:5
+                    tableData{i, j + 1} = app.DW_formatFitDisplayNumber(concDisplay(i, j)) ;
+                end
+            end
+        end
+
+        function [metricName, titleText, yLabel] = DW_getReactiveMetricSpec(app)
+            metricDropdown = app.getDisplayControl('DesignReactive', 'metric') ;
+            metricName = app.getControlValue(metricDropdown, 'Conversion') ;
+            switch char(string(metricName))
+                case 'Selectivity'
+                    titleText = 'Selectivity comparison' ;
+                    yLabel = 'Selectivity (-)' ;
+                case 'Yield'
+                    titleText = 'Yield comparison' ;
+                    yLabel = 'Yield (-)' ;
+                otherwise
+                    metricName = 'Conversion' ;
+                    titleText = 'Conversion comparison' ;
+                    yLabel = 'Conversion X (-)' ;
+            end
+        end
+
+        function values = DW_getReactiveMetricValues(app, result, metricName)
+            metrics = app.getStructField(result, 'metrics', struct()) ;
+            switch char(string(metricName))
+                case 'Selectivity'
+                    fieldName = 'selectivity' ;
+                case 'Yield'
+                    fieldName = 'yield' ;
+                otherwise
+                    fieldName = 'conversion' ;
+            end
+            values = [ ...
+                app.getStructField(app.getStructField(metrics, 'cstr', struct()), fieldName, NaN), ...
+                app.getStructField(app.getStructField(metrics, 'segregation', struct()), fieldName, NaN), ...
+                app.getStructField(app.getStructField(metrics, 'maxMixedness', struct()), fieldName, NaN), ...
+                app.getStructField(app.getStructField(metrics, 'pfr', struct()), fieldName, NaN)] ;
+        end
+
+        function DW_refreshReactivePlot(app, result)
+            cla(app.DesignUI.Reactive.Axes) ;
+            [metricName, titleText, yLabel] = app.DW_getReactiveMetricSpec() ;
+            values = app.DW_getReactiveMetricValues(result, metricName) ;
+            finiteValues = values(isfinite(values)) ;
+            if isempty(finiteValues)
+                text(app.DesignUI.Reactive.Axes, 0.5, 0.5, 'No reactive metrics available', ...
+                    'Units', 'normalized', 'HorizontalAlignment', 'center') ;
+                title(app.DesignUI.Reactive.Axes, titleText) ;
+                ylabel(app.DesignUI.Reactive.Axes, yLabel) ;
+                grid(app.DesignUI.Reactive.Axes, 'on') ;
+                return
+            end
+
+            [~, colors] = app.getPredictionModelLegendSpec() ;
+            b = bar(app.DesignUI.Reactive.Axes, 1:numel(values), values, 'FaceColor', 'flat') ;
+            b.CData = colors(1:numel(values), :) ;
+            app.DesignUI.Reactive.Axes.XTick = 1:numel(values) ;
+            app.DesignUI.Reactive.Axes.XTickLabel = {'CSTR', 'Seg', 'MM', 'PFR'} ;
+            app.setPredictionAnnotatedYLimits(app.DesignUI.Reactive.Axes, values(:), 1) ;
+            app.annotatePredictionBars(app.DesignUI.Reactive.Axes, b, values(:), '%.4f') ;
+            title(app.DesignUI.Reactive.Axes, titleText) ;
+            ylabel(app.DesignUI.Reactive.Axes, yLabel) ;
+            grid(app.DesignUI.Reactive.Axes, 'on') ;
+        end
+
+        function names = DW_buildReactiveCoutColumnNames(app, concDropdown)
+            unitName = app.concentrationUnitName(concDropdown) ;
+            names = {'Component', ...
+                sprintf('C_in [%s]', unitName), ...
+                sprintf('Seg [%s]', unitName), ...
+                sprintf('MM [%s]', unitName), ...
+                sprintf('CSTR [%s]', unitName), ...
+                sprintf('PFR [%s]', unitName)} ;
+        end
+
+        function tableData = DW_buildOptimizationComparisonTable(app, result, timeDropdown)
+            baseline = app.getStructField(result, 'baseline', struct()) ;
+            optimum = app.getStructField(result, 'optimum', struct()) ;
+            baselineParams = app.getStructField(baseline, 'params', struct()) ;
+            optimumParams = app.getStructField(optimum, 'params', struct()) ;
+            timeUnit = app.getControlValue(timeDropdown, 's') ;
+            tableData = { ...
+                'Conversion [-]', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(baseline, 'metrics', struct()), 'conversion', NaN)), app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(optimum, 'metrics', struct()), 'conversion', NaN)) ; ...
+                'Selectivity [-]', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(baseline, 'metrics', struct()), 'selectivity', NaN)), app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(optimum, 'metrics', struct()), 'selectivity', NaN)) ; ...
+                'Yield [-]', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(baseline, 'metrics', struct()), 'yield', NaN)), app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(optimum, 'metrics', struct()), 'yield', NaN)) ; ...
+                sprintf('tau [%s]', timeUnit), app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', app.getStructField(baselineParams, 'tau', NaN), timeDropdown)), app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', app.getStructField(optimumParams, 'tau', NaN), timeDropdown)) ; ...
+                'Recycle ratio [-]', app.DW_formatFitDisplayNumber(app.getStructField(baselineParams, 'recycleRatio', 0)), app.DW_formatFitDisplayNumber(app.getStructField(optimumParams, 'recycleRatio', 0))} ;
+        end
+
+        function tableData = DW_buildOptimizationConstraintResultTable(app, result, timeDropdown, concDropdown)
+            optimum = app.getStructField(result, 'optimum', struct()) ;
+            params = app.getStructField(optimum, 'params', struct()) ;
+            constraints = app.DW_parseConstraintTable() ;
+            rows = {} ;
+            for i = 1:numel(constraints)
+                row = constraints(i) ;
+                if ~isfield(row, 'use') || ~row.use
+                    continue
+                end
+                rawValue = DesignWorkspaceHelper.constraintMetricValue(row.metric, row.speciesIndex, optimum, params) ;
+                rawTarget = row.value ;
+                satisfied = DesignWorkspaceHelper.constraintSatisfied(row.type, rawValue, rawTarget) ;
+                metricLabel = char(string(row.metric)) ;
+                switch metricLabel
+                    case 'Residence Time'
+                        metricLabel = sprintf('Residence Time [%s]', app.getControlValue(timeDropdown, 's')) ;
+                        valueText = app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', rawValue, timeDropdown)) ;
+                        targetText = app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', rawTarget, timeDropdown)) ;
+                    case 'C_out'
+                        metricLabel = sprintf('C_out [%s]', app.concentrationUnitName(concDropdown)) ;
+                        valueText = app.DW_formatFitDisplayNumber(app.convertOutputConcentration(rawValue, concDropdown)) ;
+                        targetText = app.DW_formatFitDisplayNumber(app.convertOutputConcentration(rawTarget, concDropdown)) ;
+                    otherwise
+                        if any(strcmp(metricLabel, {'Conversion', 'Selectivity', 'Yield', 'Recycle Ratio'}))
+                            metricLabel = sprintf('%s [-]', metricLabel) ;
+                        end
+                        valueText = app.DW_formatFitDisplayNumber(rawValue) ;
+                        targetText = app.DW_formatFitDisplayNumber(rawTarget) ;
+                end
+                rows(end+1, :) = {metricLabel, valueText, targetText, DesignWorkspaceHelper.flagText(satisfied)} ; %#ok<AGROW>
+            end
+            if isempty(rows)
+                rows = cell(0, 4) ;
+            end
+            tableData = rows ;
+        end
+
+        function tableData = DW_buildOptimizationSensitivityTable(app, result, timeDropdown)
+            storedTable = app.getStructField(result, 'sensitivityTable', cell(0, 3)) ;
+            optimumParams = app.getStructField(result, 'optimalParameters', struct()) ;
+            if isempty(storedTable)
+                tableData = cell(0, 3) ;
+                return
+            end
+
+            tableData = cell(size(storedTable, 1), 3) ;
+            for i = 1:size(storedTable, 1)
+                variableName = char(string(storedTable{i, 1})) ;
+                baseValue = app.getStructField(optimumParams, variableName, NaN) ;
+                labelText = variableName ;
+                baseText = app.DW_formatFitDisplayNumber(baseValue) ;
+                if strcmp(variableName, 'tau')
+                    labelText = sprintf('tau [%s]', app.getControlValue(timeDropdown, 's')) ;
+                    baseText = app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', baseValue, timeDropdown)) ;
+                end
+                tableData{i, 1} = labelText ;
+                tableData{i, 2} = baseText ;
+                tableData{i, 3} = storedTable{i, 3} ;
+            end
         end
 
         function updateConcentrationHeader(app, labelHandle, concDropdown)
@@ -3143,15 +3350,6 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
-            if numel(tData) < 2 || numel(fData) < 2 || ...
-                    ~all(isfinite(tData)) || ~all(isfinite(fData)) || ...
-                    tData(end) <= tData(1)
-                app.RTD_FQueryValueLabel.Text = '--' ;
-                app.RTD_FQueryComplementLabel.Text = '--' ;
-                app.RTD_clearFQueryOverlay() ;
-                return
-            end
-
             if querySI <= tData(1)
                 fValue = 0 ;
             elseif querySI >= tData(end)
@@ -3391,7 +3589,7 @@ classdef NonIdealReactorApp < handle
                 lbl, app.Pred_InputMethodDropdown) ;
             app.Pred_RefreshButton = uibutton(methodSubGrid, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
-                'Tooltip', 'Refresh imported data from Tab 1', ...
+                'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
                 'Visible', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Pred_inputMethodChanged()) ;
 
@@ -3716,7 +3914,6 @@ classdef NonIdealReactorApp < handle
             app.Pred_RefreshButton.Visible = refreshState ;
 
             if useCalculated
-                app.Pred_clearComputedResults() ;
                 app.Pred_syncFromRTDTab() ;
             else
                 if ~isempty(app.Pred_RS)
@@ -3733,34 +3930,6 @@ classdef NonIdealReactorApp < handle
                         app.RTD_SourceDropdown.Value, app.rtd.tau, app.rtd.sigma2) ;
                     app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
                 end
-            end
-        end
-
-        function Pred_clearComputedResults(app)
-            app.seg_model = [] ;
-            app.mm_model = [] ;
-
-            if ~isempty(app.Pred_SharedLegend) && isvalid(app.Pred_SharedLegend)
-                delete(app.Pred_SharedLegend) ;
-            end
-            app.Pred_SharedLegend = [] ;
-
-            if ~isempty(app.Pred_AxesXbatch) && isvalid(app.Pred_AxesXbatch)
-                cla(app.Pred_AxesXbatch) ;
-            end
-            if ~isempty(app.Pred_AxesIntegrand) && isvalid(app.Pred_AxesIntegrand)
-                cla(app.Pred_AxesIntegrand) ;
-            end
-            if ~isempty(app.Pred_C_exitTable) && isvalid(app.Pred_C_exitTable)
-                app.Pred_C_exitTable.Data = cell(0, 11) ;
-            end
-            if ~isempty(app.Pred_MixingEffectTable) && isvalid(app.Pred_MixingEffectTable)
-                app.Pred_MixingEffectTable.Data = cell(0, 5) ;
-                app.Pred_MixingEffectTable.Visible = 'off' ;
-            end
-            if ~isempty(app.Pred_MixingEffectLabel) && isvalid(app.Pred_MixingEffectLabel)
-                app.Pred_MixingEffectLabel.Text = 'Compute a case to populate this comparison.' ;
-                app.Pred_MixingEffectLabel.Visible = 'on' ;
             end
         end
 
@@ -3783,7 +3952,6 @@ classdef NonIdealReactorApp < handle
                 infoLines{end+1} = sprintf('RS: %s', app.RTD_RSNameField.Value) ;
             else
                 app.Pred_RS = [] ;
-                app.Pred_RSNameField.Value = '' ;
                 app.Pred_RSStatusLabel.Text = 'Tab 1 has no Reaction System loaded' ;
                 app.Pred_RSStatusLabel.FontColor = [0.8 0 0] ;
                 infoLines{end+1} = 'RS: not loaded' ;
@@ -3798,7 +3966,6 @@ classdef NonIdealReactorApp < handle
                 infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
             else
                 app.Pred_feedStream = [] ;
-                app.Pred_StreamNameField.Value = '' ;
                 app.Pred_StreamStatusLabel.Text = 'Tab 1 has no feed stream loaded' ;
                 app.Pred_StreamStatusLabel.FontColor = [0.8 0 0] ;
                 infoLines{end+1} = 'Stream: not loaded' ;
@@ -4047,7 +4214,7 @@ classdef NonIdealReactorApp < handle
                 lbl, app.TIS_NMethodDropdown) ;
             app.TIS_RefreshButton = uibutton(methodSubGrid, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
-                'Tooltip', 'Refresh imported data from Tab 1', ...
+                'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
                 'Visible', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.TIS_NMethodChanged()) ;
 
@@ -4284,89 +4451,57 @@ classdef NonIdealReactorApp < handle
                 app.TIS_tauField.Enable = 'off' ;
                 app.TIS_RTDStatusLabel.Visible = 'on' ;
                 app.TIS_RefreshButton.Visible = 'on' ;
-                app.TIS_clearComputedResults() ;
-                app.TIS_syncFromRTDTab() ;
+                infoLines = {} ;
+
+                if ~isempty(app.rtd) && app.rtd.sigma2 > 0
+                    N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
+                    app.TIS_NField.Value = N_from_rtd ;
+                    app.setInputFieldValue(app.TIS_tauField, app.rtd.tau) ;
+                    infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
+                        app.rtd.tau, N_from_rtd) ;
+                else
+                    infoLines{end+1} = 'RTD: not loaded' ;
+                end
+
+                % Import RS from Prediction Models tab (if loaded)
+                if ~isempty(app.Pred_RS)
+                    app.TIS_RS = app.Pred_RS ;
+                    app.TIS_RSNameField.Value = app.Pred_RSNameField.Value ;
+                    nR = app.Pred_RS.nReactions ;
+                    nC = app.Pred_RS.nComponents ;
+                    app.TIS_RSStatusLabel.Text = sprintf('Loaded: %d reactions, %d components', nR, nC) ;
+                    app.TIS_RSStatusLabel.FontColor = [0 0.5 0] ;
+                    app.TIS_RSEditButton.Enable = 'on' ;
+                    infoLines{end+1} = sprintf('RS: %s', app.Pred_RSNameField.Value) ;
+                else
+                    infoLines{end+1} = 'RS: not loaded' ;
+                end
+
+                % Import feed Stream from Prediction Models tab
+                if ~isempty(app.Pred_feedStream)
+                    app.TIS_feedStream = app.Pred_feedStream ;
+                    app.TIS_StreamNameField.Value = app.Pred_StreamNameField.Value ;
+                    app.TIS_StreamEditButton.Enable = 'on' ;
+                    C_str = sprintf('%.4g  ', app.Pred_feedStream.concentration) ;
+                    app.TIS_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                    app.TIS_StreamStatusLabel.FontColor = [0 0.5 0] ;
+                    infoLines{end+1} = 'Stream: from Prediction' ;
+                else
+                    infoLines{end+1} = 'Stream: not loaded' ;
+                end
+
+                if any(contains(infoLines, 'not loaded'))
+                    app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
+                else
+                    app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
+                end
+                app.TIS_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
             else
                 app.TIS_NField.Enable = 'on' ;
                 app.TIS_tauField.Enable = 'on' ;
                 app.TIS_RTDStatusLabel.Visible = 'off' ;
                 app.TIS_RefreshButton.Visible = 'off' ;
             end
-        end
-
-        function TIS_clearComputedResults(app)
-            if isfield(app.DisplayCache, 'TIS')
-                app.DisplayCache.TIS = [] ;
-            end
-
-            if ~isempty(app.TIS_AxesEt) && isvalid(app.TIS_AxesEt)
-                cla(app.TIS_AxesEt) ;
-            end
-            if ~isempty(app.TIS_AxesXvsN) && isvalid(app.TIS_AxesXvsN)
-                cla(app.TIS_AxesXvsN) ;
-            end
-            if ~isempty(app.TIS_AxesComparison) && isvalid(app.TIS_AxesComparison)
-                cla(app.TIS_AxesComparison) ;
-            end
-            if ~isempty(app.TIS_C_exitTable) && isvalid(app.TIS_C_exitTable)
-                app.TIS_C_exitTable.Data = cell(0, 9) ;
-            end
-        end
-
-        function TIS_syncFromRTDTab(app)
-            infoLines = {} ;
-
-            if ~isempty(app.rtd) && app.rtd.sigma2 > 0
-                N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
-                app.TIS_NField.Value = N_from_rtd ;
-                app.setInputFieldValue(app.TIS_tauField, app.rtd.tau) ;
-                infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
-                    app.rtd.tau, N_from_rtd) ;
-            else
-                infoLines{end+1} = 'RTD: not loaded' ;
-            end
-
-            if ~isempty(app.RTD_RS)
-                app.TIS_RS = app.RTD_RS ;
-                app.TIS_RSNameField.Value = app.RTD_RSNameField.Value ;
-                nR = app.RTD_RS.nReactions ;
-                nC = app.RTD_RS.nComponents ;
-                app.TIS_RSStatusLabel.Text = sprintf('From Tab 1: %d reactions, %d components', nR, nC) ;
-                app.TIS_RSStatusLabel.FontColor = [0 0.5 0] ;
-                app.TIS_RSEditButton.Enable = 'on' ;
-                infoLines{end+1} = sprintf('RS: %s', app.RTD_RSNameField.Value) ;
-            else
-                app.TIS_RS = [] ;
-                app.TIS_RSNameField.Value = '' ;
-                app.TIS_RSStatusLabel.Text = 'Tab 1 has no Reaction System loaded' ;
-                app.TIS_RSStatusLabel.FontColor = [0.8 0 0] ;
-                app.TIS_RSEditButton.Enable = 'off' ;
-                infoLines{end+1} = 'RS: not loaded' ;
-            end
-
-            if ~isempty(app.RTD_feedStream)
-                app.TIS_feedStream = app.RTD_feedStream ;
-                app.TIS_StreamNameField.Value = app.RTD_StreamNameField.Value ;
-                app.TIS_StreamEditButton.Enable = 'on' ;
-                C_str = sprintf('%.4g  ', app.RTD_feedStream.concentration) ;
-                app.TIS_StreamStatusLabel.Text = sprintf('(from Tab 1, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
-                app.TIS_StreamStatusLabel.FontColor = [0 0.5 0] ;
-                infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
-            else
-                app.TIS_feedStream = [] ;
-                app.TIS_StreamNameField.Value = '' ;
-                app.TIS_StreamStatusLabel.Text = 'Tab 1 has no feed stream loaded' ;
-                app.TIS_StreamStatusLabel.FontColor = [0.8 0 0] ;
-                app.TIS_StreamEditButton.Enable = 'off' ;
-                infoLines{end+1} = 'Stream: not loaded' ;
-            end
-
-            if any(contains(infoLines, 'not loaded'))
-                app.TIS_RTDStatusLabel.FontColor = [0.8 0 0] ;
-            else
-                app.TIS_RTDStatusLabel.FontColor = [0 0.5 0] ;
-            end
-            app.TIS_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
         end
 
         function TIS_loadRS(app)
@@ -4656,7 +4791,7 @@ classdef NonIdealReactorApp < handle
                 lbl, app.Disp_InputMethodDropdown) ;
             app.Disp_RefreshButton = uibutton(methodSubGridD, 'push', ...
                 'Text', char(8635), 'FontSize', 12, ...
-                'Tooltip', 'Refresh imported data from Tab 1', ...
+                'Tooltip', 'Refresh imported data from Tab 1 and Tab 2', ...
                 'Visible', 'off', ...
                 'ButtonPushedFcn', @(~,~) app.Disp_inputMethodChanged()) ;
 
@@ -4949,10 +5084,6 @@ classdef NonIdealReactorApp < handle
                 app.Disp_tauField.Enable = 'off' ;
                 app.Disp_RTDStatusLabel.Visible = 'on' ;
                 app.Disp_RefreshButton.Visible = 'on' ;
-                app.Disp_clearComputedResults() ;
-                app.Disp_syncFromRTDTab() ;
-                return
-
                 infoLines = {} ;
 
                 % Import RTD data (tau, sigma2_theta -> Bo)
@@ -5023,100 +5154,6 @@ classdef NonIdealReactorApp < handle
                 app.Disp_RTDStatusLabel.Visible = 'off' ;
                 app.Disp_RefreshButton.Visible = 'off' ;
             end
-        end
-
-        function Disp_clearComputedResults(app)
-            app.disp_reactor = [] ;
-            if isfield(app.DisplayCache, 'Dispersion')
-                app.DisplayCache.Dispersion = [] ;
-            end
-
-            if ~isempty(app.Disp_AxesEt) && isvalid(app.Disp_AxesEt)
-                cla(app.Disp_AxesEt) ;
-            end
-            if ~isempty(app.Disp_AxesXvsBo) && isvalid(app.Disp_AxesXvsBo)
-                cla(app.Disp_AxesXvsBo) ;
-            end
-            if ~isempty(app.Disp_AxesComparison) && isvalid(app.Disp_AxesComparison)
-                cla(app.Disp_AxesComparison) ;
-            end
-            if ~isempty(app.Disp_C_exitTable) && isvalid(app.Disp_C_exitTable)
-                app.Disp_C_exitTable.Data = cell(0, 9) ;
-            end
-        end
-
-        function Disp_syncFromRTDTab(app)
-            infoLines = {} ;
-
-            if ~isempty(app.rtd) && app.rtd.sigma2 > 0
-                app.setInputFieldValue(app.Disp_tauField, app.rtd.tau) ;
-                sigma2_theta = app.rtd.sigma2 / app.rtd.tau^2 ;
-                bcType = app.Disp_BCDropdown.Value ;
-                Bo_calc = app.compute_Bo_from_variance(sigma2_theta, bcType) ;
-
-                if isnan(Bo_calc) || isinf(Bo_calc) || Bo_calc < 1e-6 || Bo_calc > 100
-                    msg = sprintf(['Calculated Bo = %g is outside the valid range [1e-6, 100].\n\n' ...
-                        'Possible causes:\n' ...
-                        '  - Near-ideal RTD (PFR-like): variance is too small, leading to Bo ~= 0.\n' ...
-                        '  - Invalid RTD data: sigma^2 or tau contain NaN/Inf values.\n' ...
-                        '  - Very large dispersion: variance is too high, producing Bo > 100.\n\n' ...
-                        'Current RTD values: sigma^2 = %.4g, tau = %.4g'], ...
-                        Bo_calc, app.rtd.sigma2, app.rtd.tau) ;
-                    uialert(app.UIFigure, msg, 'Bo Out of Range', 'Icon', 'warning') ;
-                    app.Disp_PeLabel.Text = '--' ;
-                    infoLines{end+1} = 'RTD: invalid imported Bo' ;
-                else
-                    app.Disp_BoField.Value = Bo_calc ;
-                    app.Disp_updatePe() ;
-                    infoLines{end+1} = sprintf('RTD: tau=%.2f, Bo=%.4g', ...
-                        app.rtd.tau, Bo_calc) ;
-                end
-            else
-                app.Disp_PeLabel.Text = '--' ;
-                infoLines{end+1} = 'RTD: not loaded' ;
-            end
-
-            if ~isempty(app.RTD_RS)
-                app.Disp_RS = app.RTD_RS ;
-                app.Disp_RSNameField.Value = app.RTD_RSNameField.Value ;
-                nR = app.Disp_RS.nReactions ;
-                nC = app.Disp_RS.nComponents ;
-                app.Disp_RSStatusLabel.Text = sprintf('From Tab 1: %d reactions, %d components', nR, nC) ;
-                app.Disp_RSStatusLabel.FontColor = [0 0.5 0] ;
-                app.Disp_RSEditButton.Enable = 'on' ;
-                infoLines{end+1} = sprintf('RS: %s', app.RTD_RSNameField.Value) ;
-            else
-                app.Disp_RS = [] ;
-                app.Disp_RSNameField.Value = '' ;
-                app.Disp_RSStatusLabel.Text = 'Tab 1 has no Reaction System loaded' ;
-                app.Disp_RSStatusLabel.FontColor = [0.8 0 0] ;
-                app.Disp_RSEditButton.Enable = 'off' ;
-                infoLines{end+1} = 'RS: not loaded' ;
-            end
-
-            if ~isempty(app.RTD_feedStream)
-                app.Disp_feedStream = app.RTD_feedStream ;
-                app.Disp_StreamNameField.Value = app.RTD_StreamNameField.Value ;
-                app.Disp_StreamEditButton.Enable = 'on' ;
-                C_str = sprintf('%.4g  ', app.RTD_feedStream.concentration) ;
-                app.Disp_StreamStatusLabel.Text = sprintf('(from Tab 1, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
-                app.Disp_StreamStatusLabel.FontColor = [0 0.5 0] ;
-                infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
-            else
-                app.Disp_feedStream = [] ;
-                app.Disp_StreamNameField.Value = '' ;
-                app.Disp_StreamStatusLabel.Text = 'Tab 1 has no feed stream loaded' ;
-                app.Disp_StreamStatusLabel.FontColor = [0.8 0 0] ;
-                app.Disp_StreamEditButton.Enable = 'off' ;
-                infoLines{end+1} = 'Stream: not loaded' ;
-            end
-
-            if any(contains(infoLines, {'not loaded', 'invalid'}))
-                app.Disp_RTDStatusLabel.FontColor = [0.8 0 0] ;
-            else
-                app.Disp_RTDStatusLabel.FontColor = [0 0.5 0] ;
-            end
-            app.Disp_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
         end
 
         function Disp_compute(app)
@@ -5377,7 +5414,9 @@ classdef NonIdealReactorApp < handle
             D.fit.family = app.DesignUI.Fit.FamilyDropdown.Value ;
             D.fit.boundary = app.DesignUI.Fit.BoundaryDropdown.Value ;
             D.fit.referenceTau = app.captureFieldWithUnit(app.DesignUI.Fit.ReferenceTauField) ;
+            D.fit.totalVolume = app.captureFieldWithUnit(app.DesignUI.Fit.TotalVolumeField) ;
             D.fit.displayTimeUnit = app.getControlValue(app.getDisplayControl('DesignFit', 'time'), 's') ;
+            D.fit.displayVolumeUnit = app.getControlValue(app.getDisplayControl('DesignFit', 'volume'), 'm^3') ;
             D.fit.searchSelection = app.captureListboxSelection(app.DesignUI.Fit.FamilySearchList) ;
             D.fit.result = app.DesignState.fitResult ;
 
@@ -5390,6 +5429,8 @@ classdef NonIdealReactorApp < handle
             D.reaction.keyComponentIndex = app.DesignUI.Reactive.KeyComponentDropdown.Value ;
             D.reaction.desiredProductIndex = app.DesignUI.Reactive.DesiredProductDropdown.Value ;
             D.reaction.byproductIndex = app.DesignUI.Reactive.ByproductDropdown.Value ;
+            D.reaction.displayConcentrationUnit = app.getControlValue(app.getDisplayControl('DesignReactive', 'concentration'), 'mol/m^3') ;
+            D.reaction.chartMetric = app.getControlValue(app.getDisplayControl('DesignReactive', 'metric'), 'Conversion') ;
             D.reaction.result = app.getStructField(app.DesignState.lastSolutions, 'reactiveResult', []) ;
 
             D.optimization = struct() ;
@@ -5399,6 +5440,8 @@ classdef NonIdealReactorApp < handle
             D.optimization.objective = app.DesignUI.Optimization.ObjectiveDropdown.Value ;
             D.optimization.decisionTable = app.DesignUI.Optimization.DecisionTable.Data ;
             D.optimization.constraintTable = app.DesignUI.Optimization.ConstraintTable.Data ;
+            D.optimization.displayTimeUnit = app.getControlValue(app.getDisplayControl('DesignOptimization', 'time'), 's') ;
+            D.optimization.displayConcentrationUnit = app.getControlValue(app.getDisplayControl('DesignOptimization', 'concentration'), 'mol/m^3') ;
             D.optimization.result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
         end
 
@@ -5409,15 +5452,19 @@ classdef NonIdealReactorApp < handle
 
             fit = app.getStructField(snapshot, 'fit', struct()) ;
             app.setDropdownValueIfValid(app.DesignUI.Fit.SourceDropdown, app.getStructField(fit, 'source', app.DesignUI.Fit.SourceDropdown.Value)) ;
-            app.setDropdownValueIfValid(app.DesignUI.Fit.FamilyDropdown, app.getStructField(fit, 'family', app.DesignUI.Fit.FamilyDropdown.Value)) ;
+            fitFamily = app.DW_mapLegacyFitFamily(app.getStructField(fit, 'family', app.DesignUI.Fit.FamilyDropdown.Value)) ;
+            app.setDropdownValueIfValid(app.DesignUI.Fit.FamilyDropdown, fitFamily) ;
             app.setDropdownValueIfValid(app.DesignUI.Fit.BoundaryDropdown, app.getStructField(fit, 'boundary', app.DesignUI.Fit.BoundaryDropdown.Value)) ;
             refTauState = app.getStructField(fit, 'referenceTau', struct()) ;
             app.DW_beginReferenceTauProgrammaticUpdate() ;
             app.applyFieldWithUnit(app.DesignUI.Fit.ReferenceTauField, refTauState) ;
             app.DW_endReferenceTauProgrammaticUpdate(isstruct(refTauState) && isfield(refTauState, 'value')) ;
+            app.applyFieldWithUnit(app.DesignUI.Fit.TotalVolumeField, app.getStructField(fit, 'totalVolume', struct())) ;
             fitTimeControl = app.getDisplayControl('DesignFit', 'time') ;
             app.setDropdownValueIfValid(fitTimeControl, app.getStructField(fit, 'displayTimeUnit', app.getControlValue(fitTimeControl, 's'))) ;
-            app.DesignState.fitResult = app.getStructField(fit, 'result', []) ;
+            fitVolumeControl = app.getDisplayControl('DesignFit', 'volume') ;
+            app.setDropdownValueIfValid(fitVolumeControl, app.getStructField(fit, 'displayVolumeUnit', app.getControlValue(fitVolumeControl, 'm^3'))) ;
+            app.DesignState.fitResult = app.DW_normalizeFitResultFamilies(app.getStructField(fit, 'result', [])) ;
             app.DesignUI.Fit.FamilySearchList.UserData = struct('pendingSelection', ...
                 app.getStructField(fit, 'searchSelection', [])) ;
 
@@ -5430,6 +5477,10 @@ classdef NonIdealReactorApp < handle
             app.DesignState.reactionSpec.keyComponentIndex = app.getStructField(reaction, 'keyComponentIndex', 1) ;
             app.DesignState.reactionSpec.desiredProductIndex = app.getStructField(reaction, 'desiredProductIndex', 2) ;
             app.DesignState.reactionSpec.byproductIndex = app.getStructField(reaction, 'byproductIndex', 3) ;
+            reactiveConcControl = app.getDisplayControl('DesignReactive', 'concentration') ;
+            app.setDropdownValueIfValid(reactiveConcControl, app.getStructField(reaction, 'displayConcentrationUnit', app.getControlValue(reactiveConcControl, 'mol/m^3'))) ;
+            reactiveMetricControl = app.getDisplayControl('DesignReactive', 'metric') ;
+            app.setDropdownValueIfValid(reactiveMetricControl, app.getStructField(reaction, 'chartMetric', app.getControlValue(reactiveMetricControl, 'Conversion'))) ;
             app.DesignState.lastSolutions.reactiveResult = app.getStructField(reaction, 'result', []) ;
 
             opt = app.getStructField(snapshot, 'optimization', struct()) ;
@@ -5439,6 +5490,10 @@ classdef NonIdealReactorApp < handle
             app.setDropdownValueIfValid(app.DesignUI.Optimization.ObjectiveDropdown, app.getStructField(opt, 'objective', app.DesignUI.Optimization.ObjectiveDropdown.Value)) ;
             app.DesignUI.Optimization.DecisionTable.Data = app.getStructField(opt, 'decisionTable', app.DesignUI.Optimization.DecisionTable.Data) ;
             app.DesignUI.Optimization.ConstraintTable.Data = app.getStructField(opt, 'constraintTable', app.DesignUI.Optimization.ConstraintTable.Data) ;
+            optTimeControl = app.getDisplayControl('DesignOptimization', 'time') ;
+            app.setDropdownValueIfValid(optTimeControl, app.getStructField(opt, 'displayTimeUnit', app.getControlValue(optTimeControl, 's'))) ;
+            optConcControl = app.getDisplayControl('DesignOptimization', 'concentration') ;
+            app.setDropdownValueIfValid(optConcControl, app.getStructField(opt, 'displayConcentrationUnit', app.getControlValue(optConcControl, 'mol/m^3'))) ;
             app.DesignState.lastSolutions.optimizationResult = app.getStructField(opt, 'result', []) ;
 
             app.DW_refreshChemicalSelectors() ;
@@ -5450,8 +5505,9 @@ classdef NonIdealReactorApp < handle
             if isempty(legacy) || ~isstruct(legacy)
                 return
             end
-            snapshot.fit = struct('source', 'Tab 1 RTD', 'family', 'CSTR + Dead Volume', ...
+            snapshot.fit = struct('source', 'Tab 1 RTD', 'family', 'CSTR (dead volume)', ...
                 'boundary', 'closed-closed', 'referenceTau', struct(), ...
+                'totalVolume', struct(), 'displayTimeUnit', 's', 'displayVolumeUnit', 'm^3', ...
                 'searchSelection', [], 'result', []) ;
         end
 
@@ -5462,8 +5518,8 @@ classdef NonIdealReactorApp < handle
 
             left = uipanel(grid, 'Title', 'Fit Setup') ;
             left.Layout.Column = 1 ;
-            leftGrid = uigridlayout(left, [6 2]) ;
-            leftGrid.RowHeight = {'fit','fit','fit','fit',34,'1x'} ;
+            leftGrid = uigridlayout(left, [9 2]) ;
+            leftGrid.RowHeight = {'fit','fit','fit','fit','fit',34,34,'fit','1x'} ;
             leftGrid.ColumnWidth = {120, '1x'} ;
             app.DesignUI.Fit.SetupGrid = leftGrid ;
 
@@ -5476,7 +5532,9 @@ classdef NonIdealReactorApp < handle
             lbl = uilabel(leftGrid, 'Text', 'Family:') ;
             app.DesignUI.Fit.FamilyLabel = lbl ;
             app.DesignUI.Fit.FamilyDropdown = uidropdown(leftGrid, ...
-                'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass', 'Search best family'}) ;
+                'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR (dead volume)', 'PFR (dead volume)', ...
+                'PFR + CSTR (series, dead volume)', 'PFR + CSTR (parallel, dead volume)', ...
+                'CSTR + Bypass (dead volume)'}) ;
             app.DesignUI.Fit.FamilyDropdown.Layout.Row = 2 ; app.DesignUI.Fit.FamilyDropdown.Layout.Column = 2 ;
             app.setTooltip('Equivalent hydrodynamic family used to approximate the RTD from Tab 1.', ...
                 lbl, app.DesignUI.Fit.FamilyDropdown) ;
@@ -5501,46 +5559,63 @@ classdef NonIdealReactorApp < handle
             if isfield(refTauData, 'unitDropdown') && ~isempty(refTauData.unitDropdown) && isvalid(refTauData.unitDropdown)
                 refTauData.unitDropdown.ValueChangedFcn = @(~,~) app.DW_markReferenceTauEdited() ;
             end
-            app.setTooltip(['Nominal total space time V/Q used when the fit must distinguish total reactor volume from active volume. ' ...
-                'It is required for dead-volume families.'], lbl, app.DesignUI.Fit.ReferenceTauField) ;
+            app.setTooltip(['Nominal total space time V/Q used when total reactor volume is not available. ' ...
+                'For dead-volume families it acts as a fallback if Total volume and Qv from Tab 1 are not available.'], ...
+                lbl, app.DesignUI.Fit.ReferenceTauField) ;
             app.DW_syncDefaultReferenceTau() ;
+
+            lbl = uilabel(leftGrid, 'Text', 'Total volume:') ;
+            app.DesignUI.Fit.TotalVolumeLabel = lbl ;
+            [app.DesignUI.Fit.TotalVolumeField, app.DesignUI.Fit.TotalVolumeGrid] = app.createNumericWithConv(leftGrid, 5, 2, 1.0, 'Volume', 'Limits', [0 Inf]) ;
+            app.DesignUI.Fit.TotalVolumeField.Value = '' ;
+            app.setTooltip(['Optional total reactor volume. When Qv is available in Tab 1, the app uses V_total / Qv to derive tau_total, ' ...
+                'the active fraction and the dead volume.'], lbl, app.DesignUI.Fit.TotalVolumeField) ;
+
+            app.DesignUI.Fit.SearchButton = uibutton(leftGrid, 'push', 'Text', 'Search best family', ...
+                'ButtonPushedFcn', @(~,~) app.DW_runFitSearch()) ;
+            app.DesignUI.Fit.SearchButton.Layout.Row = 6 ; app.DesignUI.Fit.SearchButton.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.SearchButton.Tooltip = 'Fit every supported family, compare RMSE and score, and overlay the selected fitted RTDs.' ;
 
             app.DesignUI.Fit.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Diagnosis & Fit', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runFit()) ;
-            app.DesignUI.Fit.RunButton.Layout.Row = 5 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.RunButton.Layout.Row = 7 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
             app.DesignUI.Fit.RunButton.Tooltip = 'Run the heuristic diagnosis and fit the selected equivalent hydrodynamic model.' ;
 
+            fitUnitsGrid = uigridlayout(leftGrid, [2 1], ...
+                'ColumnWidth', {'fit'}, ...
+                'RowHeight', {'fit', 'fit'}, ...
+                'Padding', [0 0 0 0], ...
+                'RowSpacing', 4, ...
+                'ColumnSpacing', 0) ;
+            fitUnitsGrid.Layout.Row = 8 ;
+            fitUnitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.DesignFit.time = app.createDisplayUnitControl( ...
+                fitUnitsGrid, 1, 1, 'Display time:', 'Time', 's', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
+            app.DisplayControls.DesignFit.volume = app.createDisplayUnitControl( ...
+                fitUnitsGrid, 2, 1, 'Volume:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
+
             app.DesignUI.Fit.FamilySearchList = app.createDisplayMultiSelectControl( ...
-                leftGrid, 6, [1 2], 'Families:', @(~,~) app.DW_handleFitSearchSelection()) ;
+                leftGrid, 9, [1 2], 'Families:', @(~,~) app.DW_handleFitSearchSelection(), 176) ;
             app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
             app.DesignUI.Fit.FamilySearchList.Tooltip = 'Select which fitted families are displayed on the comparison plot.' ;
             app.DesignUI.Fit.FamilySearchList.UserData = struct('familyNames', {{}}, 'pendingSelection', []) ;
 
             right = uipanel(grid, 'Title', 'Fit Results') ;
             right.Layout.Column = 2 ;
-            rightGrid = uigridlayout(right, [4 1]) ;
-            rightGrid.RowHeight = {'fit', 'fit', 170, '1x'} ;
+            rightGrid = uigridlayout(right, [3 1]) ;
+            rightGrid.RowHeight = {'fit', 250, '1x'} ;
 
             app.DesignUI.Fit.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting RTD fit.', 'WordWrap', 'on') ;
             app.DesignUI.Fit.SummaryLabel.Layout.Row = 1 ;
             app.DesignUI.Fit.SummaryLabel.Tooltip = ['Fit summary. RMSE is the root mean square error between the input and fitted E(t). ' ...
                 'Score is a dimensionless similarity indicator based on curve SSE.'] ;
 
-            fitUnitsGrid = uigridlayout(rightGrid, [1 1], ...
-                'ColumnWidth', {'fit'}, ...
-                'Padding', [0 0 0 0], ...
-                'RowSpacing', 0, ...
-                'ColumnSpacing', 0) ;
-            fitUnitsGrid.Layout.Row = 2 ;
-            app.DisplayControls.DesignFit.time = app.createDisplayUnitControl( ...
-                fitUnitsGrid, 1, 1, 'Display time:', 'Time', 's', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
-
             app.DesignUI.Fit.ParameterTable = uitable(rightGrid, 'ColumnName', {'Parameter', 'Value'}, 'RowName', {}) ;
-            app.DesignUI.Fit.ParameterTable.Layout.Row = 3 ;
+            app.DesignUI.Fit.ParameterTable.Layout.Row = 2 ;
             app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
                 'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
             app.DesignUI.Fit.CompareAxes = uiaxes(rightGrid) ; title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t)') ;
-            app.DesignUI.Fit.CompareAxes.Layout.Row = 4 ;
+            app.DesignUI.Fit.CompareAxes.Layout.Row = 3 ;
             app.DW_applyFitAxesLabels('Input vs fitted E(t)') ;
             app.DesignUI.Fit.FamilyDropdown.ValueChangedFcn = @(~,~) app.DW_refreshFitContext() ;
             app.DW_refreshFitContext() ;
@@ -5553,8 +5628,8 @@ classdef NonIdealReactorApp < handle
 
             left = uipanel(grid, 'Title', 'Reaction Inputs') ;
             left.Layout.Column = 1 ;
-            leftGrid = uigridlayout(left, [10 2]) ;
-            leftGrid.RowHeight = {'fit','fit','fit','fit','fit','fit','fit','fit',34,'1x'} ;
+            leftGrid = uigridlayout(left, [12 2]) ;
+            leftGrid.RowHeight = {'fit','fit','fit','fit','fit','fit','fit','fit',34,'fit','fit','1x'} ;
             leftGrid.ColumnWidth = {130, '1x'} ;
 
             lbl = uilabel(leftGrid, 'Text', 'RTD source:') ;
@@ -5593,13 +5668,13 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.DesiredProductLabel = lbl ;
             app.DesignUI.Reactive.DesiredProductDropdown = uidropdown(leftGrid, 'Items', {'2'}, 'ItemsData', 2, 'Value', 2) ;
             app.DesignUI.Reactive.DesiredProductDropdown.Layout.Row = 7 ; app.DesignUI.Reactive.DesiredProductDropdown.Layout.Column = 2 ;
-            app.setTooltip('Product used to compute selectivity and yield in the summary tables.', ...
+            app.setTooltip('Product used to compute selectivity as desired product over reacted key reactant, and yield as desired product over feed key reactant.', ...
                 lbl, app.DesignUI.Reactive.DesiredProductDropdown) ;
             lbl = uilabel(leftGrid, 'Text', 'Byproduct:') ;
             app.DesignUI.Reactive.ByproductLabel = lbl ;
             app.DesignUI.Reactive.ByproductDropdown = uidropdown(leftGrid, 'Items', {'3'}, 'ItemsData', 3, 'Value', 3) ;
             app.DesignUI.Reactive.ByproductDropdown.Layout.Row = 8 ; app.DesignUI.Reactive.ByproductDropdown.Layout.Column = 2 ;
-            app.setTooltip('Competing product used when selectivity must distinguish desired product from side production.', ...
+            app.setTooltip('Optional side-product reference kept for compatibility. Current selectivity and yield use the desired product and the key-reactant consumption.', ...
                 lbl, app.DesignUI.Reactive.ByproductDropdown) ;
 
             app.DesignUI.Reactive.ComputeButton = uibutton(leftGrid, 'push', 'Text', 'Compute Reactive Performance', ...
@@ -5607,9 +5682,21 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.ComputeButton.Layout.Row = 9 ; app.DesignUI.Reactive.ComputeButton.Layout.Column = [1 2] ;
             app.DesignUI.Reactive.ComputeButton.Tooltip = 'Compute conversion, selectivity, yield and outlet concentrations for the reactive reference models.' ;
 
-            app.DesignUI.Reactive.StatusArea = uitextarea(leftGrid, 'Editable', 'off', 'Value', {'Load a ReactionSys and a liquid Feed Stream.'}) ;
-            app.DesignUI.Reactive.StatusArea.Layout.Row = 10 ; app.DesignUI.Reactive.StatusArea.Layout.Column = [1 2] ;
-            app.DesignUI.Reactive.StatusArea.Tooltip = 'Status area for loaded chemistry, feed stream and the latest reactive calculation summary.' ;
+            lbl = uilabel(leftGrid, 'Text', 'Display units:') ;
+            lbl.Layout.Row = 10 ; lbl.Layout.Column = [1 2] ;
+            unitsGrid = uigridlayout(leftGrid, [2 1], ...
+                'RowHeight', {'fit', 'fit'}, ...
+                'Padding', [0 0 0 0], ...
+                'RowSpacing', 6, ...
+                'ColumnSpacing', 0) ;
+            unitsGrid.Layout.Row = 11 ;
+            unitsGrid.Layout.Column = [1 2] ;
+            app.DisplayControls.DesignReactive.concentration = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('DesignReactive'), 92) ;
+            app.DisplayControls.DesignReactive.metric = app.createDisplayChoiceControl( ...
+                unitsGrid, 2, 1, 'Chart metric:', {'Conversion', 'Selectivity', 'Yield'}, ...
+                'Conversion', @(~,~) app.refreshDisplayUnits('DesignReactive'), 110) ;
+            app.DisplayControls.DesignReactive.metric.Tooltip = 'Select which reactive metric is compared in the bar chart: conversion, selectivity or yield.' ;
 
             right = uipanel(grid, 'Title', 'Reactive Results') ;
             right.Layout.Column = 2 ;
@@ -5618,11 +5705,11 @@ classdef NonIdealReactorApp < handle
 
             app.DesignUI.Reactive.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting reactive calculation.', 'WordWrap', 'on') ;
             app.DesignUI.Reactive.SummaryLabel.Layout.Row = 1 ;
-            app.DesignUI.Reactive.SummaryLabel.Tooltip = 'Short summary of conversion X, selectivity and yield for the current reactive calculation.' ;
+            app.DesignUI.Reactive.SummaryLabel.Tooltip = 'Short summary of conversion X, selectivity = desired/reacted key reactant, and yield = desired/feed key reactant.' ;
             app.DesignUI.Reactive.ResultTable = uitable(rightGrid, 'ColumnName', {'Model', 'X', 'Selectivity', 'Yield'}, 'RowName', {}) ;
             app.DesignUI.Reactive.ResultTable.Layout.Row = 2 ;
             app.DesignUI.Reactive.ResultTable.Tooltip = app.buildTooltipFromColumns( ...
-                'Reactive-performance summary by model. X denotes conversion of the key reactant.', ...
+                'Reactive-performance summary by model. X denotes conversion of the key reactant, selectivity = desired/reacted key reactant, and yield = desired/feed key reactant.', ...
                 {'Model', 'X', 'Selectivity', 'Yield'}) ;
             app.DesignUI.Reactive.CoutTable = uitable(rightGrid, 'ColumnName', {'Component', 'C_in', 'Seg', 'MM', 'CSTR', 'PFR'}, 'RowName', {}) ;
             app.DesignUI.Reactive.CoutTable.Layout.Row = 3 ;
@@ -5641,8 +5728,8 @@ classdef NonIdealReactorApp < handle
 
             left = uipanel(grid, 'Title', 'Optimization Setup') ;
             left.Layout.Column = 1 ;
-            leftGrid = uigridlayout(left, [5 1]) ;
-            leftGrid.RowHeight = {'fit', 190, 150, 34, '1x'} ;
+            leftGrid = uigridlayout(left, [6 1]) ;
+            leftGrid.RowHeight = {'fit', 190, 150, 34, 'fit', '1x'} ;
 
             headerGrid = uigridlayout(leftGrid, [4 2]) ;
             headerGrid.RowHeight = {'fit', 'fit', 'fit', 'fit'} ;
@@ -5705,6 +5792,16 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Optimization.RunButton.Layout.Row = 4 ;
             app.DesignUI.Optimization.RunButton.Tooltip = 'Run the constrained optimization using the active decision variables and objective.' ;
 
+            unitsGrid = uigridlayout(leftGrid, [2 1], ...
+                'Padding', [0 0 0 0], ...
+                'RowSpacing', 6, ...
+                'ColumnSpacing', 0) ;
+            unitsGrid.Layout.Row = 5 ;
+            app.DisplayControls.DesignOptimization.time = app.createDisplayUnitControl( ...
+                unitsGrid, 1, 1, 'Display time:', 'Time', 's', @(~,~) app.refreshDisplayUnits('DesignOptimization'), 92) ;
+            app.DisplayControls.DesignOptimization.concentration = app.createDisplayUnitControl( ...
+                unitsGrid, 2, 1, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('DesignOptimization'), 92) ;
+
             right = uipanel(grid, 'Title', 'Optimization Results') ;
             right.Layout.Column = 2 ;
             rightGrid = uigridlayout(right, [4 1]) ;
@@ -5740,10 +5837,33 @@ classdef NonIdealReactorApp < handle
                     'rtd', rtdObj, ...
                     'family', app.DesignUI.Fit.FamilyDropdown.Value, ...
                     'boundaryType', app.DesignUI.Fit.BoundaryDropdown.Value, ...
-                    'referenceTau', app.readInputField(app.DesignUI.Fit.ReferenceTauField)) ;
+                    'referenceTau', app.readOptionalInputField(app.DesignUI.Fit.ReferenceTauField), ...
+                    'totalVolume', app.readOptionalInputField(app.DesignUI.Fit.TotalVolumeField), ...
+                    'flowRate', app.DW_getFitFlowRate()) ;
                 app.DesignState.fitResult = DesignWorkspaceHelper.solveHydroFit(spec) ;
+                app.DW_refreshFitContext() ;
                 app.DW_refreshFit() ;
                 app.updateStatus('Diagnosis and fit completed') ;
+            catch ME
+                app.updateStatus('Error') ;
+                app.showDetailedError(ME, 'Diagnosis & Fit Error') ;
+            end
+        end
+
+        function DW_runFitSearch(app)
+            try
+                app.updateStatus('Searching best fit family...') ;
+                rtdObj = app.DW_resolveRTDSource(app.DesignUI.Fit.SourceDropdown.Value) ;
+                spec = struct( ...
+                    'rtd', rtdObj, ...
+                    'boundaryType', app.DesignUI.Fit.BoundaryDropdown.Value, ...
+                    'referenceTau', app.readOptionalInputField(app.DesignUI.Fit.ReferenceTauField), ...
+                    'totalVolume', app.readOptionalInputField(app.DesignUI.Fit.TotalVolumeField), ...
+                    'flowRate', app.DW_getFitFlowRate()) ;
+                app.DesignState.fitResult = DesignWorkspaceHelper.solveHydroFitSearch(spec) ;
+                app.DW_refreshFitContext() ;
+                app.DW_refreshFit() ;
+                app.updateStatus('Best-family search completed') ;
             catch ME
                 app.updateStatus('Error') ;
                 app.showDetailedError(ME, 'Diagnosis & Fit Error') ;
@@ -5891,12 +6011,75 @@ classdef NonIdealReactorApp < handle
             tf = strcmp(char(string(family)), 'Axial Dispersion') ;
         end
 
-        function tf = DW_familyNeedsReferenceTau(~, family)
+        function tf = DW_familySupportsDeadVolume(~, family)
             family = char(string(family)) ;
-            tf = any(strcmp(family, {'CSTR + Dead Volume', 'CSTR + Dead Volume + Bypass'})) ;
+            tf = any(strcmp(family, {'CSTR (dead volume)', 'PFR (dead volume)', ...
+                'PFR + CSTR (series, dead volume)', 'PFR + CSTR (parallel, dead volume)', ...
+                'CSTR + Bypass (dead volume)'})) ;
         end
 
-        function DW_setVisiblePair(app, labelHandle, controlHandle, isVisible)
+        function tf = DW_familyNeedsReferenceTau(app, family)
+            tf = app.DW_familySupportsDeadVolume(family) ;
+        end
+
+        function family = DW_mapLegacyFitFamily(~, family)
+            family = char(string(family)) ;
+            switch family
+                case 'Search best family'
+                    family = 'Tanks-in-Series' ;
+                case 'PFR + CSTR'
+                    family = 'PFR + CSTR (series, dead volume)' ;
+                case 'CSTR + Dead Volume'
+                    family = 'CSTR (dead volume)' ;
+                case 'CSTR + Bypass'
+                    family = 'CSTR + Bypass (dead volume)' ;
+                case 'CSTR + Dead Volume + Bypass'
+                    family = 'CSTR + Bypass (dead volume)' ;
+            end
+        end
+
+        function result = DW_normalizeFitResultFamilies(app, result)
+            if isempty(result) || ~isstruct(result)
+                return
+            end
+            if isfield(result, 'family')
+                result.family = app.DW_mapLegacyFitFamily(result.family) ;
+            end
+            if isfield(result, 'searchBestFamily')
+                result.searchBestFamily = app.DW_mapLegacyFitFamily(result.searchBestFamily) ;
+            end
+            if isfield(result, 'searchResults') && isstruct(result.searchResults)
+                for i = 1:numel(result.searchResults)
+                    if isfield(result.searchResults(i), 'family')
+                        result.searchResults(i).family = app.DW_mapLegacyFitFamily(result.searchResults(i).family) ;
+                    end
+                end
+            end
+            if isfield(result, 'searchEntries') && isstruct(result.searchEntries)
+                for i = 1:numel(result.searchEntries)
+                    if isfield(result.searchEntries(i), 'family')
+                        result.searchEntries(i).family = app.DW_mapLegacyFitFamily(result.searchEntries(i).family) ;
+                    end
+                    if isfield(result.searchEntries(i), 'displayName')
+                        result.searchEntries(i).displayName = app.DW_mapLegacyFitFamily(result.searchEntries(i).displayName) ;
+                    end
+                end
+            end
+        end
+
+        function flowRate = DW_getFitFlowRate(app)
+            flowRate = [] ;
+            if isempty(app.RTD_QvField) || ~isvalid(app.RTD_QvField)
+                return
+            end
+            try
+                flowRate = app.readInputField(app.RTD_QvField) ;
+            catch
+                flowRate = [] ;
+            end
+        end
+
+        function DW_setVisiblePair(~, labelHandle, controlHandle, isVisible)
             state = 'off' ;
             if isVisible
                 state = 'on' ;
@@ -5925,27 +6108,41 @@ classdef NonIdealReactorApp < handle
         function DW_refreshFitContext(app)
             app.DW_syncDefaultReferenceTau() ;
             family = app.DesignUI.Fit.FamilyDropdown.Value ;
-            isSearch = strcmp(char(string(family)), 'Search best family') ;
             showBoundary = app.DW_familyNeedsBoundary(family) ;
+            showDeadVolumeControls = app.DW_familySupportsDeadVolume(family) ;
             showReferenceTau = app.DW_familyNeedsReferenceTau(family) ;
+            showSearchSelector = ~isempty(app.DesignState.fitResult) && strcmp(app.getStructField(app.DesignState.fitResult, 'mode', 'single'), 'search') ;
             app.DW_setVisiblePair(app.DesignUI.Fit.BoundaryLabel, app.DesignUI.Fit.BoundaryDropdown, showBoundary) ;
             app.DW_setVisiblePair(app.DesignUI.Fit.ReferenceTauLabel, app.DesignUI.Fit.ReferenceTauField, showReferenceTau) ;
             if isfield(app.DesignUI.Fit, 'ReferenceTauGrid') && ~isempty(app.DesignUI.Fit.ReferenceTauGrid) && isvalid(app.DesignUI.Fit.ReferenceTauGrid)
                 app.DesignUI.Fit.ReferenceTauGrid.Visible = app.ternary(showReferenceTau, 'on', 'off') ;
             end
+            app.DW_setVisiblePair(app.DesignUI.Fit.TotalVolumeLabel, app.DesignUI.Fit.TotalVolumeField, showDeadVolumeControls) ;
+            if isfield(app.DesignUI.Fit, 'TotalVolumeGrid') && ~isempty(app.DesignUI.Fit.TotalVolumeGrid) && isvalid(app.DesignUI.Fit.TotalVolumeGrid)
+                app.DesignUI.Fit.TotalVolumeGrid.Visible = app.ternary(showDeadVolumeControls, 'on', 'off') ;
+            end
             if isfield(app.DesignUI.Fit, 'SetupGrid') && ~isempty(app.DesignUI.Fit.SetupGrid) && isvalid(app.DesignUI.Fit.SetupGrid)
-                rowHeights = {'fit','fit','fit','fit',34,0} ;
-                if isSearch
-                    rowHeights{6} = '1x' ;
+                rowHeights = {'fit','fit',0,0,0,34,34,'fit',0} ;
+                if showBoundary
+                    rowHeights{3} = 'fit' ;
+                end
+                if showReferenceTau
+                    rowHeights{4} = 'fit' ;
+                end
+                if showDeadVolumeControls
+                    rowHeights{5} = 'fit' ;
+                end
+                if showSearchSelector
+                    rowHeights{9} = '1x' ;
                 end
                 app.DesignUI.Fit.SetupGrid.RowHeight = rowHeights ;
             end
             if isfield(app.DesignUI.Fit, 'FamilySearchList') && ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
-                app.DesignUI.Fit.FamilySearchList.Visible = app.ternary(isSearch, 'on', 'off') ;
-                app.DesignUI.Fit.FamilySearchList.Enable = app.ternary(isSearch, 'on', 'off') ;
+                app.DesignUI.Fit.FamilySearchList.Visible = app.ternary(showSearchSelector, 'on', 'off') ;
+                app.DesignUI.Fit.FamilySearchList.Enable = app.ternary(showSearchSelector, 'on', 'off') ;
                 parentGrid = app.DesignUI.Fit.FamilySearchList.Parent ;
                 if ~isempty(parentGrid) && isvalid(parentGrid)
-                    parentGrid.Visible = app.ternary(isSearch, 'on', 'off') ;
+                    parentGrid.Visible = app.ternary(showSearchSelector, 'on', 'off') ;
                 end
             end
         end
@@ -6039,6 +6236,7 @@ classdef NonIdealReactorApp < handle
         function DW_refreshFit(app)
             result = app.DesignState.fitResult ;
             timeDD = app.getDisplayControl('DesignFit', 'time') ;
+            volumeDD = app.getDisplayControl('DesignFit', 'volume') ;
             if isempty(result)
                 app.DesignUI.Fit.ParameterTable.Data = cell(0, 2) ;
                 app.DesignUI.Fit.SummaryLabel.Text = 'Awaiting RTD fit.' ;
@@ -6066,7 +6264,7 @@ classdef NonIdealReactorApp < handle
 
             app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryTextWithUnits(result, timeDD) ;
             app.DesignUI.Fit.ParameterTable.ColumnName = {'Parameter', 'Value'} ;
-            app.DesignUI.Fit.ParameterTable.Data = app.DW_buildFitParameterTableData(result, timeDD) ;
+            app.DesignUI.Fit.ParameterTable.Data = app.DW_buildFitParameterTableData(result, timeDD, volumeDD) ;
             app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
                 'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
             if ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
@@ -6250,28 +6448,38 @@ classdef NonIdealReactorApp < handle
             app.DW_refreshChemicalSelectors() ;
             app.DW_refreshReactiveContext() ;
             result = app.getStructField(app.DesignState.lastSolutions, 'reactiveResult', []) ;
+            concDD = app.getDisplayControl('DesignReactive', 'concentration') ;
             if isempty(result)
                 app.DesignUI.Reactive.ResultTable.Data = cell(0, 4) ;
                 app.DesignUI.Reactive.CoutTable.Data = cell(0, 6) ;
+                app.DesignUI.Reactive.CoutTable.ColumnName = app.DW_buildReactiveCoutColumnNames(concDD) ;
+                app.DesignUI.Reactive.SummaryLabel.Text = 'Awaiting reactive calculation.' ;
+                cla(app.DesignUI.Reactive.Axes) ;
+                [~, titleText, yLabel] = app.DW_getReactiveMetricSpec() ;
+                title(app.DesignUI.Reactive.Axes, titleText) ;
+                ylabel(app.DesignUI.Reactive.Axes, yLabel) ;
+                grid(app.DesignUI.Reactive.Axes, 'on') ;
                 return
             end
-            app.DesignUI.Reactive.ResultTable.Data = result.summaryTable ;
-            app.DesignUI.Reactive.CoutTable.Data = result.coutTable ;
+            RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+            feedStream = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+            C0 = [] ;
+            if ~isempty(feedStream) && isa(feedStream, 'Stream')
+                C0 = feedStream.concentration(:)' ;
+            end
+
+            app.DesignUI.Reactive.ResultTable.Data = app.DW_buildReactiveSummaryTable(result) ;
+            app.DesignUI.Reactive.CoutTable.ColumnName = app.DW_buildReactiveCoutColumnNames(concDD) ;
+            app.DesignUI.Reactive.CoutTable.Data = app.DW_buildReactiveCoutTable(result, RS, C0, concDD) ;
             app.DesignUI.Reactive.SummaryLabel.Text = result.summaryText ;
-            metrics = result.metrics ;
-            cla(app.DesignUI.Reactive.Axes) ;
-            bar(app.DesignUI.Reactive.Axes, [metrics.cstr.conversion, metrics.segregation.conversion, metrics.maxMixedness.conversion, metrics.pfr.conversion]) ;
-            app.DesignUI.Reactive.Axes.XTickLabel = {'CSTR', 'Seg', 'MM', 'PFR'} ;
-            ylabel(app.DesignUI.Reactive.Axes, 'Conversion') ; grid(app.DesignUI.Reactive.Axes, 'on') ;
-            app.DesignUI.Reactive.StatusArea.Value = { ...
-                sprintf('RS: %s', app.DesignUI.Reactive.RSNameField.Value), ...
-                sprintf('Feed Stream: %s', app.DesignUI.Reactive.StreamNameField.Value), ...
-                result.summaryText} ;
+            app.DW_refreshReactivePlot(result) ;
         end
 
         function DW_refreshOptimization(app)
             app.DW_refreshOptimizationContext() ;
             result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
+            timeDD = app.getDisplayControl('DesignOptimization', 'time') ;
+            concDD = app.getDisplayControl('DesignOptimization', 'concentration') ;
             if isempty(result)
                 app.DesignUI.Optimization.ComparisonTable.Data = cell(0, 3) ;
                 app.DesignUI.Optimization.ConstraintResultTable.Data = cell(0, 4) ;
@@ -6279,9 +6487,15 @@ classdef NonIdealReactorApp < handle
                 app.DesignUI.Optimization.SummaryLabel.Text = 'Awaiting optimization.' ;
             else
                 app.DesignUI.Optimization.SummaryLabel.Text = result.summaryText ;
-                app.DesignUI.Optimization.ComparisonTable.Data = result.comparisonTable ;
-                app.DesignUI.Optimization.ConstraintResultTable.Data = result.constraintTable ;
-                app.DesignUI.Optimization.SensitivityTable.Data = result.sensitivityTable ;
+                if isfield(result, 'baseline') && isfield(result, 'optimum')
+                    app.DesignUI.Optimization.ComparisonTable.Data = app.DW_buildOptimizationComparisonTable(result, timeDD) ;
+                    app.DesignUI.Optimization.ConstraintResultTable.Data = app.DW_buildOptimizationConstraintResultTable(result, timeDD, concDD) ;
+                    app.DesignUI.Optimization.SensitivityTable.Data = app.DW_buildOptimizationSensitivityTable(result, timeDD) ;
+                else
+                    app.DesignUI.Optimization.ComparisonTable.Data = app.getStructField(result, 'comparisonTable', cell(0, 3)) ;
+                    app.DesignUI.Optimization.ConstraintResultTable.Data = app.getStructField(result, 'constraintTable', cell(0, 4)) ;
+                    app.DesignUI.Optimization.SensitivityTable.Data = app.getStructField(result, 'sensitivityTable', cell(0, 3)) ;
+                end
             end
         end
 

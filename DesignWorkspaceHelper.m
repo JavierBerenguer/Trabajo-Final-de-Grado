@@ -107,12 +107,12 @@ classdef DesignWorkspaceHelper
                 struct('family', 'Tanks-in-Series', 'displayName', 'Tanks-in-Series', 'boundaryType', 'closed-closed') ; ...
                 struct('family', 'Axial Dispersion', 'displayName', 'Axial Dispersion closed-closed', 'boundaryType', 'closed-closed') ; ...
                 struct('family', 'Axial Dispersion', 'displayName', 'Axial Dispersion open-open', 'boundaryType', 'open-open') ; ...
-                struct('family', 'CSTR + Dead Volume', 'displayName', 'CSTR + Dead Volume', 'boundaryType', 'closed-closed') ; ...
-                struct('family', 'CSTR + Bypass', 'displayName', 'CSTR + Bypass', 'boundaryType', 'closed-closed') ; ...
-                struct('family', 'CSTR + Dead Volume + Bypass', 'displayName', 'CSTR + Dead Volume + Bypass', 'boundaryType', 'closed-closed') ...
+                struct('family', 'CSTR (dead volume)', 'displayName', 'CSTR (dead volume)', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'PFR (dead volume)', 'displayName', 'PFR (dead volume)', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'PFR + CSTR (series, dead volume)', 'displayName', 'PFR + CSTR (series, dead volume)', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'PFR + CSTR (parallel, dead volume)', 'displayName', 'PFR + CSTR (parallel, dead volume)', 'boundaryType', 'closed-closed') ; ...
+                struct('family', 'CSTR + Bypass (dead volume)', 'displayName', 'CSTR + Bypass (dead volume)', 'boundaryType', 'closed-closed') ...
                 } ;
-            referenceTau = DesignWorkspaceHelper.getStructField( ...
-                fitSpec, 'referenceTau', []) ;
 
             entries = repmat(struct( ...
                 'family', '', ...
@@ -129,18 +129,11 @@ classdef DesignWorkspaceHelper
                 family = candidate.family ;
                 entry = struct('family', family, 'displayName', candidate.displayName, 'status', 'Skipped', ...
                     'message', '', 'rmse', NaN, 'score', NaN, 'result', []) ;
-                if DesignWorkspaceHelper.familyNeedsReferenceTau(family) && ...
-                        (isempty(referenceTau) || ~isscalar(referenceTau) || referenceTau <= 0)
-                    entry.message = 'Reference tau_total not available.' ;
-                    entries(i) = entry ;
-                    continue
-                end
 
                 try
                     singleSpec = fitSpec ;
                     singleSpec.family = family ;
                     singleSpec.boundaryType = candidate.boundaryType ;
-                    singleSpec.referenceTau = referenceTau ;
                     result = DesignWorkspaceHelper.solveSingleHydroFit(singleSpec) ;
                     result.family = candidate.displayName ;
                     entry.status = 'OK' ;
@@ -190,12 +183,18 @@ classdef DesignWorkspaceHelper
                 fitSpec, 'boundaryType', 'closed-closed'))) ;
             referenceTau = DesignWorkspaceHelper.getStructField( ...
                 fitSpec, 'referenceTau', []) ;
+            totalVolume = DesignWorkspaceHelper.getStructField( ...
+                fitSpec, 'totalVolume', []) ;
+            flowRate = DesignWorkspaceHelper.getStructField( ...
+                fitSpec, 'flowRate', []) ;
+
+            family = DesignWorkspaceHelper.normalizeFitFamilyName(family) ;
 
             t = rtdObj.t ;
             fitMeta = struct() ;
             fitMeta.family = family ;
             fitMeta.boundaryType = boundary ;
-            fitMeta.referenceTau = referenceTau ;
+            fitMeta.referenceTau = DesignWorkspaceHelper.resolveNominalTau(referenceTau, totalVolume, flowRate) ;
 
             switch family
                 case 'Tanks-in-Series'
@@ -217,42 +216,71 @@ classdef DesignWorkspaceHelper
                     modelRTD = DesignWorkspaceHelper.buildDispersionRTD(boFit, rtdObj.tau, boundary, t) ;
                     params = struct('tau', rtdObj.tau, 'Bo', boFit, 'Pe', 1 / boFit) ;
 
-                case 'CSTR + Dead Volume'
-                    if isempty(referenceTau) || ~isscalar(referenceTau) || referenceTau <= 0
-                        error('Reference tau_total is required for CSTR + Dead Volume fitting.') ;
-                    end
-                    alphaFit = min(max(rtdObj.tau / referenceTau, 1e-4), 1) ;
-                    modelRTD = RTD.cstr_with_dead_volume(referenceTau, alphaFit, t) ;
-                    params = struct('tau_nominal', referenceTau, 'activeFraction', alphaFit, ...
-                        'deadFraction', 1 - alphaFit, 'tau_active', modelRTD.tau) ;
+                case 'CSTR (dead volume)'
+                    modelRTD = RTD.ideal_cstr(rtdObj.tau, t) ;
+                    params = struct('tau_active', modelRTD.tau) ;
 
-                case 'CSTR + Bypass'
+                case 'PFR (dead volume)'
+                    modelRTD = RTD.ideal_pfr(rtdObj.tau, t) ;
+                    params = struct('tau_active', modelRTD.tau) ;
+
+                case 'PFR + CSTR (series, dead volume)'
+                    tauActive = max(rtdObj.tau, 1e-8) ;
+                    tauCstr0 = min(max(sqrt(max(rtdObj.sigma2, 0)), 1e-6), 0.999 * tauActive) ;
+                    objFun = @(x) DesignWorkspaceHelper.curveScore( ...
+                        rtdObj, RTD.from_cstr_series_with_pfr( ...
+                        min(max(x(1), 1e-6), 0.999 * tauActive), ...
+                        max(tauActive - min(max(x(1), 1e-6), 0.999 * tauActive), 0), t)) ;
+                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, tauCstr0, 1e-6, 0.999 * tauActive) ;
+                    tauCstrFit = min(max(x(1), 1e-6), 0.999 * tauActive) ;
+                    tauPfrFit = max(tauActive - tauCstrFit, 0) ;
+                    modelRTD = RTD.from_cstr_series_with_pfr(tauCstrFit, tauPfrFit, t) ;
+                    params = struct( ...
+                        'tau_active', tauActive, ...
+                        'tau_pfr_active', tauPfrFit, ...
+                        'tau_cstr_active', tauCstrFit, ...
+                        'pfrResidenceFraction', tauPfrFit / tauActive, ...
+                        'cstrResidenceFraction', tauCstrFit / tauActive) ;
+
+                case 'PFR + CSTR (parallel, dead volume)'
+                    split0 = 0.5 ;
+                    tauPfr0 = max(0.5 * rtdObj.tau, 1e-6) ;
+                    tauCstr0 = max(max(rtdObj.sigma2 / max(rtdObj.tau, 1e-8), 1e-6), 0.5 * rtdObj.tau) ;
+                    x0 = [split0, tauPfr0, tauCstr0] ;
+                    lb = [0, 1e-6, 1e-6] ;
+                    ub = [1, max(10 * rtdObj.tau, 1), max(10 * rtdObj.tau, 1)] ;
+                    objFun = @(x) DesignWorkspaceHelper.curveScore( ...
+                        rtdObj, DesignWorkspaceHelper.buildParallelPfrCstrRTD( ...
+                        min(max(x(1), 0), 1), ...
+                        max(x(2), 1e-6), ...
+                        max(x(3), 1e-6), t)) ;
+                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, x0, lb, ub) ;
+                    splitToPfr = min(max(x(1), 0), 1) ;
+                    tauPfrFit = max(x(2), 1e-6) ;
+                    tauCstrFit = max(x(3), 1e-6) ;
+                    modelRTD = DesignWorkspaceHelper.buildParallelPfrCstrRTD(splitToPfr, tauPfrFit, tauCstrFit, t) ;
+                    splitToCstr = 1 - splitToPfr ;
+                    params = struct( ...
+                        'tau_active', splitToPfr * tauPfrFit + splitToCstr * tauCstrFit, ...
+                        'tau_pfr_active', tauPfrFit, ...
+                        'tau_cstr_active', tauCstrFit, ...
+                        'splitToPFR', splitToPfr, ...
+                        'splitToCSTR', splitToCstr) ;
+
+                case 'CSTR + Bypass (dead volume)'
                     beta0 = min(max(DesignWorkspaceHelper.estimateEarlyMassFraction(rtdObj), 1e-4), 0.95) ;
                     objFun = @(x) DesignWorkspaceHelper.curveScore( ...
                         rtdObj, RTD.cstr_with_bypass(rtdObj.tau, min(max(x(1), 0), 0.95), t)) ;
                     x = DesignWorkspaceHelper.penalizedFminsearch(objFun, beta0, 0, 0.95) ;
                     betaFit = min(max(x(1), 0), 0.95) ;
                     modelRTD = RTD.cstr_with_bypass(rtdObj.tau, betaFit, t) ;
-                    params = struct('tau', rtdObj.tau, 'bypassFraction', betaFit) ;
-
-                case 'CSTR + Dead Volume + Bypass'
-                    if isempty(referenceTau) || ~isscalar(referenceTau) || referenceTau <= 0
-                        error('Reference tau_total is required for CSTR + Dead Volume + Bypass fitting.') ;
-                    end
-                    alphaFix = min(max(rtdObj.tau / referenceTau, 1e-4), 1) ;
-                    beta0 = min(max(DesignWorkspaceHelper.estimateEarlyMassFraction(rtdObj), 1e-4), 0.95) ;
-                    objFun = @(x) DesignWorkspaceHelper.curveScore( ...
-                        rtdObj, RTD.cstr_with_bypass_and_dead(referenceTau, alphaFix, ...
-                        min(max(x(1), 0), 0.95), t)) ;
-                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, beta0, 0, 0.95) ;
-                    betaFit = min(max(x(1), 0), 0.95) ;
-                    modelRTD = RTD.cstr_with_bypass_and_dead(referenceTau, alphaFix, betaFit, t) ;
-                    params = struct('tau_nominal', referenceTau, 'activeFraction', alphaFix, ...
-                        'deadFraction', 1 - alphaFix, 'bypassFraction', betaFit) ;
+                    params = struct('tau_active', rtdObj.tau, 'bypassFraction', betaFit) ;
 
                 otherwise
                     error('Unknown fit family: %s', family) ;
             end
+
+            params = DesignWorkspaceHelper.appendDeadVolumeParameters(params, modelRTD.tau, referenceTau, totalVolume, flowRate) ;
 
             rmse = sqrt(mean((rtdObj.Et - modelRTD.Et).^2)) ;
             sse = trapz(rtdObj.t, (rtdObj.Et - modelRTD.Et).^2) ;
@@ -649,7 +677,7 @@ classdef DesignWorkspaceHelper
             firstOrder.C_exit_key = C0(keyIdx) * (1 - firstOrder.X_direct) ;
         end
 
-        function metrics = computeScenarioMetrics(Cin, Cout, keyIdx, desiredIdx, byproductIdx)
+        function metrics = computeScenarioMetrics(Cin, Cout, keyIdx, desiredIdx, ~)
             metrics = struct('conversion', NaN, 'selectivity', NaN, 'yield', NaN) ;
 
             CinKey = max(Cin(keyIdx), 1e-12) ;
@@ -657,18 +685,11 @@ classdef DesignWorkspaceHelper
 
             if ~isempty(desiredIdx) && desiredIdx >= 1 && desiredIdx <= numel(Cout)
                 desiredC = max(Cout(desiredIdx), 0) ;
-                if ~isempty(byproductIdx) && byproductIdx >= 1 && byproductIdx <= numel(Cout) && byproductIdx ~= desiredIdx
-                    byproductC = max(Cout(byproductIdx), 0) ;
-                    denom = desiredC + byproductC ;
-                    if denom > 0
-                        metrics.selectivity = desiredC / denom ;
-                    end
-                end
-
                 reacted = max(CinKey - Cout(keyIdx), 0) ;
                 if reacted > 0
-                    metrics.yield = desiredC / reacted ;
+                    metrics.selectivity = desiredC / reacted ;
                 end
+                metrics.yield = desiredC / CinKey ;
             end
         end
 
@@ -1020,9 +1041,68 @@ classdef DesignWorkspaceHelper
             end
         end
 
+        function family = normalizeFitFamilyName(family)
+            family = char(string(family)) ;
+            switch family
+                case 'PFR + CSTR'
+                    family = 'PFR + CSTR (series, dead volume)' ;
+                case 'CSTR + Dead Volume'
+                    family = 'CSTR (dead volume)' ;
+                case 'CSTR + Bypass'
+                    family = 'CSTR + Bypass (dead volume)' ;
+                case 'CSTR + Dead Volume + Bypass'
+                    family = 'CSTR + Bypass (dead volume)' ;
+            end
+        end
+
+        function tauTotal = resolveNominalTau(referenceTau, totalVolume, flowRate)
+            tauTotal = [] ;
+            if ~isempty(totalVolume) && isscalar(totalVolume) && isfinite(totalVolume) && totalVolume > 0 && ...
+                    ~isempty(flowRate) && isscalar(flowRate) && isfinite(flowRate) && flowRate > 0
+                tauTotal = totalVolume / flowRate ;
+                return
+            end
+            if ~isempty(referenceTau) && isscalar(referenceTau) && isfinite(referenceTau) && referenceTau > 0
+                tauTotal = referenceTau ;
+            end
+        end
+
+        function params = appendDeadVolumeParameters(params, tauActive, referenceTau, totalVolume, flowRate)
+            tauTotal = DesignWorkspaceHelper.resolveNominalTau(referenceTau, totalVolume, flowRate) ;
+            if isempty(tauTotal) || ~isfinite(tauTotal) || tauTotal <= 0
+                return
+            end
+
+            params.tau_total = tauTotal ;
+            if tauTotal + 1e-12 < tauActive
+                params.deadVolumeNote = 'Inconsistent dead-volume inputs: tau_total < tau_active.' ;
+                return
+            end
+
+            activeFraction = min(max(tauActive / tauTotal, 0), 1) ;
+            params.activeFraction = activeFraction ;
+            params.deadFraction = max(0, 1 - activeFraction) ;
+            if ~isempty(totalVolume) && isscalar(totalVolume) && isfinite(totalVolume) && totalVolume > 0
+                params.V_total = totalVolume ;
+                params.V_active = activeFraction * totalVolume ;
+                params.V_dead = params.deadFraction * totalVolume ;
+            end
+        end
+
+        function rtdObj = buildParallelPfrCstrRTD(splitToPfr, tauPfr, tauCstr, tspan)
+            splitToPfr = min(max(splitToPfr, 0), 1) ;
+            tauPfr = max(tauPfr, 1e-8) ;
+            tauCstr = max(tauCstr, 1e-8) ;
+            pfrObj = RTD.ideal_pfr(tauPfr, tspan) ;
+            cstrObj = RTD.ideal_cstr(tauCstr, tspan) ;
+            Et = splitToPfr * pfrObj.Et + (1 - splitToPfr) * cstrObj.Et ;
+            rtdObj = RTD(tspan, Et) ;
+            rtdObj.source = 'custom' ;
+        end
+
         function tf = familyNeedsReferenceTau(family)
             family = char(string(family)) ;
-            tf = any(strcmp(family, {'CSTR + Dead Volume', 'CSTR + Dead Volume + Bypass'})) ;
+            tf = false ;
         end
 
         function [sortedResults, sortedEntries, bestIdx] = rankFitSearchEntries(validResults, entries)
