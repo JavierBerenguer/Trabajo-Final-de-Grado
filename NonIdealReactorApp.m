@@ -2115,19 +2115,6 @@ classdef NonIdealReactorApp < handle
                 result.family, rmseDisplay, rmseUnit, result.score) ;
         end
 
-        function tableData = DW_buildFitParameterTableData(app, result, timeDropdown, volumeDropdown)
-            params = app.getStructField(result, 'parameters', struct()) ;
-            fields = fieldnames(params) ;
-            tableData = cell(numel(fields), 2) ;
-            for i = 1:numel(fields)
-                fieldName = fields{i} ;
-                fieldValue = params.(fieldName) ;
-                [labelText, valueText] = app.DW_formatFitParameter(fieldName, fieldValue, timeDropdown, volumeDropdown) ;
-                tableData{i, 1} = labelText ;
-                tableData{i, 2} = valueText ;
-            end
-        end
-
         function [labelText, valueText] = DW_formatFitParameter(app, fieldName, fieldValue, timeDropdown, volumeDropdown)
             timeUnit = app.getControlValue(timeDropdown, 's') ;
             switch fieldName
@@ -2154,11 +2141,346 @@ classdef NonIdealReactorApp < handle
             end
         end
 
+        function labelText = DW_fitParameterHtmlLabel(app, fieldName, timeDropdown, volumeDropdown)
+            timeUnitText = app.getControlValue(timeDropdown, 's') ;
+            volumeUnitText = app.getControlValue(volumeDropdown, 'm^3') ;
+            switch fieldName
+                case 'tau'
+                    labelText = sprintf('$\\tau$ [%s]:', timeUnitText) ;
+                case 'tau_nominal'
+                    labelText = sprintf('$\\tau_{\\mathrm{nominal}}$ [%s]:', timeUnitText) ;
+                case 'tau_active'
+                    labelText = sprintf('$\\tau_{\\mathrm{active}}$ [%s]:', timeUnitText) ;
+                case 'tau_total'
+                    labelText = sprintf('$\\tau_{\\mathrm{total}}$ [%s]:', timeUnitText) ;
+                case 'tau_pfr'
+                    labelText = sprintf('$\\tau_{\\mathrm{PFR}}$ [%s]:', timeUnitText) ;
+                case 'tau_cstr'
+                    labelText = sprintf('$\\tau_{\\mathrm{CSTR}}$ [%s]:', timeUnitText) ;
+                case 'tau_pfr_active'
+                    labelText = sprintf('$\\tau_{\\mathrm{PFR,active}}$ [%s]:', timeUnitText) ;
+                case 'tau_cstr_active'
+                    labelText = sprintf('$\\tau_{\\mathrm{CSTR,active}}$ [%s]:', timeUnitText) ;
+                case 'N'
+                    labelText = '$N$ [-]:' ;
+                case 'Bo'
+                    labelText = '$Bo$ [-]:' ;
+                case 'Pe'
+                    labelText = '$Pe$ [-]:' ;
+                case 'splitToPFR'
+                    labelText = '$\phi_{\mathrm{PFR}}$ [-]:' ;
+                case 'splitToCSTR'
+                    labelText = '$\phi_{\mathrm{CSTR}}$ [-]:' ;
+                case 'bypassFraction'
+                    labelText = '$\beta_{\mathrm{bypass}}$ [-]:' ;
+                case 'deadFraction'
+                    labelText = '$\phi_{\mathrm{dead}}$ [-]:' ;
+                case 'V_total'
+                    labelText = sprintf('$V_{\\mathrm{total}}$ [%s]:', volumeUnitText) ;
+                case 'V_active'
+                    labelText = sprintf('$V_{\\mathrm{active}}$ [%s]:', volumeUnitText) ;
+                case 'V_dead'
+                    labelText = sprintf('$V_{\\mathrm{dead}}$ [%s]:', volumeUnitText) ;
+                case 'deadVolumeNote'
+                    labelText = 'Note:' ;
+                otherwise
+                    labelText = sprintf('%s:', fieldName) ;
+            end
+        end
+
+        function tooltipText = DW_fitParameterTooltip(~, fieldName)
+            switch fieldName
+                case 'tau'
+                    tooltipText = 'Mean residence time of the fitted equivalent RTD.' ;
+                case 'tau_nominal'
+                    tooltipText = 'Nominal residence time reported by the fitted family before any dead-volume interpretation.' ;
+                case 'tau_active'
+                    tooltipText = 'Residence time associated with the active volume that effectively exchanges tracer.' ;
+                case 'tau_total'
+                    tooltipText = 'Total space time V/Q. It can come from Total volume and Qv, or from Ref. tau_total as fallback.' ;
+                case 'tau_pfr'
+                    tooltipText = 'Residence-time contribution assigned to the plug-flow segment of the fitted family.' ;
+                case 'tau_cstr'
+                    tooltipText = 'Residence-time contribution assigned to the perfectly mixed segment of the fitted family.' ;
+                case 'tau_pfr_active'
+                    tooltipText = 'Active residence time of the PFR branch or PFR segment inside the fitted family.' ;
+                case 'tau_cstr_active'
+                    tooltipText = 'Active residence time of the CSTR branch or CSTR segment inside the fitted family.' ;
+                case 'N'
+                    tooltipText = 'Equivalent number of tanks in series. Larger N means behavior closer to plug flow.' ;
+                case 'Bo'
+                    tooltipText = 'Axial dispersion number. Smaller Bo indicates weaker axial mixing and behavior closer to plug flow.' ;
+                case 'Pe'
+                    tooltipText = 'Peclet number, equal to 1/Bo in this model. Larger Pe means weaker axial dispersion.' ;
+                case 'splitToPFR'
+                    tooltipText = 'Fraction of the inlet flow that is routed to the PFR branch in the parallel PFR + CSTR family.' ;
+                case 'splitToCSTR'
+                    tooltipText = 'Fraction of the inlet flow that is routed to the CSTR branch in the parallel PFR + CSTR family.' ;
+                case 'bypassFraction'
+                    tooltipText = 'Fraction of the feed that bypasses the active reactor volume and leaves almost immediately.' ;
+                case 'deadFraction'
+                    tooltipText = 'Fraction of total reactor volume that is interpreted as dead or hydraulically inactive volume.' ;
+                case 'V_total'
+                    tooltipText = 'Total reactor volume provided by the user for dead-volume interpretation.' ;
+                case 'V_active'
+                    tooltipText = 'Effective active volume computed from the fitted active residence time and the total-volume interpretation.' ;
+                case 'V_dead'
+                    tooltipText = 'Estimated dead volume, computed as the inactive fraction of the total reactor volume.' ;
+                case 'deadVolumeNote'
+                    tooltipText = 'Consistency note for the dead-volume interpretation, shown when total and active times are incompatible.' ;
+                otherwise
+                    tooltipText = sprintf('Fitted value of %s for the selected hydrodynamic family.', fieldName) ;
+            end
+        end
+
         function text = DW_formatFitDisplayNumber(~, value)
             if isempty(value) || any(~isfinite(value))
                 text = '-' ;
             else
                 text = sprintf('%.6g', value) ;
+            end
+        end
+
+        function DW_createFitResultFields(app)
+            panel = app.DesignUI.Fit.ParameterFieldsPanel ;
+            fieldGrid = uigridlayout(panel, [1 3], ...
+                'RowHeight', {'1x'}, ...
+                'ColumnWidth', {'1x', '1x', 220}, ...
+                'Padding', [0 0 0 0], ...
+                'RowSpacing', 0, ...
+                'ColumnSpacing', 10) ;
+            app.DesignUI.Fit.ParameterFieldsGrid = fieldGrid ;
+
+            tauPanel = uipanel(fieldGrid, 'Title', 'Residence Times', 'FontWeight', 'bold') ;
+            tauPanel.Layout.Row = 1 ;
+            tauPanel.Layout.Column = 1 ;
+            app.DesignUI.Fit.TauPanel = tauPanel ;
+            tauGrid = uigridlayout(tauPanel, [7 2], ...
+                'RowHeight', repmat({'fit'}, 1, 7), ...
+                'ColumnWidth', {160, '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 4, ...
+                'ColumnSpacing', 8) ;
+            app.DesignUI.Fit.TauFieldLabels = gobjects(7, 1) ;
+            app.DesignUI.Fit.TauFieldValues = gobjects(7, 1) ;
+            for i = 1:7
+                nameLabel = uilabel(tauGrid, 'Text', '', 'FontWeight', 'bold', 'Visible', 'off', ...
+                    'Interpreter', 'latex') ;
+                nameLabel.Layout.Row = i ;
+                nameLabel.Layout.Column = 1 ;
+                valueLabel = uilabel(tauGrid, 'Text', '', 'Visible', 'off', 'WordWrap', 'on') ;
+                valueLabel.Layout.Row = i ;
+                valueLabel.Layout.Column = 2 ;
+                app.DesignUI.Fit.TauFieldLabels(i) = nameLabel ;
+                app.DesignUI.Fit.TauFieldValues(i) = valueLabel ;
+            end
+
+            deadPanel = uipanel(fieldGrid, 'Title', 'Dead Volume', 'FontWeight', 'bold') ;
+            deadPanel.Layout.Row = 1 ;
+            deadPanel.Layout.Column = 2 ;
+            app.DesignUI.Fit.DeadPanel = deadPanel ;
+            deadGrid = uigridlayout(deadPanel, [5 2], ...
+                'RowHeight', repmat({'fit'}, 1, 5), ...
+                'ColumnWidth', {145, '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 4, ...
+                'ColumnSpacing', 8) ;
+            app.DesignUI.Fit.DeadFieldLabels = gobjects(5, 1) ;
+            app.DesignUI.Fit.DeadFieldValues = gobjects(5, 1) ;
+            for i = 1:5
+                nameLabel = uilabel(deadGrid, 'Text', '', 'FontWeight', 'bold', 'Visible', 'off', ...
+                    'Interpreter', 'latex') ;
+                nameLabel.Layout.Row = i ;
+                nameLabel.Layout.Column = 1 ;
+                valueLabel = uilabel(deadGrid, 'Text', '', 'Visible', 'off', 'WordWrap', 'on') ;
+                valueLabel.Layout.Row = i ;
+                valueLabel.Layout.Column = 2 ;
+                app.DesignUI.Fit.DeadFieldLabels(i) = nameLabel ;
+                app.DesignUI.Fit.DeadFieldValues(i) = valueLabel ;
+            end
+
+            miscPanel = uipanel(fieldGrid, 'Title', 'Family Parameters', 'FontWeight', 'bold') ;
+            miscPanel.Layout.Row = 1 ;
+            miscPanel.Layout.Column = 3 ;
+            app.DesignUI.Fit.MiscPanel = miscPanel ;
+            miscGrid = uigridlayout(miscPanel, [8 2], ...
+                'RowHeight', repmat({'fit'}, 1, 8), ...
+                'ColumnWidth', {150, '1x'}, ...
+                'Padding', [6 6 6 6], ...
+                'RowSpacing', 4, ...
+                'ColumnSpacing', 8) ;
+            app.DesignUI.Fit.MiscFieldLabels = gobjects(8, 1) ;
+            app.DesignUI.Fit.MiscFieldValues = gobjects(8, 1) ;
+            for i = 1:8
+                nameLabel = uilabel(miscGrid, 'Text', '', 'FontWeight', 'bold', 'Visible', 'off', ...
+                    'Interpreter', 'latex') ;
+                nameLabel.Layout.Row = i ;
+                nameLabel.Layout.Column = 1 ;
+                valueLabel = uilabel(miscGrid, 'Text', '', 'Visible', 'off', 'WordWrap', 'on') ;
+                valueLabel.Layout.Row = i ;
+                valueLabel.Layout.Column = 2 ;
+                app.DesignUI.Fit.MiscFieldLabels(i) = nameLabel ;
+                app.DesignUI.Fit.MiscFieldValues(i) = valueLabel ;
+            end
+        end
+
+        function entries = DW_collectFitParameterEntries(app, result, timeDropdown, volumeDropdown)
+            params = app.getStructField(result, 'parameters', struct()) ;
+            if isempty(params)
+                entries = struct('fieldName', {}, 'label', {}, 'value', {}) ;
+                return
+            end
+
+            hiddenFields = {'pfrResidenceFraction', 'cstrResidenceFraction', 'activeFraction'} ;
+            orderedFields = {'tau', 'tau_active', 'tau_total', 'tau_pfr', 'tau_cstr', ...
+                'tau_pfr_active', 'tau_cstr_active', 'N', 'Bo', 'Pe', 'splitToPFR', ...
+                'splitToCSTR', 'bypassFraction', 'deadFraction', 'V_total', 'V_active', ...
+                'V_dead', 'deadVolumeNote'} ;
+            availableFields = fieldnames(params) ;
+            orderedVisible = orderedFields(ismember(orderedFields, availableFields)) ;
+            remainingFields = setdiff(availableFields(:)', [orderedFields, hiddenFields], 'stable') ;
+            fields = [orderedVisible, remainingFields] ;
+            fields = fields(~ismember(fields, hiddenFields)) ;
+
+            entries = repmat(struct('fieldName', '', 'label', '', 'value', ''), 1, numel(fields)) ;
+            for i = 1:numel(fields)
+                fieldName = fields{i} ;
+                fieldValue = params.(fieldName) ;
+                [labelText, valueText] = app.DW_formatFitParameter(fieldName, fieldValue, timeDropdown, volumeDropdown) ;
+                entries(i).fieldName = fieldName ;
+                entries(i).label = labelText ;
+                entries(i).value = valueText ;
+            end
+        end
+
+        function tableData = DW_buildFitParameterTableData(app, result, timeDropdown, volumeDropdown)
+            entries = app.DW_collectFitParameterEntries(result, timeDropdown, volumeDropdown) ;
+            tableData = cell(numel(entries), 2) ;
+            for i = 1:numel(entries)
+                tableData{i, 1} = entries(i).label ;
+                tableData{i, 2} = entries(i).value ;
+            end
+        end
+
+        function DW_clearFitResultFields(app)
+            if ~isfield(app.DesignUI.Fit, 'TauFieldLabels')
+                return
+            end
+            for i = 1:numel(app.DesignUI.Fit.TauFieldLabels)
+                if isvalid(app.DesignUI.Fit.TauFieldLabels(i))
+                    app.DesignUI.Fit.TauFieldLabels(i).Text = '' ;
+                    app.DesignUI.Fit.TauFieldLabels(i).Visible = 'off' ;
+                    app.DesignUI.Fit.TauFieldLabels(i).Tooltip = '' ;
+                end
+                if isvalid(app.DesignUI.Fit.TauFieldValues(i))
+                    app.DesignUI.Fit.TauFieldValues(i).Text = '' ;
+                    app.DesignUI.Fit.TauFieldValues(i).Visible = 'off' ;
+                    app.DesignUI.Fit.TauFieldValues(i).Tooltip = '' ;
+                end
+            end
+            for i = 1:numel(app.DesignUI.Fit.DeadFieldLabels)
+                if isvalid(app.DesignUI.Fit.DeadFieldLabels(i))
+                    app.DesignUI.Fit.DeadFieldLabels(i).Text = '' ;
+                    app.DesignUI.Fit.DeadFieldLabels(i).Visible = 'off' ;
+                    app.DesignUI.Fit.DeadFieldLabels(i).Tooltip = '' ;
+                end
+                if isvalid(app.DesignUI.Fit.DeadFieldValues(i))
+                    app.DesignUI.Fit.DeadFieldValues(i).Text = '' ;
+                    app.DesignUI.Fit.DeadFieldValues(i).Visible = 'off' ;
+                    app.DesignUI.Fit.DeadFieldValues(i).Tooltip = '' ;
+                end
+            end
+            for i = 1:numel(app.DesignUI.Fit.MiscFieldLabels)
+                if isvalid(app.DesignUI.Fit.MiscFieldLabels(i))
+                    app.DesignUI.Fit.MiscFieldLabels(i).Text = '' ;
+                    app.DesignUI.Fit.MiscFieldLabels(i).Visible = 'off' ;
+                    app.DesignUI.Fit.MiscFieldLabels(i).Tooltip = '' ;
+                end
+                if isvalid(app.DesignUI.Fit.MiscFieldValues(i))
+                    app.DesignUI.Fit.MiscFieldValues(i).Text = '' ;
+                    app.DesignUI.Fit.MiscFieldValues(i).Visible = 'off' ;
+                    app.DesignUI.Fit.MiscFieldValues(i).Tooltip = '' ;
+                end
+            end
+            if isfield(app.DesignUI.Fit, 'TauPanel') && isvalid(app.DesignUI.Fit.TauPanel)
+                app.DesignUI.Fit.TauPanel.Visible = 'on' ;
+            end
+            if isfield(app.DesignUI.Fit, 'DeadPanel') && isvalid(app.DesignUI.Fit.DeadPanel)
+                app.DesignUI.Fit.DeadPanel.Visible = 'off' ;
+            end
+            if isfield(app.DesignUI.Fit, 'MiscPanel') && isvalid(app.DesignUI.Fit.MiscPanel)
+                app.DesignUI.Fit.MiscPanel.Visible = 'off' ;
+            end
+            if isfield(app.DesignUI.Fit, 'ParameterFieldsGrid') && isvalid(app.DesignUI.Fit.ParameterFieldsGrid)
+                app.DesignUI.Fit.ParameterFieldsGrid.ColumnWidth = {'1x', 0, 0} ;
+            end
+        end
+
+        function DW_populateFitResultFields(app, result, timeDropdown, volumeDropdown)
+            entries = app.DW_collectFitParameterEntries(result, timeDropdown, volumeDropdown) ;
+            tauFields = {'tau', 'tau_nominal', 'tau_active', 'tau_total', 'tau_pfr', 'tau_cstr', 'tau_pfr_active', 'tau_cstr_active'} ;
+            deadFields = {'deadFraction', 'V_total', 'V_active', 'V_dead', 'deadVolumeNote'} ;
+            tauEntries = entries(ismember({entries.fieldName}, tauFields)) ;
+            deadEntries = entries(ismember({entries.fieldName}, deadFields)) ;
+            miscEntries = entries(~ismember({entries.fieldName}, [tauFields, deadFields])) ;
+
+            app.DW_clearFitResultFields() ;
+            maxRows = min(numel(tauEntries), numel(app.DesignUI.Fit.TauFieldLabels)) ;
+            for i = 1:maxRows
+                app.DesignUI.Fit.TauFieldLabels(i).Text = app.DW_fitParameterHtmlLabel(tauEntries(i).fieldName, timeDropdown, volumeDropdown) ;
+                app.DesignUI.Fit.TauFieldLabels(i).Visible = 'on' ;
+                tooltipText = app.DW_fitParameterTooltip(tauEntries(i).fieldName) ;
+                app.DesignUI.Fit.TauFieldLabels(i).Tooltip = tooltipText ;
+                app.DesignUI.Fit.TauFieldValues(i).Text = tauEntries(i).value ;
+                app.DesignUI.Fit.TauFieldValues(i).Visible = 'on' ;
+                app.DesignUI.Fit.TauFieldValues(i).Tooltip = tooltipText ;
+            end
+            if isfield(app.DesignUI.Fit, 'TauPanel') && isvalid(app.DesignUI.Fit.TauPanel)
+                app.DesignUI.Fit.TauPanel.Visible = app.ternary(~isempty(tauEntries), 'on', 'off') ;
+            end
+
+            maxRows = min(numel(deadEntries), numel(app.DesignUI.Fit.DeadFieldLabels)) ;
+            for i = 1:maxRows
+                app.DesignUI.Fit.DeadFieldLabels(i).Text = app.DW_fitParameterHtmlLabel(deadEntries(i).fieldName, timeDropdown, volumeDropdown) ;
+                app.DesignUI.Fit.DeadFieldLabels(i).Visible = 'on' ;
+                tooltipText = app.DW_fitParameterTooltip(deadEntries(i).fieldName) ;
+                app.DesignUI.Fit.DeadFieldLabels(i).Tooltip = tooltipText ;
+                app.DesignUI.Fit.DeadFieldValues(i).Text = deadEntries(i).value ;
+                app.DesignUI.Fit.DeadFieldValues(i).Visible = 'on' ;
+                app.DesignUI.Fit.DeadFieldValues(i).Tooltip = tooltipText ;
+            end
+            if isfield(app.DesignUI.Fit, 'DeadPanel') && isvalid(app.DesignUI.Fit.DeadPanel)
+                app.DesignUI.Fit.DeadPanel.Visible = app.ternary(~isempty(deadEntries), 'on', 'off') ;
+            end
+
+            maxRows = min(numel(miscEntries), numel(app.DesignUI.Fit.MiscFieldLabels)) ;
+            for i = 1:maxRows
+                app.DesignUI.Fit.MiscFieldLabels(i).Text = app.DW_fitParameterHtmlLabel(miscEntries(i).fieldName, timeDropdown, volumeDropdown) ;
+                app.DesignUI.Fit.MiscFieldLabels(i).Visible = 'on' ;
+                tooltipText = app.DW_fitParameterTooltip(miscEntries(i).fieldName) ;
+                app.DesignUI.Fit.MiscFieldLabels(i).Tooltip = tooltipText ;
+                app.DesignUI.Fit.MiscFieldValues(i).Text = miscEntries(i).value ;
+                app.DesignUI.Fit.MiscFieldValues(i).Visible = 'on' ;
+                app.DesignUI.Fit.MiscFieldValues(i).Tooltip = tooltipText ;
+            end
+            if isfield(app.DesignUI.Fit, 'MiscPanel') && isvalid(app.DesignUI.Fit.MiscPanel)
+                app.DesignUI.Fit.MiscPanel.Visible = app.ternary(~isempty(miscEntries), 'on', 'off') ;
+            end
+            if isfield(app.DesignUI.Fit, 'ParameterFieldsGrid') && isvalid(app.DesignUI.Fit.ParameterFieldsGrid)
+                app.DesignUI.Fit.ParameterFieldsGrid.ColumnWidth = { ...
+                    app.ternary(~isempty(tauEntries), '1x', 0), ...
+                    app.ternary(~isempty(deadEntries), '1x', 0), ...
+                    app.ternary(~isempty(miscEntries), 220, 0)} ;
+            end
+        end
+
+        function DW_showFitResultPresentation(app, modeName)
+            showSearchTable = strcmp(modeName, 'search') ;
+            if isfield(app.DesignUI.Fit, 'ParameterTable') && isvalid(app.DesignUI.Fit.ParameterTable)
+                app.DesignUI.Fit.ParameterTable.Visible = app.ternary(showSearchTable, 'on', 'off') ;
+            end
+            if isfield(app.DesignUI.Fit, 'ParameterFieldsPanel') && isvalid(app.DesignUI.Fit.ParameterFieldsPanel)
+                app.DesignUI.Fit.ParameterFieldsPanel.Visible = app.ternary(showSearchTable, 'off', 'on') ;
             end
         end
 
@@ -5610,10 +5932,19 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Fit.SummaryLabel.Tooltip = ['Fit summary. RMSE is the root mean square error between the input and fitted E(t). ' ...
                 'Score is a dimensionless similarity indicator based on curve SSE.'] ;
 
-            app.DesignUI.Fit.ParameterTable = uitable(rightGrid, 'ColumnName', {'Parameter', 'Value'}, 'RowName', {}) ;
-            app.DesignUI.Fit.ParameterTable.Layout.Row = 2 ;
+            app.DesignUI.Fit.ResultContainer = uigridlayout(rightGrid, [1 1], ...
+                'Padding', [0 0 0 0], 'RowSpacing', 0, 'ColumnSpacing', 0) ;
+            app.DesignUI.Fit.ResultContainer.Layout.Row = 2 ;
+            app.DesignUI.Fit.ParameterTable = uitable(app.DesignUI.Fit.ResultContainer, 'ColumnName', {'Parameter', 'Value'}, 'RowName', {}) ;
+            app.DesignUI.Fit.ParameterTable.Layout.Row = 1 ;
+            app.DesignUI.Fit.ParameterTable.Layout.Column = 1 ;
             app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
                 'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
+            app.DesignUI.Fit.ParameterFieldsPanel = uipanel(app.DesignUI.Fit.ResultContainer, 'BorderType', 'none') ;
+            app.DesignUI.Fit.ParameterFieldsPanel.Layout.Row = 1 ;
+            app.DesignUI.Fit.ParameterFieldsPanel.Layout.Column = 1 ;
+            app.DesignUI.Fit.ParameterFieldsPanel.Tooltip = 'Key fitted parameters for the selected hydrodynamic family.' ;
+            app.DW_createFitResultFields() ;
             app.DesignUI.Fit.CompareAxes = uiaxes(rightGrid) ; title(app.DesignUI.Fit.CompareAxes, 'Input vs fitted E(t)') ;
             app.DesignUI.Fit.CompareAxes.Layout.Row = 3 ;
             app.DW_applyFitAxesLabels('Input vs fitted E(t)') ;
@@ -6238,7 +6569,9 @@ classdef NonIdealReactorApp < handle
             timeDD = app.getDisplayControl('DesignFit', 'time') ;
             volumeDD = app.getDisplayControl('DesignFit', 'volume') ;
             if isempty(result)
+                app.DW_showFitResultPresentation('single') ;
                 app.DesignUI.Fit.ParameterTable.Data = cell(0, 2) ;
+                app.DW_clearFitResultFields() ;
                 app.DesignUI.Fit.SummaryLabel.Text = 'Awaiting RTD fit.' ;
                 app.DesignUI.Fit.ParameterTable.ColumnName = {'Parameter', 'Value'} ;
                 if ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
@@ -6250,6 +6583,7 @@ classdef NonIdealReactorApp < handle
             end
             resultMode = app.getStructField(result, 'mode', 'single') ;
             if strcmp(resultMode, 'search')
+                app.DW_showFitResultPresentation('search') ;
                 app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryTextWithUnits(result, timeDD) ;
                 app.DesignUI.Fit.ParameterTable.ColumnName = app.DW_fitSearchColumnNames(timeDD) ;
                 app.DesignUI.Fit.ParameterTable.Data = app.DW_buildFitSearchSummaryTable(result, timeDD) ;
@@ -6262,11 +6596,10 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
+            app.DW_showFitResultPresentation('single') ;
             app.DesignUI.Fit.SummaryLabel.Text = app.buildFitSummaryTextWithUnits(result, timeDD) ;
-            app.DesignUI.Fit.ParameterTable.ColumnName = {'Parameter', 'Value'} ;
-            app.DesignUI.Fit.ParameterTable.Data = app.DW_buildFitParameterTableData(result, timeDD, volumeDD) ;
-            app.DesignUI.Fit.ParameterTable.Tooltip = app.buildTooltipFromColumns( ...
-                'Estimated hydrodynamic parameters obtained from the RTD fit.', {'Parameter', 'Value'}) ;
+            app.DesignUI.Fit.ParameterTable.Data = cell(0, 2) ;
+            app.DW_populateFitResultFields(result, timeDD, volumeDD) ;
             if ~isempty(app.DesignUI.Fit.FamilySearchList) && isvalid(app.DesignUI.Fit.FamilySearchList)
                 app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
                 app.DesignUI.Fit.FamilySearchList.UserData = struct('familyNames', {{}}, 'pendingSelection', []) ;
