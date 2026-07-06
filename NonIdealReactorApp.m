@@ -1296,6 +1296,287 @@ classdef NonIdealReactorApp < handle
             InputLayerHelper.setFieldFromSI(field, siValue) ;
         end
 
+        function defs = DW_fitConstraintDefinitions(~)
+            defs = struct( ...
+                'key', {'N', 'Bo', 'bypassFraction', 'tau_pfr_active', 'tau_cstr_active', 'splitToPFR', 'referenceTau', 'totalVolume'}, ...
+                'label', {'N', 'Bo', 'bypassFraction', 'tau_pfr_active', 'tau_cstr_active', 'splitToPFR', 'Ref. tau_total', 'Total volume'}, ...
+                'category', {'dimensionless', 'dimensionless', 'fraction', 'time', 'time', 'fraction', 'time', 'volume'}, ...
+                'mode', {'bounds', 'bounds', 'bounds', 'bounds', 'bounds', 'bounds', 'scalar', 'scalar'}) ;
+        end
+
+        function state = DW_defaultFitConstraintState(app)
+            defs = app.DW_fitConstraintDefinitions() ;
+            state = repmat(struct( ...
+                'variable', '', ...
+                'use', false, ...
+                'minSI', NaN, ...
+                'maxSI', NaN, ...
+                'manual', false, ...
+                'defaultInitialized', false, ...
+                'defaultValueSI', NaN), numel(defs), 1) ;
+            for i = 1:numel(defs)
+                state(i).variable = defs(i).key ;
+            end
+            state(app.DW_findFitConstraintRow('N')).minSI = 1 ;
+            state(app.DW_findFitConstraintRow('N')).maxSI = 25 ;
+            state(app.DW_findFitConstraintRow('Bo')).minSI = 1e-5 ;
+            state(app.DW_findFitConstraintRow('Bo')).maxSI = 5 ;
+            state(app.DW_findFitConstraintRow('bypassFraction')).minSI = 0 ;
+            state(app.DW_findFitConstraintRow('bypassFraction')).maxSI = 0.95 ;
+            state(app.DW_findFitConstraintRow('splitToPFR')).minSI = 0 ;
+            state(app.DW_findFitConstraintRow('splitToPFR')).maxSI = 1 ;
+        end
+
+        function idx = DW_findFitConstraintRow(app, key)
+            defs = app.DW_fitConstraintDefinitions() ;
+            idx = find(strcmp({defs.key}, key), 1, 'first') ;
+        end
+
+        function relevant = DW_relevantFitConstraintVariables(~, family)
+            relevant = {} ;
+            switch char(string(family))
+                case 'Tanks-in-Series'
+                    relevant = {'N'} ;
+                case 'Axial Dispersion'
+                    relevant = {'Bo'} ;
+                case {'CSTR (dead volume)', 'PFR (dead volume)'}
+                    relevant = {'referenceTau', 'totalVolume'} ;
+                case 'PFR + CSTR (series, dead volume)'
+                    relevant = {'tau_pfr_active', 'tau_cstr_active', 'referenceTau', 'totalVolume'} ;
+                case 'PFR + CSTR (parallel, dead volume)'
+                    relevant = {'splitToPFR', 'tau_pfr_active', 'tau_cstr_active', 'referenceTau', 'totalVolume'} ;
+                case 'CSTR + Bypass (dead volume)'
+                    relevant = {'bypassFraction', 'referenceTau', 'totalVolume'} ;
+            end
+        end
+
+        function DW_initializeFitConstraintTable(app)
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table)
+                return
+            end
+            defs = app.DW_fitConstraintDefinitions() ;
+            table.UserData = struct( ...
+                'definitions', defs, ...
+                'state', app.DW_defaultFitConstraintState(), ...
+                'relevantRows', [], ...
+                'family', '', ...
+                'isRendering', false, ...
+                'suspendReferenceTauTracking', false) ;
+            app.DW_refreshFitConstraintTable() ;
+        end
+
+        function state = DW_getFitConstraintState(app)
+            state = app.DW_defaultFitConstraintState() ;
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table) || ~isstruct(table.UserData)
+                return
+            end
+            if isfield(table.UserData, 'state') && ~isempty(table.UserData.state)
+                state = table.UserData.state ;
+            end
+        end
+
+        function DW_setFitConstraintState(app, state)
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table)
+                return
+            end
+            userData = table.UserData ;
+            if ~isstruct(userData)
+                userData = struct() ;
+            end
+            userData.state = state ;
+            table.UserData = userData ;
+        end
+
+        function valueDisplay = DW_convertFitConstraintToDisplay(app, category, siValue)
+            if isempty(siValue) || ~isscalar(siValue) || ~isfinite(siValue)
+                valueDisplay = '' ;
+                return
+            end
+            switch category
+                case 'time'
+                    valueDisplay = app.convertOutputScalar('Time', siValue, app.getDisplayControl('DesignFit', 'time')) ;
+                case 'volume'
+                    valueDisplay = app.convertOutputScalar('Volume', siValue, app.getDisplayControl('DesignFit', 'volume')) ;
+                otherwise
+                    valueDisplay = siValue ;
+            end
+        end
+
+        function valueSI = DW_parseFitConstraintDisplayValue(app, category, rawValue)
+            valueSI = NaN ;
+            if isempty(rawValue)
+                return
+            end
+            if isstring(rawValue) || ischar(rawValue)
+                txt = strtrim(char(string(rawValue))) ;
+                if isempty(txt) || strcmpi(txt, 'n/a')
+                    return
+                end
+                numericValue = str2double(txt) ;
+            else
+                numericValue = double(rawValue) ;
+            end
+            if ~isscalar(numericValue) || ~isfinite(numericValue)
+                return
+            end
+            switch category
+                case 'time'
+                    valueSI = UnitConverterHelper.convertToSI('Time', numericValue, ...
+                        app.getControlValue(app.getDisplayControl('DesignFit', 'time'), 's')) ;
+                case 'volume'
+                    valueSI = UnitConverterHelper.convertToSI('Volume', numericValue, ...
+                        app.getControlValue(app.getDisplayControl('DesignFit', 'volume'), 'm^3')) ;
+                otherwise
+                    valueSI = numericValue ;
+            end
+        end
+
+        function DW_seedFitConstraintDefaults(app)
+            state = app.DW_getFitConstraintState() ;
+            tauActive = NaN ;
+            if ~isempty(app.rtd) && isa(app.rtd, 'RTD') && ~isempty(app.rtd.tau) && isfinite(app.rtd.tau) && app.rtd.tau > 0
+                tauActive = app.rtd.tau ;
+            end
+            for key = {'tau_pfr_active', 'tau_cstr_active'}
+                rowIdx = app.DW_findFitConstraintRow(key{1}) ;
+                if isempty(rowIdx)
+                    continue
+                end
+                if ~isfinite(state(rowIdx).minSI) || state(rowIdx).minSI <= 0
+                    state(rowIdx).minSI = 1e-6 ;
+                end
+                if isfinite(tauActive) && tauActive > 0 && (~isfinite(state(rowIdx).maxSI) || state(rowIdx).maxSI <= 0)
+                    state(rowIdx).maxSI = tauActive ;
+                end
+            end
+            app.DW_setFitConstraintState(state) ;
+        end
+
+        function DW_refreshFitConstraintTable(app)
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table)
+                return
+            end
+            if ~isstruct(table.UserData)
+                return
+            end
+            app.DW_seedFitConstraintDefaults() ;
+            userData = table.UserData ;
+            defs = userData.definitions ;
+            state = userData.state ;
+            family = app.DesignUI.Fit.FamilyDropdown.Value ;
+            relevant = app.DW_relevantFitConstraintVariables(family) ;
+            relevantRows = [] ;
+            for i = 1:numel(defs)
+                if any(strcmp(defs(i).key, relevant))
+                    relevantRows(end + 1) = i ; %#ok<AGROW>
+                else
+                    state(i).use = false ;
+                end
+            end
+
+            data = cell(numel(defs), 4) ;
+            for i = 1:numel(defs)
+                data{i, 1} = logical(state(i).use) ;
+                data{i, 2} = defs(i).label ;
+                data{i, 3} = app.DW_convertFitConstraintToDisplay(defs(i).category, state(i).minSI) ;
+                if strcmp(defs(i).mode, 'scalar')
+                    data{i, 4} = 'n/a' ;
+                else
+                    data{i, 4} = app.DW_convertFitConstraintToDisplay(defs(i).category, state(i).maxSI) ;
+                end
+            end
+
+            userData.state = state ;
+            userData.relevantRows = relevantRows ;
+            userData.family = family ;
+            userData.isRendering = true ;
+            table.UserData = userData ;
+            table.Data = data ;
+            userData = table.UserData ;
+            userData.isRendering = false ;
+            table.UserData = userData ;
+            app.DW_applyFitConstraintTableStyles(relevantRows) ;
+        end
+
+        function DW_applyFitConstraintTableStyles(app, relevantRows)
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table)
+                return
+            end
+            try
+                removeStyle(table) ;
+            catch
+            end
+            inactiveRows = setdiff(1:size(table.Data, 1), relevantRows) ;
+            if isempty(inactiveRows)
+                return
+            end
+            try
+                style = uistyle('BackgroundColor', [0.94 0.94 0.94], 'FontColor', [0.45 0.45 0.45]) ;
+                addStyle(table, style, 'row', inactiveRows) ;
+            catch
+            end
+        end
+
+        function state = DW_captureFitConstraintState(app)
+            state = app.DW_getFitConstraintState() ;
+        end
+
+        function DW_applyFitConstraintSnapshot(app, storedState, legacyReferenceTau, legacyTotalVolume)
+            state = app.DW_defaultFitConstraintState() ;
+            if isstruct(storedState) && ~isempty(storedState)
+                defs = app.DW_fitConstraintDefinitions() ;
+                for i = 1:numel(state)
+                    key = defs(i).key ;
+                    idx = find(arrayfun(@(s) isfield(s, 'variable') && strcmp(s.variable, key), storedState), 1, 'first') ;
+                    if isempty(idx)
+                        continue
+                    end
+                    incoming = storedState(idx) ;
+                    state(i).use = logical(app.getStructField(incoming, 'use', state(i).use)) ;
+                    state(i).minSI = app.getStructField(incoming, 'minSI', state(i).minSI) ;
+                    state(i).maxSI = app.getStructField(incoming, 'maxSI', state(i).maxSI) ;
+                    state(i).manual = logical(app.getStructField(incoming, 'manual', state(i).manual)) ;
+                    state(i).defaultInitialized = logical(app.getStructField(incoming, 'defaultInitialized', state(i).defaultInitialized)) ;
+                    state(i).defaultValueSI = app.getStructField(incoming, 'defaultValueSI', state(i).defaultValueSI) ;
+                end
+            else
+                refIdx = app.DW_findFitConstraintRow('referenceTau') ;
+                totalIdx = app.DW_findFitConstraintRow('totalVolume') ;
+                if isstruct(legacyReferenceTau) && isfield(legacyReferenceTau, 'value')
+                    state(refIdx).minSI = app.DW_parseLegacyConstraintField(legacyReferenceTau, 'Time') ;
+                    state(refIdx).manual = true ;
+                    state(refIdx).defaultInitialized = true ;
+                end
+                if isstruct(legacyTotalVolume) && isfield(legacyTotalVolume, 'value')
+                    state(totalIdx).minSI = app.DW_parseLegacyConstraintField(legacyTotalVolume, 'Volume') ;
+                    state(totalIdx).manual = true ;
+                end
+            end
+            app.DW_setFitConstraintState(state) ;
+            app.DW_syncDefaultReferenceTau() ;
+            app.DW_refreshFitConstraintTable() ;
+        end
+
+        function valueSI = DW_parseLegacyConstraintField(~, state, category)
+            valueSI = NaN ;
+            if ~isstruct(state) || ~isfield(state, 'value')
+                return
+            end
+            if isempty(state.value)
+                return
+            end
+            if isfield(state, 'unit') && ~isempty(state.unit)
+                valueSI = UnitConverterHelper.convertToSI(category, state.value, state.unit) ;
+            else
+                valueSI = state.value ;
+            end
+        end
+
         function updateInputFieldCategory(~, field, unitCat)
             fieldData = field.UserData ;
             fieldData.unitCategory = unitCat ;
@@ -1338,7 +1619,13 @@ classdef NonIdealReactorApp < handle
             subGrid.Layout.Row = row ;
             subGrid.Layout.Column = col ;
 
-            label = uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
+            labelArgs = {'Text', labelText, 'FontSize', 11} ;
+            if contains(labelText, '<')
+                labelArgs = [labelArgs, {'Interpreter', 'html'}] ;
+            elseif contains(labelText, '$')
+                labelArgs = [labelArgs, {'Interpreter', 'latex'}] ;
+            end
+            label = uilabel(subGrid, labelArgs{:}) ;
             dropdown = uidropdown(subGrid, ...
                 'Items', UnitConverterHelper.getUnits(category), ...
                 'Value', defaultUnit, ...
@@ -1363,7 +1650,13 @@ classdef NonIdealReactorApp < handle
             subGrid.Layout.Row = row ;
             subGrid.Layout.Column = col ;
 
-            label = uilabel(subGrid, 'Text', labelText, 'FontSize', 11) ;
+            labelArgs = {'Text', labelText, 'FontSize', 11} ;
+            if contains(labelText, '<')
+                labelArgs = [labelArgs, {'Interpreter', 'html'}] ;
+            elseif contains(labelText, '$')
+                labelArgs = [labelArgs, {'Interpreter', 'latex'}] ;
+            end
+            label = uilabel(subGrid, labelArgs{:}) ;
             dropdown = uidropdown(subGrid, ...
                 'Items', items, ...
                 'Value', defaultValue, ...
@@ -1438,6 +1731,10 @@ classdef NonIdealReactorApp < handle
             label = sprintf('%s [%s]:', baseHtml, unitText) ;
         end
 
+        function label = latexLabelWithUnit(~, baseLatex, unitText)
+            label = sprintf('%s [%s]:', baseLatex, unitText) ;
+        end
+
         function label = axisLabelWithUnitName(~, baseText, unitName)
             label = sprintf('%s [%s]', baseText, unitName) ;
         end
@@ -1510,6 +1807,7 @@ classdef NonIdealReactorApp < handle
                             c.C_out_disp, c.C_out_cstr, c.C_out_pfr, c.bcType) ;
                     end
                 case 'DesignFit'
+                    app.DW_refreshFitConstraintTable() ;
                     app.DW_refreshFit() ;
                 case 'DesignReactive'
                     app.DW_refreshReactive() ;
@@ -2077,6 +2375,19 @@ classdef NonIdealReactorApp < handle
                 return
             end
             text = sprintf('%s Columns: %s.', introText, strjoin(columnNames, ', ')) ;
+        end
+
+        function text = htmlStatusTauSigma(~, sourceText, tauValue, sigma2Value)
+            text = sprintf('%s | &tau;=%.2f, &sigma;<sup>2</sup>=%.2f', ...
+                sourceText, tauValue, sigma2Value) ;
+        end
+
+        function text = htmlStatusTauN(~, prefixText, tauValue, nValue)
+            text = sprintf('%s&tau;=%.2f, N=%.2f', prefixText, tauValue, nValue) ;
+        end
+
+        function text = htmlStatusTauBo(~, prefixText, tauValue, boValue)
+            text = sprintf('%s&tau;=%.2f, Bo=%.4g', prefixText, tauValue, boValue) ;
         end
 
         function text = buildFitSummaryText(~, result)
@@ -2796,21 +3107,21 @@ classdef NonIdealReactorApp < handle
             app.setTooltip('Choose how the RTD will be generated or imported.', lbl, app.RTD_SourceDropdown) ;
 
             % Row 2: Tau field
-            lbl = uilabel(leftGrid, 'Text', '&tau;:', 'Interpreter', 'html') ;
+            lbl = uilabel(leftGrid, 'Text', '$\tau$:', 'Interpreter', 'latex') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
             [app.RTD_TauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 2, 2, 10, 'Time', 'Limits', [0.001 Inf]) ;
             app.setTooltip('Mean residence time used by the selected RTD model.', lbl, app.RTD_TauField) ;
 
             % Row 3: Qv (volumetric flow rate) — always visible
-            app.RTD_QvLabel = uilabel(leftGrid, 'Text', 'Q<sub>v</sub>:', 'Interpreter', 'html') ;
+            app.RTD_QvLabel = uilabel(leftGrid, 'Text', '$Q_v$:', 'Interpreter', 'latex') ;
             app.RTD_QvLabel.Layout.Row = 3 ; app.RTD_QvLabel.Layout.Column = 1 ;
             [app.RTD_QvField, ~] = app.createNumericWithConv( ...
                 leftGrid, 3, 2, 0.001, 'VolumetricFlow', 'Limits', [1e-12 Inf]) ;
             app.setTooltip('Volumetric flow rate used to infer effective reactor volume from the RTD.', app.RTD_QvLabel, app.RTD_QvField) ;
 
             % Row 4: N field (for Tanks-in-Series) — shares row with Bo
-            app.RTD_NLabel = uilabel(leftGrid, 'Text', 'N [tanks]:') ;
+            app.RTD_NLabel = uilabel(leftGrid, 'Text', '$N$ [tanks]:', 'Interpreter', 'latex') ;
             app.RTD_NLabel.Layout.Row = 4 ; app.RTD_NLabel.Layout.Column = 1 ;
             app.RTD_NField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 3, 'Limits', [0.1 Inf]) ;
@@ -2831,7 +3142,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_BoField.Visible = 'off' ;
 
             % Row 5: Experimental t variable
-            app.RTD_ExpTVarLabel = uilabel(leftGrid, 'Text', 't variable (workspace):') ;
+            app.RTD_ExpTVarLabel = uilabel(leftGrid, 'Text', '<i>t</i> variable (workspace):', 'Interpreter', 'html') ;
             app.RTD_ExpTVarLabel.Layout.Row = 5 ; app.RTD_ExpTVarLabel.Layout.Column = 1 ;
             expTGrid = uigridlayout(leftGrid, [1 2], ...
                 'ColumnWidth', {'1x', 78}, ...
@@ -2851,7 +3162,7 @@ classdef NonIdealReactorApp < handle
             expTGrid.Visible = 'off' ;
 
             % Row 6: Experimental C variable
-            app.RTD_ExpCVarLabel = uilabel(leftGrid, 'Text', 'C variable (workspace):') ;
+            app.RTD_ExpCVarLabel = uilabel(leftGrid, 'Text', '<i>C</i>(<i>t</i>) variable (workspace):', 'Interpreter', 'html') ;
             app.RTD_ExpCVarLabel.Layout.Row = 6 ; app.RTD_ExpCVarLabel.Layout.Column = 1 ;
             app.RTD_ExpCVarField = uieditfield(leftGrid, 'text', ...
                 'Value', 'C_exp') ;
@@ -2862,7 +3173,7 @@ classdef NonIdealReactorApp < handle
             app.RTD_ExpCVarField.Visible = 'off' ;
 
             % Row 7: C0 (step only)
-            app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', 'C<sub>0</sub> (same units as C(t)):', 'Interpreter', 'html') ;
+            app.RTD_ExpC0Label = uilabel(leftGrid, 'Text', '$C_0$ (same units as $C(t)$):', 'Interpreter', 'latex') ;
             app.RTD_ExpC0Label.Layout.Row = 7 ; app.RTD_ExpC0Label.Layout.Column = 1 ;
             [app.RTD_ExpC0Field, tmpSG] = app.createNumericWithConv( ...
                 leftGrid, 7, 2, 1, 'RawScalar', 'Limits', [0 Inf]) ;
@@ -2997,9 +3308,9 @@ classdef NonIdealReactorApp < handle
             unitsGrid.Layout.Row = 12 ;
             unitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.RTD.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('RTD'), 92) ;
+                unitsGrid, 1, 1, '$t$ base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('RTD'), 92) ;
             app.DisplayControls.RTD.volume = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 2, 'Volume:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('RTD'), 78) ;
+                unitsGrid, 1, 2, '$V$:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('RTD'), 78) ;
 
             % Row 13: Results header
             lbl = uilabel(leftGrid, 'Text', 'Results:', ...
@@ -3008,7 +3319,7 @@ classdef NonIdealReactorApp < handle
 
             % Row 14: tau_m
             app.RTD_ResultTauLabel = uilabel(leftGrid, ...
-                'Text', '&tau;<sub>m</sub> [s]:', 'Interpreter', 'html') ;
+                'Text', '$\tau_m$ [s]:', 'Interpreter', 'latex') ;
             app.RTD_ResultTauLabel.Layout.Row = 14 ; app.RTD_ResultTauLabel.Layout.Column = 1 ;
             app.RTD_ResultTau = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultTau.Layout.Row = 14 ;
@@ -3018,7 +3329,7 @@ classdef NonIdealReactorApp < handle
 
             % Row 15: sigma^2
             app.RTD_ResultSigma2Label = uilabel(leftGrid, ...
-                'Text', '&sigma;&sup2; [s&sup2;]:', 'Interpreter', 'html') ;
+                'Text', '$\sigma^2$ [s^2]:', 'Interpreter', 'latex') ;
             app.RTD_ResultSigma2Label.Layout.Row = 15 ; app.RTD_ResultSigma2Label.Layout.Column = 1 ;
             app.RTD_ResultSigma2 = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultSigma2.Layout.Row = 15 ;
@@ -3027,7 +3338,7 @@ classdef NonIdealReactorApp < handle
                 app.RTD_ResultSigma2Label, app.RTD_ResultSigma2) ;
 
             % Row 16: sigma^2_theta
-            lbl = uilabel(leftGrid, 'Text', '&sigma;&sup2;<sub>&theta;</sub>:', 'Interpreter', 'html') ;
+            lbl = uilabel(leftGrid, 'Text', '$\sigma_{\theta}^2$:', 'Interpreter', 'latex') ;
             lbl.Layout.Row = 16 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultSigma2Theta = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultSigma2Theta.Layout.Row = 16 ;
@@ -3036,7 +3347,7 @@ classdef NonIdealReactorApp < handle
                 lbl, app.RTD_ResultSigma2Theta) ;
 
             % Row 17: s^3
-            lbl = uilabel(leftGrid, 'Text', 's&sup3; [skewness]:', 'Interpreter', 'html') ;
+            lbl = uilabel(leftGrid, 'Text', '$s^3$ [skewness]:', 'Interpreter', 'latex') ;
             lbl.Layout.Row = 17 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultS3 = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultS3.Layout.Row = 17 ;
@@ -3045,7 +3356,7 @@ classdef NonIdealReactorApp < handle
                 lbl, app.RTD_ResultS3) ;
 
             % Row 18: N_est
-            lbl = uilabel(leftGrid, 'Text', 'N<sub>est</sub> [= &tau;&sup2;/&sigma;&sup2;]:', 'Interpreter', 'html') ;
+            lbl = uilabel(leftGrid, 'Text', '$N_{est}$ [$=\tau^2/\sigma^2$]:', 'Interpreter', 'latex') ;
             lbl.Layout.Row = 18 ; lbl.Layout.Column = 1 ;
             app.RTD_ResultN = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultN.Layout.Row = 18 ;
@@ -3055,7 +3366,7 @@ classdef NonIdealReactorApp < handle
 
             % Row 19: V_eff
             app.RTD_ResultVeffLabel = uilabel(leftGrid, ...
-                'Text', 'V<sub>eff</sub> [m&sup3;]:', 'Interpreter', 'html') ;
+                'Text', '$V_{eff}$ [m^3]:', 'Interpreter', 'latex') ;
             app.RTD_ResultVeffLabel.Layout.Row = 19 ; app.RTD_ResultVeffLabel.Layout.Column = 1 ;
             app.RTD_ResultVeff = uilabel(leftGrid, 'Text', '--') ;
             app.RTD_ResultVeff.Layout.Row = 19 ;
@@ -3134,7 +3445,7 @@ classdef NonIdealReactorApp < handle
                 'y = F(t) is the fraction of effluent that has already left, ' ...
                 'and 1-y is the fraction that still remains inside the reactor.'] ;
 
-            lbl = uilabel(queryGrid, 'Text', 'x = elapsed time:') ;
+            lbl = uilabel(queryGrid, 'Text', '<i>x</i> = elapsed time:', 'Interpreter', 'html') ;
             lbl.Tooltip = 'Elapsed time since the tracer entered the reactor, expressed in the selected display time unit.' ;
             app.RTD_FQueryInputField = uieditfield(queryGrid, 'text', ...
                 'Value', '0', ...
@@ -3145,14 +3456,14 @@ classdef NonIdealReactorApp < handle
             app.setTooltip('Elapsed time x in the selected RTD display time unit.', ...
                 lbl, app.RTD_FQueryInputField) ;
 
-            lbl = uilabel(queryGrid, 'Text', 'y = F(t):') ;
+            lbl = uilabel(queryGrid, 'Text', '<i>y</i> = F(t):', 'Interpreter', 'html') ;
             app.RTD_FQueryValueLabel = uilabel(queryGrid, 'Text', '--') ;
             app.RTD_FQueryValueLabel.Layout.Row = 3 ;
             app.RTD_FQueryValueLabel.Layout.Column = 2 ;
             app.setTooltip(['Fraction of the effluent that has already left the reactor ' ...
                 'by elapsed time x.'], lbl, app.RTD_FQueryValueLabel) ;
 
-            lbl = uilabel(queryGrid, 'Text', '1 - y:') ;
+            lbl = uilabel(queryGrid, 'Text', '1 - <i>y</i>:', 'Interpreter', 'html') ;
             app.RTD_FQueryComplementLabel = uilabel(queryGrid, 'Text', '--') ;
             app.RTD_FQueryComplementLabel.Layout.Row = 4 ;
             app.RTD_FQueryComplementLabel.Layout.Column = 2 ;
@@ -3515,8 +3826,7 @@ classdef NonIdealReactorApp < handle
 
                 % Update Tab 2 RTD status if tab exists
                 if ~isempty(app.Pred_RTDStatusLabel)
-                    app.Pred_RTDStatusLabel.Text = sprintf('%s | tau=%.2f, sigma2=%.2f', ...
-                        source, app.rtd.tau, app.rtd.sigma2) ;
+                    app.Pred_RTDStatusLabel.Text = app.htmlStatusTauSigma(source, app.rtd.tau, app.rtd.sigma2) ;
                     app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
                 end
                 if ~isempty(app.Pred_InputMethodDropdown) && ...
@@ -3542,10 +3852,9 @@ classdef NonIdealReactorApp < handle
             timeDD = app.DisplayControls.RTD.time ;
             volDD = app.DisplayControls.RTD.volume ;
 
-            app.RTD_ResultTauLabel.Text = app.htmlLabelWithUnit('&tau;<sub>m</sub>', timeDD) ;
-            app.RTD_ResultSigma2Label.Text = sprintf('&sigma;&sup2; [%s]:', ...
-                app.unitToHtml(app.timeSquaredUnitName(timeDD))) ;
-            app.RTD_ResultVeffLabel.Text = app.htmlLabelWithUnit('V<sub>eff</sub>', volDD) ;
+            app.RTD_ResultTauLabel.Text = app.latexLabelWithUnit('$\tau_m$', timeDD.Value) ;
+            app.RTD_ResultSigma2Label.Text = app.latexLabelWithUnit('$\sigma^2$', app.timeSquaredUnitName(timeDD)) ;
+            app.RTD_ResultVeffLabel.Text = app.latexLabelWithUnit('$V_{eff}$', volDD.Value) ;
 
             tauDisplay = app.convertOutputFromTime('time', app.rtd.tau, timeDD) ;
             sigmaDisplay = app.convertOutputFromTime('timeSquared', app.rtd.sigma2, timeDD) ;
@@ -3891,7 +4200,7 @@ classdef NonIdealReactorApp < handle
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Prediction Configuration') ;
             leftGrid = uigridlayout(leftPanel, [13 2]) ;
-            rowH = repmat({28}, 1, 13) ; rowH{13} = 190 ;
+            rowH = repmat({28}, 1, 13) ; rowH{2} = 0 ; rowH{13} = 190 ;
             leftGrid.RowHeight = rowH ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
@@ -3919,11 +4228,14 @@ classdef NonIdealReactorApp < handle
             lbl = uilabel(leftGrid, 'Text', 'Current RTD:', ...
                 'FontWeight', 'bold') ;
             lbl.Layout.Row = 2 ; lbl.Layout.Column = 1 ;
+            lbl.Visible = 'off' ;
             app.Pred_RTDStatusLabel = uilabel(leftGrid, ...
                 'Text', 'None (generate in Tab 1)', ...
-                'FontColor', [0.8 0 0]) ;
+                'FontColor', [0.8 0 0], ...
+                'Interpreter', 'html') ;
             app.Pred_RTDStatusLabel.Layout.Row = 2 ;
             app.Pred_RTDStatusLabel.Layout.Column = 2 ;
+            app.Pred_RTDStatusLabel.Visible = 'off' ;
             app.setTooltip('Shows which RTD is currently available for prediction calculations.', ...
                 lbl, app.Pred_RTDStatusLabel) ;
 
@@ -4003,7 +4315,8 @@ classdef NonIdealReactorApp < handle
 
             % Row 10: Stream status
             app.Pred_StreamStatusLabel = uilabel(leftGrid, ...
-                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
+                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0], ...
+                'Interpreter', 'html') ;
             app.Pred_StreamStatusLabel.Layout.Row = 10 ;
             app.Pred_StreamStatusLabel.Layout.Column = [1 2] ;
             app.Pred_StreamStatusLabel.Tooltip = 'Shows whether a feed Stream is loaded for the prediction models.' ;
@@ -4248,8 +4561,7 @@ classdef NonIdealReactorApp < handle
                     app.Pred_RTDStatusLabel.Text = 'None (generate in Tab 1)' ;
                     app.Pred_RTDStatusLabel.FontColor = [0.8 0 0] ;
                 else
-                    app.Pred_RTDStatusLabel.Text = sprintf('%s | tau=%.2f, sigma2=%.2f', ...
-                        app.RTD_SourceDropdown.Value, app.rtd.tau, app.rtd.sigma2) ;
+                    app.Pred_RTDStatusLabel.Text = app.htmlStatusTauSigma(app.RTD_SourceDropdown.Value, app.rtd.tau, app.rtd.sigma2) ;
                     app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
                 end
             end
@@ -4259,8 +4571,9 @@ classdef NonIdealReactorApp < handle
             infoLines = {} ;
 
             if ~isempty(app.rtd)
-                infoLines{end+1} = sprintf('RTD: %s | tau=%.2f', ...
-                    app.RTD_SourceDropdown.Value, app.rtd.tau) ;
+                infoLines{end+1} = app.htmlStatusTauSigma( ...
+                    sprintf('RTD: %s', app.RTD_SourceDropdown.Value), ...
+                    app.rtd.tau, app.rtd.sigma2) ;
             else
                 infoLines{end+1} = 'RTD: not loaded' ;
             end
@@ -4283,7 +4596,7 @@ classdef NonIdealReactorApp < handle
                 app.Pred_feedStream = app.RTD_feedStream ;
                 app.Pred_StreamNameField.Value = app.RTD_StreamNameField.Value ;
                 C_str = sprintf('%.4g  ', app.RTD_feedStream.concentration) ;
-                app.Pred_StreamStatusLabel.Text = sprintf('(from Tab 1, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                app.Pred_StreamStatusLabel.Text = sprintf('(from Tab 1, internal SI) [%s] mol/m<sup>3</sup>', strtrim(C_str)) ;
                 app.Pred_StreamStatusLabel.FontColor = [0 0.5 0] ;
                 infoLines{end+1} = sprintf('Stream: %s', app.RTD_StreamNameField.Value) ;
             else
@@ -4298,7 +4611,7 @@ classdef NonIdealReactorApp < handle
             else
                 app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
             end
-            app.Pred_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
+                app.Pred_RTDStatusLabel.Text = strjoin(infoLines, ' | ') ;
         end
 
         function Pred_loadRS(app)
@@ -4396,7 +4709,7 @@ classdef NonIdealReactorApp < handle
                 app.Pred_updatePlots() ;
 
                 % Update RTD status label
-                app.Pred_RTDStatusLabel.Text = sprintf('tau=%.2f, sigma2=%.2f', ...
+                app.Pred_RTDStatusLabel.Text = sprintf('&tau;=%.2f, &sigma;<sup>2</sup>=%.2f', ...
                     app.rtd.tau, app.rtd.sigma2) ;
                 app.Pred_RTDStatusLabel.FontColor = [0 0.5 0] ;
 
@@ -4516,7 +4829,7 @@ classdef NonIdealReactorApp < handle
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'TIS Configuration') ;
             leftGrid = uigridlayout(leftPanel, [15 2]) ;
-            rowH = repmat({28}, 1, 15) ; rowH{15} = 260 ;
+            rowH = repmat({28}, 1, 15) ; rowH{3} = 0 ; rowH{15} = 260 ;
             leftGrid.RowHeight = rowH ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
@@ -4541,7 +4854,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.TIS_NMethodChanged()) ;
 
             % Row 2: N tanks
-            app.TIS_NLabel = uilabel(leftGrid, 'Text', 'N [tanks]:') ;
+            app.TIS_NLabel = uilabel(leftGrid, 'Text', '$N$ [tanks]:', 'Interpreter', 'latex') ;
             app.TIS_NLabel.Layout.Row = 2 ; app.TIS_NLabel.Layout.Column = 1 ;
             app.TIS_NField = uieditfield(leftGrid, 'numeric', ...
                 'Value', 3, 'Limits', [0.1 Inf], ...
@@ -4550,14 +4863,15 @@ classdef NonIdealReactorApp < handle
 
             % Row 3: RTD status (shown when "From RTD")
             app.TIS_RTDStatusLabel = uilabel(leftGrid, ...
-                'Text', 'RTD: not loaded', 'FontColor', [0.6 0 0]) ;
+                'Text', 'RTD: not loaded', 'FontColor', [0.6 0 0], ...
+                'Interpreter', 'html') ;
             app.TIS_RTDStatusLabel.Layout.Row = 3 ;
             app.TIS_RTDStatusLabel.Layout.Column = [1 2] ;
             app.TIS_RTDStatusLabel.Tooltip = 'Shows the RTD source currently imported into the tanks-in-series model.' ;
             app.TIS_RTDStatusLabel.Visible = 'off' ;
 
             % Row 4: tau
-            app.TIS_tauLabel = uilabel(leftGrid, 'Text', 'tau total:') ;
+            app.TIS_tauLabel = uilabel(leftGrid, 'Text', '$\tau_{\mathrm{total}}$:', 'Interpreter', 'latex') ;
             app.TIS_tauLabel.Layout.Row = 4 ; app.TIS_tauLabel.Layout.Column = 1 ;
             [app.TIS_tauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 4, 2, 10, 'Time', ...
@@ -4642,7 +4956,8 @@ classdef NonIdealReactorApp < handle
 
             % Row 12: Stream status
             app.TIS_StreamStatusLabel = uilabel(leftGrid, ...
-                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
+                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0], ...
+                'Interpreter', 'html') ;
             app.TIS_StreamStatusLabel.Layout.Row = 12 ;
             app.TIS_StreamStatusLabel.Layout.Column = [1 2] ;
             app.TIS_StreamStatusLabel.Tooltip = 'Shows whether a feed Stream is loaded for the tanks-in-series calculation.' ;
@@ -4771,7 +5086,7 @@ classdef NonIdealReactorApp < handle
                 % Auto-compute N from RTD variance
                 app.TIS_NField.Enable = 'off' ;
                 app.TIS_tauField.Enable = 'off' ;
-                app.TIS_RTDStatusLabel.Visible = 'on' ;
+                app.TIS_RTDStatusLabel.Visible = 'off' ;
                 app.TIS_RefreshButton.Visible = 'on' ;
                 infoLines = {} ;
 
@@ -4779,8 +5094,7 @@ classdef NonIdealReactorApp < handle
                     N_from_rtd = app.rtd.tau^2 / app.rtd.sigma2 ;
                     app.TIS_NField.Value = N_from_rtd ;
                     app.setInputFieldValue(app.TIS_tauField, app.rtd.tau) ;
-                    infoLines{end+1} = sprintf('RTD: tau=%.2f, N=%.2f', ...
-                        app.rtd.tau, N_from_rtd) ;
+                    infoLines{end+1} = app.htmlStatusTauN('RTD: ', app.rtd.tau, N_from_rtd) ;
                 else
                     infoLines{end+1} = 'RTD: not loaded' ;
                 end
@@ -4805,7 +5119,7 @@ classdef NonIdealReactorApp < handle
                     app.TIS_StreamNameField.Value = app.Pred_StreamNameField.Value ;
                     app.TIS_StreamEditButton.Enable = 'on' ;
                     C_str = sprintf('%.4g  ', app.Pred_feedStream.concentration) ;
-                    app.TIS_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                    app.TIS_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m<sup>3</sup>', strtrim(C_str)) ;
                     app.TIS_StreamStatusLabel.FontColor = [0 0.5 0] ;
                     infoLines{end+1} = 'Stream: from Prediction' ;
                 else
@@ -5093,7 +5407,7 @@ classdef NonIdealReactorApp < handle
             % ---- LEFT PANEL ----
             leftPanel = uipanel(mainGrid, 'Title', 'Dispersion Configuration') ;
             leftGrid = uigridlayout(leftPanel, [17 2]) ;
-            rowHD = repmat({28}, 1, 17) ; rowHD{17} = 260 ;
+            rowHD = repmat({28}, 1, 17) ; rowHD{2} = 0 ; rowHD{17} = 260 ;
             leftGrid.RowHeight = rowHD ;
             leftGrid.ColumnWidth = {'1x', '1x'} ;
             leftGrid.Padding = [10 10 10 10] ;
@@ -5119,7 +5433,8 @@ classdef NonIdealReactorApp < handle
 
             % Row 2: Import status (hidden by default)
             app.Disp_RTDStatusLabel = uilabel(leftGrid, ...
-                'Text', '', 'FontColor', [0 0.5 0]) ;
+                'Text', '', 'FontColor', [0 0.5 0], ...
+                'Interpreter', 'html') ;
             app.Disp_RTDStatusLabel.Layout.Row = 2 ;
             app.Disp_RTDStatusLabel.Layout.Column = [1 2] ;
             app.Disp_RTDStatusLabel.Tooltip = 'Shows the RTD source currently imported into the dispersion model.' ;
@@ -5136,7 +5451,7 @@ classdef NonIdealReactorApp < handle
             app.Disp_BoField.Layout.Row = 3 ; app.Disp_BoField.Layout.Column = 2 ;
 
             % Row 4: Pe display (read-only)
-            lbl = uilabel(leftGrid, 'Text', 'Pe [= 1/Bo]:') ;
+            lbl = uilabel(leftGrid, 'Text', '$Pe = 1/Bo$:', 'Interpreter', 'latex') ;
             lbl.Layout.Row = 4 ; lbl.Layout.Column = 1 ;
             app.Disp_PeLabel = uilabel(leftGrid, 'Text', sprintf('%.2f', 1/0.025)) ;
             app.Disp_PeLabel.Layout.Row = 4 ; app.Disp_PeLabel.Layout.Column = 2 ;
@@ -5153,7 +5468,7 @@ classdef NonIdealReactorApp < handle
             app.setTooltip('Boundary condition used by the axial dispersion model.', app.Disp_BCLabel, app.Disp_BCDropdown) ;
 
             % Row 6: tau
-            app.Disp_tauLabel = uilabel(leftGrid, 'Text', '&tau;:', 'Interpreter', 'html') ;
+            app.Disp_tauLabel = uilabel(leftGrid, 'Text', '$\tau$:', 'Interpreter', 'latex') ;
             app.Disp_tauLabel.Layout.Row = 6 ; app.Disp_tauLabel.Layout.Column = 1 ;
             [app.Disp_tauField, ~] = app.createNumericWithConv( ...
                 leftGrid, 6, 2, 10, 'Time', ...
@@ -5237,7 +5552,8 @@ classdef NonIdealReactorApp < handle
 
             % Row 14: Stream status
             app.Disp_StreamStatusLabel = uilabel(leftGrid, ...
-                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0]) ;
+                'Text', 'No feed stream loaded', 'FontColor', [0.6 0 0], ...
+                'Interpreter', 'html') ;
             app.Disp_StreamStatusLabel.Layout.Row = 14 ;
             app.Disp_StreamStatusLabel.Layout.Column = [1 2] ;
             app.Disp_StreamStatusLabel.Tooltip = 'Shows whether a feed Stream is loaded for the dispersion calculation.' ;
@@ -5404,7 +5720,7 @@ classdef NonIdealReactorApp < handle
                 % Disable manual fields and import data
                 app.Disp_BoField.Enable = 'off' ;
                 app.Disp_tauField.Enable = 'off' ;
-                app.Disp_RTDStatusLabel.Visible = 'on' ;
+                app.Disp_RTDStatusLabel.Visible = 'off' ;
                 app.Disp_RefreshButton.Visible = 'on' ;
                 infoLines = {} ;
 
@@ -5430,8 +5746,7 @@ classdef NonIdealReactorApp < handle
                     app.Disp_BoField.Value = Bo_calc ;
                     app.Disp_updatePe() ;
 
-                    infoLines{end+1} = sprintf('RTD: tau=%.2f, Bo=%.4g', ...
-                        app.rtd.tau, Bo_calc) ;
+                    infoLines{end+1} = app.htmlStatusTauBo('RTD: ', app.rtd.tau, Bo_calc) ;
                 else
                     infoLines{end+1} = 'RTD: not loaded' ;
                 end
@@ -5456,7 +5771,7 @@ classdef NonIdealReactorApp < handle
                     app.Disp_StreamNameField.Value = app.Pred_StreamNameField.Value ;
                     app.Disp_StreamEditButton.Enable = 'on' ;
                     C_str = sprintf('%.4g  ', app.Pred_feedStream.concentration) ;
-                    app.Disp_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m^3', strtrim(C_str)) ;
+                    app.Disp_StreamStatusLabel.Text = sprintf('(from Prediction, internal SI) [%s] mol/m<sup>3</sup>', strtrim(C_str)) ;
                     app.Disp_StreamStatusLabel.FontColor = [0 0.5 0] ;
                     infoLines{end+1} = 'Stream: from Prediction' ;
                 else
@@ -5735,8 +6050,7 @@ classdef NonIdealReactorApp < handle
             D.fit.source = app.DesignUI.Fit.SourceDropdown.Value ;
             D.fit.family = app.DesignUI.Fit.FamilyDropdown.Value ;
             D.fit.boundary = app.DesignUI.Fit.BoundaryDropdown.Value ;
-            D.fit.referenceTau = app.captureFieldWithUnit(app.DesignUI.Fit.ReferenceTauField) ;
-            D.fit.totalVolume = app.captureFieldWithUnit(app.DesignUI.Fit.TotalVolumeField) ;
+            D.fit.fitConstraintState = app.DW_captureFitConstraintState() ;
             D.fit.displayTimeUnit = app.getControlValue(app.getDisplayControl('DesignFit', 'time'), 's') ;
             D.fit.displayVolumeUnit = app.getControlValue(app.getDisplayControl('DesignFit', 'volume'), 'm^3') ;
             D.fit.searchSelection = app.captureListboxSelection(app.DesignUI.Fit.FamilySearchList) ;
@@ -5777,15 +6091,13 @@ classdef NonIdealReactorApp < handle
             fitFamily = app.DW_mapLegacyFitFamily(app.getStructField(fit, 'family', app.DesignUI.Fit.FamilyDropdown.Value)) ;
             app.setDropdownValueIfValid(app.DesignUI.Fit.FamilyDropdown, fitFamily) ;
             app.setDropdownValueIfValid(app.DesignUI.Fit.BoundaryDropdown, app.getStructField(fit, 'boundary', app.DesignUI.Fit.BoundaryDropdown.Value)) ;
-            refTauState = app.getStructField(fit, 'referenceTau', struct()) ;
-            app.DW_beginReferenceTauProgrammaticUpdate() ;
-            app.applyFieldWithUnit(app.DesignUI.Fit.ReferenceTauField, refTauState) ;
-            app.DW_endReferenceTauProgrammaticUpdate(isstruct(refTauState) && isfield(refTauState, 'value')) ;
-            app.applyFieldWithUnit(app.DesignUI.Fit.TotalVolumeField, app.getStructField(fit, 'totalVolume', struct())) ;
             fitTimeControl = app.getDisplayControl('DesignFit', 'time') ;
             app.setDropdownValueIfValid(fitTimeControl, app.getStructField(fit, 'displayTimeUnit', app.getControlValue(fitTimeControl, 's'))) ;
             fitVolumeControl = app.getDisplayControl('DesignFit', 'volume') ;
             app.setDropdownValueIfValid(fitVolumeControl, app.getStructField(fit, 'displayVolumeUnit', app.getControlValue(fitVolumeControl, 'm^3'))) ;
+            app.DW_applyFitConstraintSnapshot(app.getStructField(fit, 'fitConstraintState', []), ...
+                app.getStructField(fit, 'referenceTau', struct()), ...
+                app.getStructField(fit, 'totalVolume', struct())) ;
             app.DesignState.fitResult = app.DW_normalizeFitResultFamilies(app.getStructField(fit, 'result', [])) ;
             app.DesignUI.Fit.FamilySearchList.UserData = struct('pendingSelection', ...
                 app.getStructField(fit, 'searchSelection', [])) ;
@@ -5828,8 +6140,8 @@ classdef NonIdealReactorApp < handle
                 return
             end
             snapshot.fit = struct('source', 'Tab 1 RTD', 'family', 'CSTR (dead volume)', ...
-                'boundary', 'closed-closed', 'referenceTau', struct(), ...
-                'totalVolume', struct(), 'displayTimeUnit', 's', 'displayVolumeUnit', 'm^3', ...
+                'boundary', 'closed-closed', 'fitConstraintState', [], ...
+                'displayTimeUnit', 's', 'displayVolumeUnit', 'm^3', ...
                 'searchSelection', [], 'result', []) ;
         end
 
@@ -5840,8 +6152,8 @@ classdef NonIdealReactorApp < handle
 
             left = uipanel(grid, 'Title', 'Fit Setup') ;
             left.Layout.Column = 1 ;
-            leftGrid = uigridlayout(left, [9 2]) ;
-            leftGrid.RowHeight = {'fit','fit','fit','fit','fit',34,34,'fit','1x'} ;
+            leftGrid = uigridlayout(left, [8 2]) ;
+            leftGrid.RowHeight = {'fit','fit',0,190,34,34,'fit',0} ;
             leftGrid.ColumnWidth = {120, '1x'} ;
             app.DesignUI.Fit.SetupGrid = leftGrid ;
 
@@ -5868,39 +6180,29 @@ classdef NonIdealReactorApp < handle
             app.setTooltip('Boundary condition used when the selected family needs an axial dispersion assumption.', ...
                 lbl, app.DesignUI.Fit.BoundaryDropdown) ;
 
-            lbl = uilabel(leftGrid, 'Text', 'Ref. tau_total:') ;
-            app.DesignUI.Fit.ReferenceTauLabel = lbl ;
-            [app.DesignUI.Fit.ReferenceTauField, app.DesignUI.Fit.ReferenceTauGrid] = app.createNumericWithConv(leftGrid, 4, 2, 1.0, 'Time', 'Limits', [0 Inf]) ;
-            refTauData = app.DesignUI.Fit.ReferenceTauField.UserData ;
-            refTauData.manualOverride = false ;
-            refTauData.defaultInitialized = false ;
-            refTauData.suspendTracking = false ;
-            refTauData.defaultValueSI = NaN ;
-            app.DesignUI.Fit.ReferenceTauField.UserData = refTauData ;
-            app.DesignUI.Fit.ReferenceTauField.ValueChangedFcn = @(~,~) app.DW_markReferenceTauEdited() ;
-            if isfield(refTauData, 'unitDropdown') && ~isempty(refTauData.unitDropdown) && isvalid(refTauData.unitDropdown)
-                refTauData.unitDropdown.ValueChangedFcn = @(~,~) app.DW_markReferenceTauEdited() ;
-            end
-            app.setTooltip(['Nominal total space time V/Q used when total reactor volume is not available. ' ...
-                'For dead-volume families it acts as a fallback if Total volume and Qv from Tab 1 are not available.'], ...
-                lbl, app.DesignUI.Fit.ReferenceTauField) ;
+            app.DesignUI.Fit.VariableTable = uitable(leftGrid, ...
+                'ColumnName', {'Use', 'Variable', 'Min', 'Max'}, ...
+                'ColumnEditable', [true false true true], ...
+                'ColumnWidth', {42, 128, 70, 70}, ...
+                'RowName', {}, ...
+                'CellEditCallback', @(src, event) app.DW_handleFitConstraintTableEdit(src, event)) ;
+            app.DesignUI.Fit.VariableTable.Layout.Row = 4 ;
+            app.DesignUI.Fit.VariableTable.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.VariableTable.Tooltip = app.buildTooltipFromColumns( ...
+                ['Optional bounds for the simple fit. Mark Use to constrain that family parameter between Min and Max. ' ...
+                'Ref. tau_total and Total volume are special input rows: only one can be active, they use the Min column as the scalar value, and Max is not used.'], ...
+                {'Use', 'Variable', 'Min', 'Max'}) ;
+            app.DW_initializeFitConstraintTable() ;
             app.DW_syncDefaultReferenceTau() ;
-
-            lbl = uilabel(leftGrid, 'Text', 'Total volume:') ;
-            app.DesignUI.Fit.TotalVolumeLabel = lbl ;
-            [app.DesignUI.Fit.TotalVolumeField, app.DesignUI.Fit.TotalVolumeGrid] = app.createNumericWithConv(leftGrid, 5, 2, 1.0, 'Volume', 'Limits', [0 Inf]) ;
-            app.DesignUI.Fit.TotalVolumeField.Value = '' ;
-            app.setTooltip(['Optional total reactor volume. When Qv is available in Tab 1, the app uses V_total / Qv to derive tau_total, ' ...
-                'the active fraction and the dead volume.'], lbl, app.DesignUI.Fit.TotalVolumeField) ;
 
             app.DesignUI.Fit.SearchButton = uibutton(leftGrid, 'push', 'Text', 'Search best family', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runFitSearch()) ;
-            app.DesignUI.Fit.SearchButton.Layout.Row = 6 ; app.DesignUI.Fit.SearchButton.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.SearchButton.Layout.Row = 5 ; app.DesignUI.Fit.SearchButton.Layout.Column = [1 2] ;
             app.DesignUI.Fit.SearchButton.Tooltip = 'Fit every supported family, compare RMSE and score, and overlay the selected fitted RTDs.' ;
 
             app.DesignUI.Fit.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Diagnosis & Fit', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runFit()) ;
-            app.DesignUI.Fit.RunButton.Layout.Row = 7 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.RunButton.Layout.Row = 6 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
             app.DesignUI.Fit.RunButton.Tooltip = 'Run the heuristic diagnosis and fit the selected equivalent hydrodynamic model.' ;
 
             fitUnitsGrid = uigridlayout(leftGrid, [2 1], ...
@@ -5909,7 +6211,7 @@ classdef NonIdealReactorApp < handle
                 'Padding', [0 0 0 0], ...
                 'RowSpacing', 4, ...
                 'ColumnSpacing', 0) ;
-            fitUnitsGrid.Layout.Row = 8 ;
+            fitUnitsGrid.Layout.Row = 7 ;
             fitUnitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.DesignFit.time = app.createDisplayUnitControl( ...
                 fitUnitsGrid, 1, 1, 'Display time:', 'Time', 's', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
@@ -5917,7 +6219,7 @@ classdef NonIdealReactorApp < handle
                 fitUnitsGrid, 2, 1, 'Volume:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
 
             app.DesignUI.Fit.FamilySearchList = app.createDisplayMultiSelectControl( ...
-                leftGrid, 9, [1 2], 'Families:', @(~,~) app.DW_handleFitSearchSelection(), 176) ;
+                leftGrid, 8, [1 2], 'Families:', @(~,~) app.DW_handleFitSearchSelection(), 176) ;
             app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
             app.DesignUI.Fit.FamilySearchList.Tooltip = 'Select which fitted families are displayed on the comparison plot.' ;
             app.DesignUI.Fit.FamilySearchList.UserData = struct('familyNames', {{}}, 'pendingSelection', []) ;
@@ -6164,12 +6466,14 @@ classdef NonIdealReactorApp < handle
             try
                 app.updateStatus('Running diagnosis and fit...') ;
                 rtdObj = app.DW_resolveRTDSource(app.DesignUI.Fit.SourceDropdown.Value) ;
+                fitConfig = app.DW_collectFitConstraintConfig(true) ;
                 spec = struct( ...
                     'rtd', rtdObj, ...
                     'family', app.DesignUI.Fit.FamilyDropdown.Value, ...
                     'boundaryType', app.DesignUI.Fit.BoundaryDropdown.Value, ...
-                    'referenceTau', app.readOptionalInputField(app.DesignUI.Fit.ReferenceTauField), ...
-                    'totalVolume', app.readOptionalInputField(app.DesignUI.Fit.TotalVolumeField), ...
+                    'referenceTau', fitConfig.referenceTau, ...
+                    'totalVolume', fitConfig.totalVolume, ...
+                    'fitConstraints', fitConfig.constraints, ...
                     'flowRate', app.DW_getFitFlowRate()) ;
                 app.DesignState.fitResult = DesignWorkspaceHelper.solveHydroFit(spec) ;
                 app.DW_refreshFitContext() ;
@@ -6188,8 +6492,6 @@ classdef NonIdealReactorApp < handle
                 spec = struct( ...
                     'rtd', rtdObj, ...
                     'boundaryType', app.DesignUI.Fit.BoundaryDropdown.Value, ...
-                    'referenceTau', app.readOptionalInputField(app.DesignUI.Fit.ReferenceTauField), ...
-                    'totalVolume', app.readOptionalInputField(app.DesignUI.Fit.TotalVolumeField), ...
                     'flowRate', app.DW_getFitFlowRate()) ;
                 app.DesignState.fitResult = DesignWorkspaceHelper.solveHydroFitSearch(spec) ;
                 app.DW_refreshFitContext() ;
@@ -6436,35 +6738,142 @@ classdef NonIdealReactorApp < handle
             end
         end
 
+        function config = DW_collectFitConstraintConfig(app, includeConstraints)
+            if nargin < 2
+                includeConstraints = true ;
+            end
+            config = struct('referenceTau', [], 'totalVolume', [], 'constraints', struct('variable', {}, 'lowerBound', {}, 'upperBound', {})) ;
+            if ~includeConstraints
+                return
+            end
+            state = app.DW_getFitConstraintState() ;
+            defs = app.DW_fitConstraintDefinitions() ;
+            family = app.DesignUI.Fit.FamilyDropdown.Value ;
+            relevant = app.DW_relevantFitConstraintVariables(family) ;
+            activeScalarKeys = {} ;
+            constraints = struct('variable', {}, 'lowerBound', {}, 'upperBound', {}) ;
+            for i = 1:numel(defs)
+                if ~any(strcmp(defs(i).key, relevant))
+                    continue
+                end
+                if ~logical(state(i).use)
+                    continue
+                end
+                if strcmp(defs(i).mode, 'scalar')
+                    if ~isfinite(state(i).minSI) || state(i).minSI <= 0
+                        error('Enter a positive value in the Min column for %s.', defs(i).label) ;
+                    end
+                    activeScalarKeys{end + 1} = defs(i).key ; %#ok<AGROW>
+                    switch defs(i).key
+                        case 'referenceTau'
+                            config.referenceTau = state(i).minSI ;
+                        case 'totalVolume'
+                            config.totalVolume = state(i).minSI ;
+                    end
+                    continue
+                end
+
+                lb = state(i).minSI ;
+                ub = state(i).maxSI ;
+                if ~isfinite(lb) || ~isfinite(ub)
+                    error('Enter both Min and Max for %s.', defs(i).label) ;
+                end
+                if ~(lb < ub)
+                    error('Min must be smaller than Max for %s.', defs(i).label) ;
+                end
+                if any(strcmp(defs(i).category, {'time', 'volume'})) && (lb <= 0 || ub <= 0)
+                    error('%s requires positive bounds.', defs(i).label) ;
+                end
+                if strcmp(defs(i).key, 'N') && (lb <= 0 || ub <= 0)
+                    error('N requires positive bounds.') ;
+                end
+                if strcmp(defs(i).key, 'Bo') && (lb <= 0 || ub <= 0)
+                    error('Bo requires positive bounds.') ;
+                end
+                if strcmp(defs(i).category, 'fraction') && (lb < 0 || ub > 1)
+                    error('%s must stay inside the physical range [0, 1].', defs(i).label) ;
+                end
+                constraints(end + 1) = struct( ... %#ok<AGROW>
+                    'variable', defs(i).key, ...
+                    'lowerBound', lb, ...
+                    'upperBound', ub) ;
+            end
+            if numel(activeScalarKeys) > 1
+                error('Ref. tau_total and Total volume are mutually exclusive. Activate only one of them.') ;
+            end
+            config.constraints = constraints ;
+        end
+
+        function DW_handleFitConstraintTableEdit(app, src, event)
+            if ~isstruct(src.UserData) || (isfield(src.UserData, 'isRendering') && src.UserData.isRendering)
+                return
+            end
+            defs = src.UserData.definitions ;
+            state = src.UserData.state ;
+            relevantRows = src.UserData.relevantRows ;
+            rowIdx = event.Indices(1) ;
+            colIdx = event.Indices(2) ;
+            def = defs(rowIdx) ;
+
+            if ~any(relevantRows == rowIdx)
+                src.Data{rowIdx, colIdx} = event.PreviousData ;
+                app.updateStatus('That fit variable is inactive for the selected family') ;
+                return
+            end
+
+            if strcmp(def.mode, 'scalar') && colIdx == 4
+                src.Data{rowIdx, colIdx} = 'n/a' ;
+                app.updateStatus('Max is not used for Ref. tau_total or Total volume') ;
+                return
+            end
+
+            switch colIdx
+                case 1
+                    state(rowIdx).use = logical(src.Data{rowIdx, 1}) ;
+                    if strcmp(def.mode, 'scalar') && state(rowIdx).use
+                        for otherKey = {'referenceTau', 'totalVolume'}
+                            otherIdx = app.DW_findFitConstraintRow(otherKey{1}) ;
+                            if otherIdx ~= rowIdx
+                                state(otherIdx).use = false ;
+                            end
+                        end
+                    end
+                    if strcmp(def.key, 'referenceTau')
+                        app.DW_markReferenceTauEdited() ;
+                    end
+                case 3
+                    parsedValue = app.DW_parseFitConstraintDisplayValue(def.category, src.Data{rowIdx, 3}) ;
+                    state(rowIdx).minSI = parsedValue ;
+                    state(rowIdx).manual = true ;
+                    if strcmp(def.key, 'referenceTau')
+                        app.DW_markReferenceTauEdited() ;
+                    end
+                case 4
+                    parsedValue = app.DW_parseFitConstraintDisplayValue(def.category, src.Data{rowIdx, 4}) ;
+                    state(rowIdx).maxSI = parsedValue ;
+                    state(rowIdx).manual = true ;
+            end
+
+            userData = src.UserData ;
+            userData.state = state ;
+            src.UserData = userData ;
+            app.DW_refreshFitConstraintTable() ;
+        end
+
         function DW_refreshFitContext(app)
             app.DW_syncDefaultReferenceTau() ;
             family = app.DesignUI.Fit.FamilyDropdown.Value ;
             showBoundary = app.DW_familyNeedsBoundary(family) ;
-            showDeadVolumeControls = app.DW_familySupportsDeadVolume(family) ;
-            showReferenceTau = app.DW_familyNeedsReferenceTau(family) ;
             showSearchSelector = ~isempty(app.DesignState.fitResult) && strcmp(app.getStructField(app.DesignState.fitResult, 'mode', 'single'), 'search') ;
             app.DW_setVisiblePair(app.DesignUI.Fit.BoundaryLabel, app.DesignUI.Fit.BoundaryDropdown, showBoundary) ;
-            app.DW_setVisiblePair(app.DesignUI.Fit.ReferenceTauLabel, app.DesignUI.Fit.ReferenceTauField, showReferenceTau) ;
-            if isfield(app.DesignUI.Fit, 'ReferenceTauGrid') && ~isempty(app.DesignUI.Fit.ReferenceTauGrid) && isvalid(app.DesignUI.Fit.ReferenceTauGrid)
-                app.DesignUI.Fit.ReferenceTauGrid.Visible = app.ternary(showReferenceTau, 'on', 'off') ;
-            end
-            app.DW_setVisiblePair(app.DesignUI.Fit.TotalVolumeLabel, app.DesignUI.Fit.TotalVolumeField, showDeadVolumeControls) ;
-            if isfield(app.DesignUI.Fit, 'TotalVolumeGrid') && ~isempty(app.DesignUI.Fit.TotalVolumeGrid) && isvalid(app.DesignUI.Fit.TotalVolumeGrid)
-                app.DesignUI.Fit.TotalVolumeGrid.Visible = app.ternary(showDeadVolumeControls, 'on', 'off') ;
-            end
+            app.DW_refreshFitConstraintTable() ;
             if isfield(app.DesignUI.Fit, 'SetupGrid') && ~isempty(app.DesignUI.Fit.SetupGrid) && isvalid(app.DesignUI.Fit.SetupGrid)
-                rowHeights = {'fit','fit',0,0,0,34,34,'fit',0} ;
+                rowHeights = {'fit','fit',0,190,34,34,'fit',0} ;
                 if showBoundary
                     rowHeights{3} = 'fit' ;
                 end
-                if showReferenceTau
-                    rowHeights{4} = 'fit' ;
-                end
-                if showDeadVolumeControls
-                    rowHeights{5} = 'fit' ;
-                end
                 if showSearchSelector
-                    rowHeights{9} = '1x' ;
+                    rowHeights{8} = '1x' ;
                 end
                 app.DesignUI.Fit.SetupGrid.RowHeight = rowHeights ;
             end
@@ -6698,60 +7107,62 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_markReferenceTauEdited(app)
-            field = app.DesignUI.Fit.ReferenceTauField ;
-            if isempty(field) || ~isvalid(field)
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table) || ~isstruct(table.UserData)
                 return
             end
-            fieldData = field.UserData ;
-            if ~isstruct(fieldData)
+            userData = table.UserData ;
+            if ~isstruct(userData)
                 return
             end
-            if isfield(fieldData, 'suspendTracking') && fieldData.suspendTracking
+            if isfield(userData, 'suspendReferenceTauTracking') && userData.suspendReferenceTauTracking
                 return
             end
-            fieldData.manualOverride = true ;
-            fieldData.defaultInitialized = true ;
-            field.UserData = fieldData ;
+            state = app.DW_getFitConstraintState() ;
+            idx = app.DW_findFitConstraintRow('referenceTau') ;
+            state(idx).manual = true ;
+            state(idx).defaultInitialized = true ;
+            app.DW_setFitConstraintState(state) ;
         end
 
         function DW_beginReferenceTauProgrammaticUpdate(app)
-            field = app.DesignUI.Fit.ReferenceTauField ;
-            if isempty(field) || ~isvalid(field)
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table)
                 return
             end
-            fieldData = field.UserData ;
-            if ~isstruct(fieldData)
-                fieldData = struct() ;
+            userData = table.UserData ;
+            if ~isstruct(userData)
+                userData = struct() ;
             end
-            fieldData.suspendTracking = true ;
-            field.UserData = fieldData ;
+            userData.suspendReferenceTauTracking = true ;
+            table.UserData = userData ;
         end
 
         function DW_endReferenceTauProgrammaticUpdate(app, manualOverride)
-            field = app.DesignUI.Fit.ReferenceTauField ;
-            if isempty(field) || ~isvalid(field)
+            table = app.DesignUI.Fit.VariableTable ;
+            if isempty(table) || ~isvalid(table)
                 return
             end
-            fieldData = field.UserData ;
-            if ~isstruct(fieldData)
-                fieldData = struct() ;
+            userData = table.UserData ;
+            if ~isstruct(userData)
+                userData = struct() ;
             end
-            fieldData.suspendTracking = false ;
-            fieldData.manualOverride = logical(manualOverride) ;
-            fieldData.defaultInitialized = true ;
-            field.UserData = fieldData ;
+            userData.suspendReferenceTauTracking = false ;
+            table.UserData = userData ;
+            state = app.DW_getFitConstraintState() ;
+            idx = app.DW_findFitConstraintRow('referenceTau') ;
+            state(idx).manual = logical(manualOverride) ;
+            state(idx).defaultInitialized = true ;
+            app.DW_setFitConstraintState(state) ;
         end
 
         function DW_syncDefaultReferenceTau(app)
-            field = app.DesignUI.Fit.ReferenceTauField ;
-            if isempty(field) || ~isvalid(field)
+            state = app.DW_getFitConstraintState() ;
+            idx = app.DW_findFitConstraintRow('referenceTau') ;
+            if isempty(idx)
                 return
             end
-            fieldData = field.UserData ;
-            if ~isstruct(fieldData)
-                fieldData = struct() ;
-            end
-            if isfield(fieldData, 'manualOverride') && fieldData.manualOverride
+            if state(idx).manual
                 return
             end
 
@@ -6760,21 +7171,11 @@ classdef NonIdealReactorApp < handle
                 defaultTauSI = ceil(app.rtd.tau) ;
             end
 
-            app.DW_beginReferenceTauProgrammaticUpdate() ;
-            fieldData = field.UserData ;
-            if isfield(fieldData, 'unitDropdown') && ~isempty(fieldData.unitDropdown) && isvalid(fieldData.unitDropdown)
-                dd = fieldData.unitDropdown ;
-                if any(strcmp(cellstr(dd.Items), 's'))
-                    dd.Value = 's' ;
-                end
-            end
-            app.setInputFieldValue(field, defaultTauSI) ;
-            fieldData = field.UserData ;
-            fieldData.defaultInitialized = true ;
-            fieldData.defaultValueSI = defaultTauSI ;
-            fieldData.manualOverride = false ;
-            fieldData.suspendTracking = false ;
-            field.UserData = fieldData ;
+            state(idx).minSI = defaultTauSI ;
+            state(idx).defaultInitialized = true ;
+            state(idx).defaultValueSI = defaultTauSI ;
+            state(idx).manual = false ;
+            app.DW_setFitConstraintState(state) ;
         end
 
         function DW_refreshReactive(app)

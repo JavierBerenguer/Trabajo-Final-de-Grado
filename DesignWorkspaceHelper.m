@@ -187,6 +187,8 @@ classdef DesignWorkspaceHelper
                 fitSpec, 'totalVolume', []) ;
             flowRate = DesignWorkspaceHelper.getStructField( ...
                 fitSpec, 'flowRate', []) ;
+            fitConstraints = DesignWorkspaceHelper.getStructField( ...
+                fitSpec, 'fitConstraints', struct('variable', {}, 'lowerBound', {}, 'upperBound', {})) ;
 
             family = DesignWorkspaceHelper.normalizeFitFamilyName(family) ;
 
@@ -199,9 +201,11 @@ classdef DesignWorkspaceHelper
             switch family
                 case 'Tanks-in-Series'
                     n0 = max(1, min(50, rtdObj.tau^2 / max(rtdObj.sigma2, 1e-12))) ;
+                    [lbN, ubN] = DesignWorkspaceHelper.getFitConstraintBounds(fitConstraints, 'N', 1, 200) ;
+                    n0 = min(max(n0, lbN), ubN) ;
                     objFun = @(x) DesignWorkspaceHelper.curveScore( ...
                         rtdObj, RTD.tanks_in_series(max(x(1), 1e-3), rtdObj.tau, t)) ;
-                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, n0, 1, 200) ;
+                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, n0, lbN, ubN) ;
                     nFit = max(x(1), 1e-3) ;
                     modelRTD = RTD.tanks_in_series(nFit, rtdObj.tau, t) ;
                     params = struct('tau', rtdObj.tau, 'N', nFit) ;
@@ -209,9 +213,11 @@ classdef DesignWorkspaceHelper
                 case 'Axial Dispersion'
                     sigmaTheta = max(rtdObj.sigma2_theta, 1e-8) ;
                     bo0 = max(1e-5, min(5, sigmaTheta / 2)) ;
+                    [lbBo, ubBo] = DesignWorkspaceHelper.getFitConstraintBounds(fitConstraints, 'Bo', 1e-5, 5) ;
+                    bo0 = min(max(bo0, lbBo), ubBo) ;
                     objFun = @(x) DesignWorkspaceHelper.curveScore( ...
                         rtdObj, DesignWorkspaceHelper.buildDispersionRTD(max(x(1), 1e-5), rtdObj.tau, boundary, t)) ;
-                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, bo0, 1e-5, 5) ;
+                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, bo0, lbBo, ubBo) ;
                     boFit = max(x(1), 1e-5) ;
                     modelRTD = DesignWorkspaceHelper.buildDispersionRTD(boFit, rtdObj.tau, boundary, t) ;
                     params = struct('tau', rtdObj.tau, 'Bo', boFit, 'Pe', 1 / boFit) ;
@@ -227,11 +233,13 @@ classdef DesignWorkspaceHelper
                 case 'PFR + CSTR (series, dead volume)'
                     tauActive = max(rtdObj.tau, 1e-8) ;
                     tauCstr0 = min(max(sqrt(max(rtdObj.sigma2, 0)), 1e-6), 0.999 * tauActive) ;
+                    [lbTauCstr, ubTauCstr] = DesignWorkspaceHelper.deriveSeriesTauCstrBounds(fitConstraints, tauActive) ;
+                    tauCstr0 = min(max(tauCstr0, lbTauCstr), ubTauCstr) ;
                     objFun = @(x) DesignWorkspaceHelper.curveScore( ...
                         rtdObj, RTD.from_cstr_series_with_pfr( ...
                         min(max(x(1), 1e-6), 0.999 * tauActive), ...
                         max(tauActive - min(max(x(1), 1e-6), 0.999 * tauActive), 0), t)) ;
-                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, tauCstr0, 1e-6, 0.999 * tauActive) ;
+                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, tauCstr0, lbTauCstr, ubTauCstr) ;
                     tauCstrFit = min(max(x(1), 1e-6), 0.999 * tauActive) ;
                     tauPfrFit = max(tauActive - tauCstrFit, 0) ;
                     modelRTD = RTD.from_cstr_series_with_pfr(tauCstrFit, tauPfrFit, t) ;
@@ -246,9 +254,12 @@ classdef DesignWorkspaceHelper
                     split0 = 0.5 ;
                     tauPfr0 = max(0.5 * rtdObj.tau, 1e-6) ;
                     tauCstr0 = max(max(rtdObj.sigma2 / max(rtdObj.tau, 1e-8), 1e-6), 0.5 * rtdObj.tau) ;
-                    x0 = [split0, tauPfr0, tauCstr0] ;
-                    lb = [0, 1e-6, 1e-6] ;
-                    ub = [1, max(10 * rtdObj.tau, 1), max(10 * rtdObj.tau, 1)] ;
+                    [lbSplit, ubSplit] = DesignWorkspaceHelper.getFitConstraintBounds(fitConstraints, 'splitToPFR', 0, 1) ;
+                    [lbTauPfr, ubTauPfr] = DesignWorkspaceHelper.getFitConstraintBounds(fitConstraints, 'tau_pfr_active', 1e-6, max(10 * rtdObj.tau, 1)) ;
+                    [lbTauCstr, ubTauCstr] = DesignWorkspaceHelper.getFitConstraintBounds(fitConstraints, 'tau_cstr_active', 1e-6, max(10 * rtdObj.tau, 1)) ;
+                    x0 = [min(max(split0, lbSplit), ubSplit), min(max(tauPfr0, lbTauPfr), ubTauPfr), min(max(tauCstr0, lbTauCstr), ubTauCstr)] ;
+                    lb = [lbSplit, lbTauPfr, lbTauCstr] ;
+                    ub = [ubSplit, ubTauPfr, ubTauCstr] ;
                     objFun = @(x) DesignWorkspaceHelper.curveScore( ...
                         rtdObj, DesignWorkspaceHelper.buildParallelPfrCstrRTD( ...
                         min(max(x(1), 0), 1), ...
@@ -269,9 +280,11 @@ classdef DesignWorkspaceHelper
 
                 case 'CSTR + Bypass (dead volume)'
                     beta0 = min(max(DesignWorkspaceHelper.estimateEarlyMassFraction(rtdObj), 1e-4), 0.95) ;
+                    [lbBeta, ubBeta] = DesignWorkspaceHelper.getFitConstraintBounds(fitConstraints, 'bypassFraction', 0, 0.95) ;
+                    beta0 = min(max(beta0, lbBeta), ubBeta) ;
                     objFun = @(x) DesignWorkspaceHelper.curveScore( ...
                         rtdObj, RTD.cstr_with_bypass(rtdObj.tau, min(max(x(1), 0), 0.95), t)) ;
-                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, beta0, 0, 0.95) ;
+                    x = DesignWorkspaceHelper.penalizedFminsearch(objFun, beta0, lbBeta, ubBeta) ;
                     betaFit = min(max(x(1), 0), 0.95) ;
                     modelRTD = RTD.cstr_with_bypass(rtdObj.tau, betaFit, t) ;
                     params = struct('tau_active', rtdObj.tau, 'bypassFraction', betaFit) ;
@@ -1052,6 +1065,39 @@ classdef DesignWorkspaceHelper
                     family = 'CSTR + Bypass (dead volume)' ;
                 case 'CSTR + Dead Volume + Bypass'
                     family = 'CSTR + Bypass (dead volume)' ;
+            end
+        end
+
+        function [lb, ub] = getFitConstraintBounds(fitConstraints, variableName, defaultLb, defaultUb)
+            lb = defaultLb ;
+            ub = defaultUb ;
+            if isempty(fitConstraints)
+                return
+            end
+            for i = 1:numel(fitConstraints)
+                row = fitConstraints(i) ;
+                if strcmp(char(string(DesignWorkspaceHelper.getStructField(row, 'variable', ''))), variableName)
+                    lb = DesignWorkspaceHelper.getStructField(row, 'lowerBound', defaultLb) ;
+                    ub = DesignWorkspaceHelper.getStructField(row, 'upperBound', defaultUb) ;
+                    return
+                end
+            end
+        end
+
+        function [lbTauCstr, ubTauCstr] = deriveSeriesTauCstrBounds(fitConstraints, tauActive)
+            baseLb = 1e-6 ;
+            baseUb = 0.999 * tauActive ;
+            [lbTauCstr, ubTauCstr] = DesignWorkspaceHelper.getFitConstraintBounds( ...
+                fitConstraints, 'tau_cstr_active', baseLb, baseUb) ;
+            [lbTauPfr, ubTauPfr] = DesignWorkspaceHelper.getFitConstraintBounds( ...
+                fitConstraints, 'tau_pfr_active', 1e-6, max(tauActive - baseLb, 1e-6)) ;
+            lbTauCstr = max(lbTauCstr, tauActive - ubTauPfr) ;
+            ubTauCstr = min(ubTauCstr, tauActive - lbTauPfr) ;
+            lbTauCstr = max(lbTauCstr, baseLb) ;
+            ubTauCstr = min(ubTauCstr, baseUb) ;
+            if ~(isfinite(lbTauCstr) && isfinite(ubTauCstr) && lbTauCstr < ubTauCstr)
+                error(['The bounds selected for tau_pfr_active and tau_cstr_active are incompatible ' ...
+                    'with tau_active fixed by the input RTD.']) ;
             end
         end
 
