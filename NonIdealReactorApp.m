@@ -1465,8 +1465,8 @@ classdef NonIdealReactorApp < handle
             end
             app.DW_seedFitConstraintDefaults() ;
             userData = table.UserData ;
+            state = app.DW_getFitConstraintState() ;
             defs = userData.definitions ;
-            state = userData.state ;
             family = app.DesignUI.Fit.FamilyDropdown.Value ;
             relevant = app.DW_relevantFitConstraintVariables(family) ;
             relevantRows = [] ;
@@ -1499,11 +1499,10 @@ classdef NonIdealReactorApp < handle
             userData = table.UserData ;
             userData.isRendering = false ;
             table.UserData = userData ;
-            app.DW_applyFitConstraintTableStyles(relevantRows) ;
+            app.DW_applyFitConstraintTableStyles(table, relevantRows) ;
         end
 
-        function DW_applyFitConstraintTableStyles(app, relevantRows)
-            table = app.DesignUI.Fit.VariableTable ;
+        function DW_applyFitConstraintTableStyles(~, table, relevantRows)
             if isempty(table) || ~isvalid(table)
                 return
             end

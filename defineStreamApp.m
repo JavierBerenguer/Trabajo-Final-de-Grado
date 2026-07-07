@@ -694,7 +694,7 @@ classdef defineStreamApp < matlab.apps.AppBase
 
             % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
-            app.UIFigure.Position = [100 100 700 430];
+            app.UIFigure.Position = [100 100 780 430];
             app.UIFigure.Name = 'Define Stream';
 
             % Create StreamLabel
@@ -703,20 +703,20 @@ classdef defineStreamApp < matlab.apps.AppBase
             app.StreamLabel.FontName = 'Arial';
             app.StreamLabel.FontSize = 16;
             app.StreamLabel.FontWeight = 'bold';
-            app.StreamLabel.Position = [245 393 210 25];
+            app.StreamLabel.Position = [285 393 210 25];
             app.StreamLabel.Text = 'Stream';
 
             % Create NameEditFieldLabel
             app.NameEditFieldLabel = uilabel(app.UIFigure);
             app.NameEditFieldLabel.HorizontalAlignment = 'right';
             app.NameEditFieldLabel.FontWeight = 'bold';
-            app.NameEditFieldLabel.Position = [505 325 38 22];
+            app.NameEditFieldLabel.Position = [565 325 38 22];
             app.NameEditFieldLabel.Text = 'Name';
 
             % Create NameEditField
             app.NameEditField = uieditfield(app.UIFigure, 'text');
             app.NameEditField.Tooltip = {'Choose a name to identify the stream'};
-            app.NameEditField.Position = [558 325 115 22];
+            app.NameEditField.Position = [618 325 115 22];
 
             % Create UITableStreamData
             app.UITableStreamData = uitable(app.UIFigure);
@@ -725,7 +725,7 @@ classdef defineStreamApp < matlab.apps.AppBase
             app.UITableStreamData.RowName = {};
             app.UITableStreamData.ColumnEditable = true;
             app.UITableStreamData.CellEditCallback = createCallbackFcn(app, @UITableStreamDataCellEdit, true);
-            app.UITableStreamData.Position = [38 52 285 168];
+            app.UITableStreamData.Position = [38 52 325 168];
 
             % Create MolarFlowunitsEditFieldLabel
             app.MolarFlowunitsEditFieldLabel = uilabel(app.UIFigure);
@@ -750,91 +750,91 @@ classdef defineStreamApp < matlab.apps.AppBase
             % Create VolumetricFlowmsEditFieldLabel
             app.VolumetricFlowmsEditFieldLabel = uilabel(app.UIFigure);
             app.VolumetricFlowmsEditFieldLabel.HorizontalAlignment = 'right';
-            app.VolumetricFlowmsEditFieldLabel.Position = [357 178 100 22];
+            app.VolumetricFlowmsEditFieldLabel.Position = [417 178 100 22];
             app.VolumetricFlowmsEditFieldLabel.Text = 'Volumetric Flow';
 
             % Create VolumetricFlowmsEditField
             app.VolumetricFlowmsEditField = uieditfield(app.UIFigure, 'numeric');
             app.VolumetricFlowmsEditField.Tooltip = {'Internal calculations use SI units.'; 'These controls convert only the UI input/output layer.'};
             app.VolumetricFlowmsEditField.ValueChangedFcn = createCallbackFcn(app, @ScalarFieldValueChanged, true);
-            app.VolumetricFlowmsEditField.Position = [472 178 90 22];
+            app.VolumetricFlowmsEditField.Position = [532 178 90 22];
 
             % Create UnitsEditField_3Label
             app.UnitsEditField_3Label = uilabel(app.UIFigure);
             app.UnitsEditField_3Label.HorizontalAlignment = 'center';
-            app.UnitsEditField_3Label.Position = [569 157 90 22];
+            app.UnitsEditField_3Label.Position = [629 157 90 22];
             app.UnitsEditField_3Label.Text = 'Flow Units';
 
             % Create volumetricFlowUnitsEditField
             app.volumetricFlowUnitsEditField = uidropdown(app.UIFigure);
-            app.volumetricFlowUnitsEditField.Position = [569 178 100 22];
+            app.volumetricFlowUnitsEditField.Position = [629 178 100 22];
 
             % Create PPaEditFieldLabel
             app.PPaEditFieldLabel = uilabel(app.UIFigure);
             app.PPaEditFieldLabel.HorizontalAlignment = 'right';
-            app.PPaEditFieldLabel.Position = [417 251 40 22];
+            app.PPaEditFieldLabel.Position = [477 251 40 22];
             app.PPaEditFieldLabel.Text = 'P';
 
             % Create PressureEditField
             app.PressureEditField = uieditfield(app.UIFigure, 'numeric');
             app.PressureEditField.ValueChangedFcn = createCallbackFcn(app, @ScalarFieldValueChanged, true);
-            app.PressureEditField.Position = [472 251 90 22];
+            app.PressureEditField.Position = [532 251 90 22];
 
             % Create PressureUnitsDropDown
             app.PressureUnitsDropDown = uidropdown(app.UIFigure);
-            app.PressureUnitsDropDown.Position = [569 251 100 22];
+            app.PressureUnitsDropDown.Position = [629 251 100 22];
 
             % Create TKEditFieldLabel
             app.TKEditFieldLabel = uilabel(app.UIFigure);
             app.TKEditFieldLabel.HorizontalAlignment = 'right';
-            app.TKEditFieldLabel.Position = [425 217 32 22];
+            app.TKEditFieldLabel.Position = [485 217 32 22];
             app.TKEditFieldLabel.Text = 'T';
 
             % Create TemperatureEditField
             app.TemperatureEditField = uieditfield(app.UIFigure, 'numeric');
             app.TemperatureEditField.ValueChangedFcn = createCallbackFcn(app, @ScalarFieldValueChanged, true);
-            app.TemperatureEditField.Position = [472 217 90 22];
+            app.TemperatureEditField.Position = [532 217 90 22];
 
             % Create TemperatureUnitsDropDown
             app.TemperatureUnitsDropDown = uidropdown(app.UIFigure);
-            app.TemperatureUnitsDropDown.Position = [569 217 100 22];
+            app.TemperatureUnitsDropDown.Position = [629 217 100 22];
 
             % Create DensitykgmEditFieldLabel
             app.DensitykgmEditFieldLabel = uilabel(app.UIFigure);
             app.DensitykgmEditFieldLabel.HorizontalAlignment = 'right';
-            app.DensitykgmEditFieldLabel.Position = [412 138 45 22];
+            app.DensitykgmEditFieldLabel.Position = [472 138 45 22];
             app.DensitykgmEditFieldLabel.Text = 'Density';
 
             % Create DensitykgmEditField
             app.DensitykgmEditField = uieditfield(app.UIFigure, 'numeric');
             app.DensitykgmEditField.ValueChangedFcn = createCallbackFcn(app, @ScalarFieldValueChanged, true);
-            app.DensitykgmEditField.Position = [472 138 90 22];
+            app.DensitykgmEditField.Position = [532 138 90 22];
 
             % Create DensityUnitsDropDown
             app.DensityUnitsDropDown = uidropdown(app.UIFigure);
-            app.DensityUnitsDropDown.Position = [569 138 100 22];
+            app.DensityUnitsDropDown.Position = [629 138 100 22];
 
             % Create ViscosityPasEditFieldLabel
             app.ViscosityPasEditFieldLabel = uilabel(app.UIFigure);
             app.ViscosityPasEditFieldLabel.HorizontalAlignment = 'right';
-            app.ViscosityPasEditFieldLabel.Position = [405 103 52 22];
+            app.ViscosityPasEditFieldLabel.Position = [465 103 52 22];
             app.ViscosityPasEditFieldLabel.Text = 'Viscosity';
 
             % Create ViscosityPasEditField
             app.ViscosityPasEditField = uieditfield(app.UIFigure, 'numeric');
             app.ViscosityPasEditField.ValueChangedFcn = createCallbackFcn(app, @ScalarFieldValueChanged, true);
-            app.ViscosityPasEditField.Position = [472 103 90 22];
+            app.ViscosityPasEditField.Position = [532 103 90 22];
 
             % Create ViscosityUnitsDropDown
             app.ViscosityUnitsDropDown = uidropdown(app.UIFigure);
-            app.ViscosityUnitsDropDown.Position = [569 103 100 22];
+            app.ViscosityUnitsDropDown.Position = [629 103 100 22];
 
             % Create CreateStreamButton
             app.CreateStreamButton = uibutton(app.UIFigure, 'push');
             app.CreateStreamButton.ButtonPushedFcn = createCallbackFcn(app, @CreateStreamButtonPushed, true);
             app.CreateStreamButton.FontSize = 16;
             app.CreateStreamButton.FontWeight = 'bold';
-            app.CreateStreamButton.Position = [448 37 170 30];
+            app.CreateStreamButton.Position = [508 37 170 30];
             app.CreateStreamButton.Text = 'Create Stream';
 
             % Create NumberofcomponentsSpinnerLabel
@@ -854,20 +854,20 @@ classdef defineStreamApp < matlab.apps.AppBase
             app.CheckBoxP = uicheckbox(app.UIFigure);
             app.CheckBoxP.ValueChangedFcn = createCallbackFcn(app, @CheckBoxPValueChanged, true);
             app.CheckBoxP.Text = '';
-            app.CheckBoxP.Position = [392 253 16 18];
+            app.CheckBoxP.Position = [462 253 16 18];
 
             % Create CheckBoxT
             app.CheckBoxT = uicheckbox(app.UIFigure);
             app.CheckBoxT.ValueChangedFcn = createCallbackFcn(app, @CheckBoxTValueChanged, true);
             app.CheckBoxT.Text = '';
-            app.CheckBoxT.Position = [392 219 16 18];
+            app.CheckBoxT.Position = [462 219 16 18];
 
             % Create TextArea
             app.TextArea = uitextarea(app.UIFigure);
             app.TextArea.Editable = 'off';
             app.TextArea.FontColor = [0.0745 0.6235 1];
             app.TextArea.BackgroundColor = [0.9412 0.9412 0.9412];
-            app.TextArea.Position = [38 280 310 93];
+            app.TextArea.Position = [38 280 360 93];
             app.TextArea.Value = { ...
                 'TIPS'; ...
                 'Select one unit per composition column and one per scalar field.'; ...
@@ -877,14 +877,14 @@ classdef defineStreamApp < matlab.apps.AppBase
             % Create PhaseDropDownLabel
             app.PhaseDropDownLabel = uilabel(app.UIFigure);
             app.PhaseDropDownLabel.HorizontalAlignment = 'right';
-            app.PhaseDropDownLabel.Position = [503 291 40 22];
+            app.PhaseDropDownLabel.Position = [563 291 40 22];
             app.PhaseDropDownLabel.Text = 'Phase';
 
             % Create PhaseDropDown
             app.PhaseDropDown = uidropdown(app.UIFigure);
             app.PhaseDropDown.Items = {'L', 'G'};
             app.PhaseDropDown.Tooltip = {'Select ''L'' for liquid phase or ''G'' for gas phase.'};
-            app.PhaseDropDown.Position = [558 291 111 22];
+            app.PhaseDropDown.Position = [618 291 111 22];
             app.PhaseDropDown.Value = 'L';
 
             % Create UnitconversionhelperButton
@@ -898,7 +898,7 @@ classdef defineStreamApp < matlab.apps.AppBase
             app.DefinestreamfromHysysButton = uibutton(app.UIFigure, 'push');
             app.DefinestreamfromHysysButton.ButtonPushedFcn = createCallbackFcn(app, @DefinestreamfromHysysButtonPushed, true);
             app.DefinestreamfromHysysButton.Icon = 'HysysLogo.png';
-            app.DefinestreamfromHysysButton.Position = [487 397 200 22];
+            app.DefinestreamfromHysysButton.Position = [547 397 200 22];
             app.DefinestreamfromHysysButton.Text = 'Define stream from Hysys';
 
             % Show the figure after all components are created
