@@ -6927,9 +6927,7 @@ classdef NonIdealReactorApp < handle
                     state(rowIdx).manual = true ;
             end
 
-            userData = src.UserData ;
-            userData.state = state ;
-            src.UserData = userData ;
+            app.DW_setFitConstraintState(state) ;
             app.DW_refreshFitConstraintTable() ;
         end
 
