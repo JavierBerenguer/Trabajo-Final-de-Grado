@@ -1304,6 +1304,32 @@ classdef NonIdealReactorApp < handle
                 'mode', {'bounds', 'bounds', 'bounds', 'bounds', 'bounds', 'bounds', 'scalar', 'scalar'}) ;
         end
 
+        function rowIndices = DW_fitConstraintRowsByMode(app, mode)
+            defs = app.DW_fitConstraintDefinitions() ;
+            rowIndices = find(strcmp({defs.mode}, char(string(mode)))) ;
+        end
+
+        function tables = DW_getFitConstraintTableHandles(app)
+            tables = {} ;
+            fieldNames = {'VariableTable', 'ScalarVariableTable'} ;
+            for i = 1:numel(fieldNames)
+                if isfield(app.DesignUI, 'Fit') && isfield(app.DesignUI.Fit, fieldNames{i})
+                    table = app.DesignUI.Fit.(fieldNames{i}) ;
+                    if ~isempty(table) && isvalid(table)
+                        tables{end + 1} = table ; %#ok<AGROW>
+                    end
+                end
+            end
+        end
+
+        function table = DW_getPrimaryFitConstraintTable(app)
+            table = [] ;
+            tables = app.DW_getFitConstraintTableHandles() ;
+            if ~isempty(tables)
+                table = tables{1} ;
+            end
+        end
+
         function state = DW_defaultFitConstraintState(app)
             defs = app.DW_fitConstraintDefinitions() ;
             state = repmat(struct( ...
@@ -1351,24 +1377,34 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_initializeFitConstraintTable(app)
-            table = app.DesignUI.Fit.VariableTable ;
-            if isempty(table) || ~isvalid(table)
+            tables = app.DW_getFitConstraintTableHandles() ;
+            if isempty(tables)
                 return
             end
             defs = app.DW_fitConstraintDefinitions() ;
-            table.UserData = struct( ...
-                'definitions', defs, ...
-                'state', app.DW_defaultFitConstraintState(), ...
-                'relevantRows', [], ...
-                'family', '', ...
-                'isRendering', false, ...
-                'suspendReferenceTauTracking', false) ;
+            state = app.DW_defaultFitConstraintState() ;
+            for i = 1:numel(tables)
+                table = tables{i} ;
+                tableMode = 'bounds' ;
+                if isfield(app.DesignUI.Fit, 'ScalarVariableTable') && isequal(table, app.DesignUI.Fit.ScalarVariableTable)
+                    tableMode = 'scalar' ;
+                end
+                table.UserData = struct( ...
+                    'definitions', defs, ...
+                    'state', state, ...
+                    'relevantRows', [], ...
+                    'family', '', ...
+                    'isRendering', false, ...
+                    'suspendReferenceTauTracking', false, ...
+                    'rowIndices', app.DW_fitConstraintRowsByMode(tableMode), ...
+                    'tableMode', tableMode) ;
+            end
             app.DW_refreshFitConstraintTable() ;
         end
 
         function state = DW_getFitConstraintState(app)
             state = app.DW_defaultFitConstraintState() ;
-            table = app.DesignUI.Fit.VariableTable ;
+            table = app.DW_getPrimaryFitConstraintTable() ;
             if isempty(table) || ~isvalid(table) || ~isstruct(table.UserData)
                 return
             end
@@ -1378,16 +1414,19 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_setFitConstraintState(app, state)
-            table = app.DesignUI.Fit.VariableTable ;
-            if isempty(table) || ~isvalid(table)
+            tables = app.DW_getFitConstraintTableHandles() ;
+            if isempty(tables)
                 return
             end
-            userData = table.UserData ;
-            if ~isstruct(userData)
-                userData = struct() ;
+            for i = 1:numel(tables)
+                table = tables{i} ;
+                userData = table.UserData ;
+                if ~isstruct(userData)
+                    userData = struct() ;
+                end
+                userData.state = state ;
+                table.UserData = userData ;
             end
-            userData.state = state ;
-            table.UserData = userData ;
         end
 
         function valueDisplay = DW_convertFitConstraintToDisplay(app, category, siValue)
@@ -1456,7 +1495,7 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_refreshFitConstraintTable(app)
-            table = app.DesignUI.Fit.VariableTable ;
+            table = app.DW_getPrimaryFitConstraintTable() ;
             if isempty(table) || ~isvalid(table)
                 return
             end
@@ -1464,9 +1503,8 @@ classdef NonIdealReactorApp < handle
                 return
             end
             app.DW_seedFitConstraintDefaults() ;
-            userData = table.UserData ;
             state = app.DW_getFitConstraintState() ;
-            defs = userData.definitions ;
+            defs = table.UserData.definitions ;
             family = app.DesignUI.Fit.FamilyDropdown.Value ;
             relevant = app.DW_relevantFitConstraintVariables(family) ;
             relevantRows = [] ;
@@ -1478,28 +1516,57 @@ classdef NonIdealReactorApp < handle
                 end
             end
 
-            data = cell(numel(defs), 4) ;
-            for i = 1:numel(defs)
-                data{i, 1} = logical(state(i).use) ;
-                data{i, 2} = defs(i).label ;
-                data{i, 3} = app.DW_convertFitConstraintToDisplay(defs(i).category, state(i).minSI) ;
-                if strcmp(defs(i).mode, 'scalar')
-                    data{i, 4} = 'n/a' ;
-                else
-                    data{i, 4} = app.DW_convertFitConstraintToDisplay(defs(i).category, state(i).maxSI) ;
-                end
+            app.DW_setFitConstraintState(state) ;
+            app.DW_renderFitConstraintTable(app.DesignUI.Fit.VariableTable, defs, state, relevantRows, family, 'bounds') ;
+            if isfield(app.DesignUI.Fit, 'ScalarVariableTable')
+                app.DW_renderFitConstraintTable(app.DesignUI.Fit.ScalarVariableTable, defs, state, relevantRows, family, 'scalar') ;
+            end
+        end
+
+        function DW_renderFitConstraintTable(app, table, defs, state, relevantRows, family, tableMode)
+            if isempty(table) || ~isvalid(table)
+                return
             end
 
+            rowIndices = app.DW_fitConstraintRowsByMode(tableMode) ;
+            localRelevantRows = find(ismember(rowIndices, relevantRows)) ;
+            switch tableMode
+                case 'scalar'
+                    data = cell(numel(rowIndices), 3) ;
+                    for i = 1:numel(rowIndices)
+                        rowIdx = rowIndices(i) ;
+                        data{i, 1} = logical(state(rowIdx).use) ;
+                        data{i, 2} = defs(rowIdx).label ;
+                        data{i, 3} = app.DW_convertFitConstraintToDisplay(defs(rowIdx).category, state(rowIdx).minSI) ;
+                    end
+                otherwise
+                    data = cell(numel(rowIndices), 4) ;
+                    for i = 1:numel(rowIndices)
+                        rowIdx = rowIndices(i) ;
+                        data{i, 1} = logical(state(rowIdx).use) ;
+                        data{i, 2} = defs(rowIdx).label ;
+                        data{i, 3} = app.DW_convertFitConstraintToDisplay(defs(rowIdx).category, state(rowIdx).minSI) ;
+                        data{i, 4} = app.DW_convertFitConstraintToDisplay(defs(rowIdx).category, state(rowIdx).maxSI) ;
+                    end
+            end
+
+            userData = table.UserData ;
+            if ~isstruct(userData)
+                userData = struct() ;
+            end
+            userData.definitions = defs ;
             userData.state = state ;
             userData.relevantRows = relevantRows ;
             userData.family = family ;
+            userData.rowIndices = rowIndices ;
+            userData.tableMode = tableMode ;
             userData.isRendering = true ;
             table.UserData = userData ;
             table.Data = data ;
             userData = table.UserData ;
             userData.isRendering = false ;
             table.UserData = userData ;
-            app.DW_applyFitConstraintTableStyles(table, relevantRows) ;
+            app.DW_applyFitConstraintTableStyles(table, localRelevantRows) ;
         end
 
         function DW_applyFitConstraintTableStyles(~, table, relevantRows)
@@ -6151,8 +6218,8 @@ classdef NonIdealReactorApp < handle
 
             left = uipanel(grid, 'Title', 'Fit Setup') ;
             left.Layout.Column = 1 ;
-            leftGrid = uigridlayout(left, [8 2]) ;
-            leftGrid.RowHeight = {'fit','fit',0,190,34,34,'fit',0} ;
+            leftGrid = uigridlayout(left, [9 2]) ;
+            leftGrid.RowHeight = {'fit','fit',0,150,82,34,34,'fit',0} ;
             leftGrid.ColumnWidth = {120, '1x'} ;
             app.DesignUI.Fit.SetupGrid = leftGrid ;
 
@@ -6188,20 +6255,31 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Fit.VariableTable.Layout.Row = 4 ;
             app.DesignUI.Fit.VariableTable.Layout.Column = [1 2] ;
             app.DesignUI.Fit.VariableTable.Tooltip = app.buildTooltipFromColumns( ...
-                ['Optional bounds for the simple fit. Mark Use to constrain that family parameter between Min and Max. ' ...
-                'Ref. tau_total and Total volume are special input rows: only one can be active, they use the Min column as the scalar value, and Max is not used.'], ...
+                'Optional bounds for the simple fit. Mark Use to constrain that family parameter between Min and Max.', ...
                 {'Use', 'Variable', 'Min', 'Max'}) ;
+            app.DesignUI.Fit.ScalarVariableTable = uitable(leftGrid, ...
+                'ColumnName', {'Use', 'Variable', 'Value'}, ...
+                'ColumnEditable', [true false true], ...
+                'ColumnWidth', {42, 128, 118}, ...
+                'RowName', {}, ...
+                'CellEditCallback', @(src, event) app.DW_handleFitConstraintTableEdit(src, event)) ;
+            app.DesignUI.Fit.ScalarVariableTable.Layout.Row = 5 ;
+            app.DesignUI.Fit.ScalarVariableTable.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.ScalarVariableTable.Tooltip = app.buildTooltipFromColumns( ...
+                ['Scalar fit inputs for dead-volume families. Activate at most one row: ' ...
+                'either Ref. tau_total or Total volume.'], ...
+                {'Use', 'Variable', 'Value'}) ;
             app.DW_initializeFitConstraintTable() ;
             app.DW_syncDefaultReferenceTau() ;
 
             app.DesignUI.Fit.SearchButton = uibutton(leftGrid, 'push', 'Text', 'Search best family', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runFitSearch()) ;
-            app.DesignUI.Fit.SearchButton.Layout.Row = 5 ; app.DesignUI.Fit.SearchButton.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.SearchButton.Layout.Row = 6 ; app.DesignUI.Fit.SearchButton.Layout.Column = [1 2] ;
             app.DesignUI.Fit.SearchButton.Tooltip = 'Fit every supported family, compare RMSE and score, and overlay the selected fitted RTDs.' ;
 
             app.DesignUI.Fit.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Diagnosis & Fit', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runFit()) ;
-            app.DesignUI.Fit.RunButton.Layout.Row = 6 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
+            app.DesignUI.Fit.RunButton.Layout.Row = 7 ; app.DesignUI.Fit.RunButton.Layout.Column = [1 2] ;
             app.DesignUI.Fit.RunButton.Tooltip = 'Run the heuristic diagnosis and fit the selected equivalent hydrodynamic model.' ;
 
             fitUnitsGrid = uigridlayout(leftGrid, [2 1], ...
@@ -6210,7 +6288,7 @@ classdef NonIdealReactorApp < handle
                 'Padding', [0 0 0 0], ...
                 'RowSpacing', 4, ...
                 'ColumnSpacing', 0) ;
-            fitUnitsGrid.Layout.Row = 7 ;
+            fitUnitsGrid.Layout.Row = 8 ;
             fitUnitsGrid.Layout.Column = [1 2] ;
             app.DisplayControls.DesignFit.time = app.createDisplayUnitControl( ...
                 fitUnitsGrid, 1, 1, 'Display time:', 'Time', 's', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
@@ -6218,7 +6296,7 @@ classdef NonIdealReactorApp < handle
                 fitUnitsGrid, 2, 1, 'Volume:', 'Volume', 'm^3', @(~,~) app.refreshDisplayUnits('DesignFit'), 92) ;
 
             app.DesignUI.Fit.FamilySearchList = app.createDisplayMultiSelectControl( ...
-                leftGrid, 8, [1 2], 'Families:', @(~,~) app.DW_handleFitSearchSelection(), 176) ;
+                leftGrid, 9, [1 2], 'Families:', @(~,~) app.DW_handleFitSearchSelection(), 176) ;
             app.clearMultiSelectListbox(app.DesignUI.Fit.FamilySearchList) ;
             app.DesignUI.Fit.FamilySearchList.Tooltip = 'Select which fitted families are displayed on the comparison plot.' ;
             app.DesignUI.Fit.FamilySearchList.UserData = struct('familyNames', {{}}, 'pendingSelection', []) ;
@@ -6760,7 +6838,7 @@ classdef NonIdealReactorApp < handle
                 end
                 if strcmp(defs(i).mode, 'scalar')
                     if ~isfinite(state(i).minSI) || state(i).minSI <= 0
-                        error('Enter a positive value in the Min column for %s.', defs(i).label) ;
+                        error('Enter a positive value for %s.', defs(i).label) ;
                     end
                     activeScalarKeys{end + 1} = defs(i).key ; %#ok<AGROW>
                     switch defs(i).key
@@ -6810,25 +6888,21 @@ classdef NonIdealReactorApp < handle
             defs = src.UserData.definitions ;
             state = src.UserData.state ;
             relevantRows = src.UserData.relevantRows ;
-            rowIdx = event.Indices(1) ;
+            rowIndices = src.UserData.rowIndices ;
+            localRowIdx = event.Indices(1) ;
+            rowIdx = rowIndices(localRowIdx) ;
             colIdx = event.Indices(2) ;
             def = defs(rowIdx) ;
 
             if ~any(relevantRows == rowIdx)
-                src.Data{rowIdx, colIdx} = event.PreviousData ;
+                src.Data{localRowIdx, colIdx} = event.PreviousData ;
                 app.updateStatus('That fit variable is inactive for the selected family') ;
-                return
-            end
-
-            if strcmp(def.mode, 'scalar') && colIdx == 4
-                src.Data{rowIdx, colIdx} = 'n/a' ;
-                app.updateStatus('Max is not used for Ref. tau_total or Total volume') ;
                 return
             end
 
             switch colIdx
                 case 1
-                    state(rowIdx).use = logical(src.Data{rowIdx, 1}) ;
+                    state(rowIdx).use = logical(src.Data{localRowIdx, 1}) ;
                     if strcmp(def.mode, 'scalar') && state(rowIdx).use
                         for otherKey = {'referenceTau', 'totalVolume'}
                             otherIdx = app.DW_findFitConstraintRow(otherKey{1}) ;
@@ -6841,14 +6915,14 @@ classdef NonIdealReactorApp < handle
                         app.DW_markReferenceTauEdited() ;
                     end
                 case 3
-                    parsedValue = app.DW_parseFitConstraintDisplayValue(def.category, src.Data{rowIdx, 3}) ;
+                    parsedValue = app.DW_parseFitConstraintDisplayValue(def.category, src.Data{localRowIdx, 3}) ;
                     state(rowIdx).minSI = parsedValue ;
                     state(rowIdx).manual = true ;
                     if strcmp(def.key, 'referenceTau')
                         app.DW_markReferenceTauEdited() ;
                     end
                 case 4
-                    parsedValue = app.DW_parseFitConstraintDisplayValue(def.category, src.Data{rowIdx, 4}) ;
+                    parsedValue = app.DW_parseFitConstraintDisplayValue(def.category, src.Data{localRowIdx, 4}) ;
                     state(rowIdx).maxSI = parsedValue ;
                     state(rowIdx).manual = true ;
             end
@@ -6867,12 +6941,12 @@ classdef NonIdealReactorApp < handle
             app.DW_setVisiblePair(app.DesignUI.Fit.BoundaryLabel, app.DesignUI.Fit.BoundaryDropdown, showBoundary) ;
             app.DW_refreshFitConstraintTable() ;
             if isfield(app.DesignUI.Fit, 'SetupGrid') && ~isempty(app.DesignUI.Fit.SetupGrid) && isvalid(app.DesignUI.Fit.SetupGrid)
-                rowHeights = {'fit','fit',0,190,34,34,'fit',0} ;
+                rowHeights = {'fit','fit',0,150,82,34,34,'fit',0} ;
                 if showBoundary
                     rowHeights{3} = 'fit' ;
                 end
                 if showSearchSelector
-                    rowHeights{8} = '1x' ;
+                    rowHeights{9} = '1x' ;
                 end
                 app.DesignUI.Fit.SetupGrid.RowHeight = rowHeights ;
             end
@@ -7106,7 +7180,7 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_markReferenceTauEdited(app)
-            table = app.DesignUI.Fit.VariableTable ;
+            table = app.DW_getPrimaryFitConstraintTable() ;
             if isempty(table) || ~isvalid(table) || ~isstruct(table.UserData)
                 return
             end
@@ -7125,29 +7199,35 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_beginReferenceTauProgrammaticUpdate(app)
-            table = app.DesignUI.Fit.VariableTable ;
-            if isempty(table) || ~isvalid(table)
+            tables = app.DW_getFitConstraintTableHandles() ;
+            if isempty(tables)
                 return
             end
-            userData = table.UserData ;
-            if ~isstruct(userData)
-                userData = struct() ;
+            for i = 1:numel(tables)
+                table = tables{i} ;
+                userData = table.UserData ;
+                if ~isstruct(userData)
+                    userData = struct() ;
+                end
+                userData.suspendReferenceTauTracking = true ;
+                table.UserData = userData ;
             end
-            userData.suspendReferenceTauTracking = true ;
-            table.UserData = userData ;
         end
 
         function DW_endReferenceTauProgrammaticUpdate(app, manualOverride)
-            table = app.DesignUI.Fit.VariableTable ;
-            if isempty(table) || ~isvalid(table)
+            tables = app.DW_getFitConstraintTableHandles() ;
+            if isempty(tables)
                 return
             end
-            userData = table.UserData ;
-            if ~isstruct(userData)
-                userData = struct() ;
+            for i = 1:numel(tables)
+                table = tables{i} ;
+                userData = table.UserData ;
+                if ~isstruct(userData)
+                    userData = struct() ;
+                end
+                userData.suspendReferenceTauTracking = false ;
+                table.UserData = userData ;
             end
-            userData.suspendReferenceTauTracking = false ;
-            table.UserData = userData ;
             state = app.DW_getFitConstraintState() ;
             idx = app.DW_findFitConstraintRow('referenceTau') ;
             state(idx).manual = logical(manualOverride) ;
