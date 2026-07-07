@@ -1751,13 +1751,18 @@ classdef NonIdealReactorApp < handle
             subGrid.Layout.Row = row ;
             subGrid.Layout.Column = col ;
 
+            tooltipText = sprintf('Select which %s are used in this section.', ...
+                lower(strrep(labelText, ':', ''))) ;
+            if strcmpi(strtrim(labelText), 'Reactants:')
+                tooltipText = ['Select which functional reactants are used in this section. ' ...
+                    'Functional reactants include consumed intermediates in reversible or bidirectional systems.'] ;
+            end
             label = uilabel(subGrid, 'Text', labelText, 'FontSize', 11, ...
                 'FontWeight', 'bold') ;
             listbox = uilistbox(subGrid, ...
                 'Multiselect', 'on', ...
                 'FontSize', 11, ...
-                'Tooltip', sprintf('Select which %s are used in the non-graphical displays for this section.', ...
-                    lower(strrep(labelText, ':', ''))), ...
+                'Tooltip', tooltipText, ...
                 'ValueChangedFcn', callbackFcn) ;
             listbox.Layout.Row = 2 ;
             listbox.Layout.Column = 1 ;
@@ -1908,13 +1913,17 @@ classdef NonIdealReactorApp < handle
 
         function info = getPredictionReactantInfo(app, RS, C0)
             compLabels = app.getReactionComponentLabels(RS) ;
-            reactantMask = any(RS.stochiometricMatrix < 0, 1) ;
-            reactantIdx = find(reactantMask & (C0(:)' > 1e-12)) ;
+            reactantIdx = app.getFunctionalReactantIndices(RS, C0) ;
             reactantLabels = compLabels(reactantIdx) ;
             info = struct( ...
                 'componentLabels', {compLabels}, ...
                 'reactantIndices', reactantIdx, ...
                 'reactantLabels', {reactantLabels}) ;
+        end
+
+        function reactantIdx = getFunctionalReactantIndices(~, RS, C0)
+            reactantMask = any(RS.stochiometricMatrix < 0, 1) ;
+            reactantIdx = find(reactantMask & (C0(:)' > 1e-12)) ;
         end
 
         function ensurePredictionReactantSelector(~, listbox, reactantInfo)
@@ -1923,9 +1932,9 @@ classdef NonIdealReactorApp < handle
             end
 
             if isempty(reactantInfo.reactantIndices)
-                listbox.Items = {'No reactants'} ;
+                listbox.Items = {'No functional reactants'} ;
                 listbox.ItemsData = [] ;
-                listbox.Value = {'No reactants'} ;
+                listbox.Value = {'No functional reactants'} ;
                 listbox.Enable = 'off' ;
                 return
             end
@@ -2136,14 +2145,14 @@ classdef NonIdealReactorApp < handle
             if isempty(reactantInfo.reactantIndices)
                 app.Pred_MixingEffectTable.Visible = 'off' ;
                 app.Pred_MixingEffectLabel.Visible = 'on' ;
-                app.Pred_MixingEffectLabel.Text = 'No reactants with C_0 > 0' ;
+                app.Pred_MixingEffectLabel.Text = 'No functional reactants with C_0 > 0' ;
                 return
             end
 
             if isempty(selectedIdx)
                 app.Pred_MixingEffectTable.Visible = 'off' ;
                 app.Pred_MixingEffectLabel.Visible = 'on' ;
-                app.Pred_MixingEffectLabel.Text = 'No reactants selected' ;
+                app.Pred_MixingEffectLabel.Text = 'No functional reactants selected' ;
                 return
             end
 
@@ -2208,6 +2217,30 @@ classdef NonIdealReactorApp < handle
             end
         end
 
+        function rolePriority = getSpeciesRolePriority(~, roles)
+            rolePriority = zeros(1, numel(roles)) ;
+            for i = 1:numel(roles)
+                switch roles{i}
+                    case 'Reactant'
+                        rolePriority(i) = 1 ;
+                    case 'Intermediate'
+                        rolePriority(i) = 2 ;
+                    case 'Product'
+                        rolePriority(i) = 3 ;
+                    otherwise
+                        rolePriority(i) = 4 ;
+                end
+            end
+        end
+
+        function rowOrder = getDefaultSpeciesRowOrder(app, roles, nComp, functionalIndices)
+            functionalPriority = ones(1, nComp) * 2 ;
+            functionalPriority(functionalIndices) = 1 ;
+            rolePriority = app.getSpeciesRolePriority(roles) ;
+            [~, rowOrder] = sortrows([functionalPriority(:), rolePriority(:), (1:nComp)']) ;
+            rowOrder = rowOrder(:)' ;
+        end
+
         function updatePredictionSummaryTable(app, ...
                 compLabels, roles, C0, ...
                 C_seg, C_mm, C_cstr, C_pfr, ...
@@ -2231,7 +2264,7 @@ classdef NonIdealReactorApp < handle
                     summaryRows{i, j + 2} = sprintf('%.4g', concDisplay(i, j)) ;
                 end
 
-                if isKey(reactantPosMap, i) && strcmp(roles{i}, 'Reactant')
+                if isKey(reactantPosMap, i)
                     pos = reactantPosMap(i) ;
                     summaryRows{i, 8} = sprintf('%.4f', X_cstr(pos)) ;
                     summaryRows{i, 9} = sprintf('%.4f', X_seg(pos)) ;
@@ -2246,21 +2279,7 @@ classdef NonIdealReactorApp < handle
             end
 
             if isempty(selectedIdx) || isequal(selectedIdx, reactantIndices)
-                rolePriority = zeros(1, nComp) ;
-                for i = 1:nComp
-                    switch roles{i}
-                        case 'Reactant'
-                            rolePriority(i) = 1 ;
-                        case 'Intermediate'
-                            rolePriority(i) = 2 ;
-                        case 'Product'
-                            rolePriority(i) = 3 ;
-                        otherwise
-                            rolePriority(i) = 4 ;
-                    end
-                end
-                [~, rowOrder] = sortrows([rolePriority(:), (1:nComp)']) ;
-                rowOrder = rowOrder(:)' ;
+                rowOrder = app.getDefaultSpeciesRowOrder(roles, nComp, reactantIndices) ;
             else
                 remaining = setdiff(1:nComp, selectedIdx, 'stable') ;
                 rowOrder = [selectedIdx, remaining] ;
@@ -2297,7 +2316,7 @@ classdef NonIdealReactorApp < handle
                     summaryRows{i, j + 2} = sprintf('%.4g', concDisplay(i, j)) ;
                 end
 
-                if isKey(reactantPosMap, i) && strcmp(roles{i}, 'Reactant')
+                if isKey(reactantPosMap, i)
                     pos = reactantPosMap(i) ;
                     summaryRows{i, 7} = sprintf('%.4f', X_tis(pos)) ;
                     summaryRows{i, 8} = sprintf('%.4f', X_cstr(pos)) ;
@@ -2308,19 +2327,12 @@ classdef NonIdealReactorApp < handle
                     summaryRows{i, 9} = '--' ;
                 end
 
-                switch roles{i}
-                    case 'Reactant'
-                        rolePriority(i) = 1 ;
-                    case 'Intermediate'
-                        rolePriority(i) = 2 ;
-                    case 'Product'
-                        rolePriority(i) = 3 ;
-                    otherwise
-                        rolePriority(i) = 4 ;
-                end
+                rolePriority(i) = app.getSpeciesRolePriority(roles(i)) ;
             end
 
-            [~, rowOrder] = sortrows([rolePriority(:), (1:nComp)']) ;
+            functionalPriority = ones(1, nComp) * 2 ;
+            functionalPriority(reactantIndices) = 1 ;
+            [~, rowOrder] = sortrows([functionalPriority(:), rolePriority(:), (1:nComp)']) ;
             rowOrder = rowOrder(:)' ;
 
             app.TIS_C_exitTable.ColumnName = { ...
@@ -2353,7 +2365,7 @@ classdef NonIdealReactorApp < handle
                     summaryRows{i, j + 2} = sprintf('%.4g', concDisplay(i, j)) ;
                 end
 
-                if isKey(reactantPosMap, i) && strcmp(roles{i}, 'Reactant')
+                if isKey(reactantPosMap, i)
                     pos = reactantPosMap(i) ;
                     summaryRows{i, 7} = sprintf('%.4f', X_disp(pos)) ;
                     summaryRows{i, 8} = sprintf('%.4f', X_cstr(pos)) ;
@@ -2364,19 +2376,12 @@ classdef NonIdealReactorApp < handle
                     summaryRows{i, 9} = '--' ;
                 end
 
-                switch roles{i}
-                    case 'Reactant'
-                        rolePriority(i) = 1 ;
-                    case 'Intermediate'
-                        rolePriority(i) = 2 ;
-                    case 'Product'
-                        rolePriority(i) = 3 ;
-                    otherwise
-                        rolePriority(i) = 4 ;
-                end
+                rolePriority(i) = app.getSpeciesRolePriority(roles(i)) ;
             end
 
-            [~, rowOrder] = sortrows([rolePriority(:), (1:nComp)']) ;
+            functionalPriority = ones(1, nComp) * 2 ;
+            functionalPriority(reactantIndices) = 1 ;
+            [~, rowOrder] = sortrows([functionalPriority(:), rolePriority(:), (1:nComp)']) ;
             rowOrder = rowOrder(:)' ;
 
             app.Disp_C_exitTable.ColumnName = { ...
@@ -3017,9 +3022,9 @@ classdef NonIdealReactorApp < handle
                 if ~isfield(row, 'use') || ~row.use
                     continue
                 end
-                rawValue = DesignWorkspaceHelper.constraintMetricValue(row.metric, row.speciesIndex, optimum, params) ;
+                rawValue = app.DW_constraintMetricValue(row.metric, row.speciesIndex, optimum, params) ;
                 rawTarget = row.value ;
-                satisfied = DesignWorkspaceHelper.constraintSatisfied(row.type, rawValue, rawTarget) ;
+                satisfied = app.DW_constraintSatisfied(row.type, rawValue, rawTarget) ;
                 metricLabel = char(string(row.metric)) ;
                 switch metricLabel
                     case 'Residence Time'
@@ -3037,12 +3042,62 @@ classdef NonIdealReactorApp < handle
                         valueText = app.DW_formatFitDisplayNumber(rawValue) ;
                         targetText = app.DW_formatFitDisplayNumber(rawTarget) ;
                 end
-                rows(end+1, :) = {metricLabel, valueText, targetText, DesignWorkspaceHelper.flagText(satisfied)} ; %#ok<AGROW>
+                rows(end+1, :) = {metricLabel, valueText, targetText, app.DW_flagText(satisfied)} ; %#ok<AGROW>
             end
             if isempty(rows)
                 rows = cell(0, 4) ;
             end
             tableData = rows ;
+        end
+
+        function value = DW_constraintMetricValue(app, metric, speciesIndex, scenario, params)
+            switch char(string(metric))
+                case 'Conversion'
+                    value = app.getStructField(app.getStructField(scenario, 'metrics', struct()), 'conversion', NaN) ;
+                case 'Selectivity'
+                    value = app.DW_safeMetric(app.getStructField(app.getStructField(scenario, 'metrics', struct()), 'selectivity', NaN)) ;
+                case 'Yield'
+                    value = app.DW_safeMetric(app.getStructField(app.getStructField(scenario, 'metrics', struct()), 'yield', NaN)) ;
+                case 'Residence Time'
+                    value = app.getStructField(params, 'tau', NaN) ;
+                case 'Recycle Ratio'
+                    value = app.getStructField(params, 'recycleRatio', 0) ;
+                case 'C_out'
+                    cOut = app.getStructField(scenario, 'C_out', []) ;
+                    idx = max(1, min(numel(cOut), speciesIndex)) ;
+                    if isempty(cOut)
+                        value = NaN ;
+                    else
+                        value = cOut(idx) ;
+                    end
+                otherwise
+                    value = NaN ;
+            end
+        end
+
+        function tf = DW_constraintSatisfied(~, type, value, target)
+            switch char(string(type))
+                case 'Lower bound'
+                    tf = value >= target ;
+                case 'Upper bound'
+                    tf = value <= target ;
+                otherwise
+                    tf = abs(value - target) <= max(1e-9, 0.01 * abs(target)) ;
+            end
+        end
+
+        function value = DW_safeMetric(~, value)
+            if isempty(value) || ~isfinite(value)
+                value = 0 ;
+            end
+        end
+
+        function out = DW_flagText(~, flag)
+            if flag
+                out = 'Yes' ;
+            else
+                out = 'No' ;
+            end
         end
 
         function tableData = DW_buildOptimizationSensitivityTable(app, result, timeDropdown)
@@ -4468,7 +4523,7 @@ classdef NonIdealReactorApp < handle
             app.Pred_C_exitPanel.Layout.Row = 2 ;
             app.Pred_C_exitPanel.Layout.Column = 1 ;
             app.Pred_C_exitPanel.Tooltip = ...
-                ['Per-species summary of feed concentration, outlet concentration and reactant conversion for each prediction model. ' ...
+                ['Per-species summary of feed concentration, outlet concentration and functional-reactant conversion for each prediction model. ' ...
                 'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
             tableGrid = uigridlayout(app.Pred_C_exitPanel, [1 1], ...
                 'Padding', [6 6 6 6]) ;
@@ -4482,7 +4537,7 @@ classdef NonIdealReactorApp < handle
                 'RowName', {}) ;
             app.Pred_C_exitTable.Layout.Row = 1 ;
             app.Pred_C_exitTable.Tooltip = ...
-                ['Reactants show concentration and conversion. Products, intermediates and inerts show concentration only. ' ...
+                ['Functional reactants show concentration and conversion. Products and inerts show concentration only, and intermediates can also show conversion when they are consumed. ' ...
                 'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
 
             app.Pred_MixingEffectPanel = uipanel(rightGrid, ...
@@ -4490,7 +4545,7 @@ classdef NonIdealReactorApp < handle
             app.Pred_MixingEffectPanel.Layout.Row = 2 ;
             app.Pred_MixingEffectPanel.Layout.Column = 2 ;
             app.Pred_MixingEffectPanel.Tooltip = ...
-                ['Relative conversion comparison between model pairs for the selected reactants. ' ...
+                ['Relative conversion comparison between model pairs for the selected functional reactants. ' ...
                 'Positive values mean the first model has higher conversion than the reference model.'] ;
             mixGrid = uigridlayout(app.Pred_MixingEffectPanel, [1 1], ...
                 'Padding', [6 6 6 6], ...
@@ -4511,7 +4566,7 @@ classdef NonIdealReactorApp < handle
             app.Pred_MixingEffectTable.Layout.Row = 1 ;
             app.Pred_MixingEffectTable.Layout.Column = 1 ;
             app.Pred_MixingEffectTable.Tooltip = ...
-                ['Percentage conversion comparison for each selected reactant. ' ...
+                ['Percentage conversion comparison for each selected functional reactant. ' ...
                 'Positive values mean the first model has higher conversion than the model shown after "vs".'] ;
         end
 
@@ -4824,10 +4879,10 @@ classdef NonIdealReactorApp < handle
             cla(app.Pred_AxesXbatch) ;
             nR = numel(reactantInfo.reactantIndices) ;
             if nR == 0
-                text(app.Pred_AxesXbatch, 0.5, 0.5, 'No reactants with C_0 > 0', ...
+                text(app.Pred_AxesXbatch, 0.5, 0.5, 'No functional reactants with C_0 > 0', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
             elseif isempty(selectedIdx)
-                text(app.Pred_AxesXbatch, 0.5, 0.5, 'No reactants selected', ...
+                text(app.Pred_AxesXbatch, 0.5, 0.5, 'No functional reactants selected', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
             else
                 reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedIdx) ;
@@ -5117,7 +5172,7 @@ classdef NonIdealReactorApp < handle
             app.TIS_C_exitPanel.Layout.Row = 2 ;
             app.TIS_C_exitPanel.Layout.Column = 1 ;
             app.TIS_C_exitPanel.Tooltip = ...
-                ['Per-species summary of feed concentration, outlet concentration and reactant conversion for TIS and its CSTR/PFR references. ' ...
+                ['Per-species summary of feed concentration, outlet concentration and functional-reactant conversion for TIS and its CSTR/PFR references. ' ...
                 'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
             tableGrid = uigridlayout(app.TIS_C_exitPanel, [1 1], ...
                 'Padding', [6 6 6 6]) ;
@@ -5131,7 +5186,7 @@ classdef NonIdealReactorApp < handle
                 'RowName', {}) ;
             app.TIS_C_exitTable.Layout.Row = 1 ;
             app.TIS_C_exitTable.Tooltip = ...
-                ['Reactants show concentration and conversion. Products, intermediates and inerts show concentration only. ' ...
+                ['Functional reactants show concentration and conversion. Products and inerts show concentration only, and intermediates can also show conversion when they are consumed. ' ...
                 'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
 
             % E(t) plot for TIS model
@@ -5402,11 +5457,11 @@ classdef NonIdealReactorApp < handle
             app.ensurePredictionReactantSelector(app.DisplayControls.TIS.reactant, reactantInfo) ;
             selectedReactants = app.getPredictionSelectedReactants(app.DisplayControls.TIS.reactant, reactantInfo) ;
             if isempty(reactantInfo.reactantIndices)
-                text(app.TIS_AxesComparison, 0.5, 0.5, 'No reactants with C_0 > 0', ...
+                text(app.TIS_AxesComparison, 0.5, 0.5, 'No functional reactants with C_0 > 0', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.TIS_AxesComparison, 'off') ;
             elseif isempty(selectedReactants)
-                text(app.TIS_AxesComparison, 0.5, 0.5, 'No reactants selected', ...
+                text(app.TIS_AxesComparison, 0.5, 0.5, 'No functional reactants selected', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.TIS_AxesComparison, 'off') ;
             else
@@ -5713,7 +5768,7 @@ classdef NonIdealReactorApp < handle
             app.Disp_C_exitPanel.Layout.Row = 2 ;
             app.Disp_C_exitPanel.Layout.Column = 1 ;
             app.Disp_C_exitPanel.Tooltip = ...
-                ['Per-species summary of feed concentration, outlet concentration and reactant conversion for dispersion and its CSTR/PFR references. ' ...
+                ['Per-species summary of feed concentration, outlet concentration and functional-reactant conversion for dispersion and its CSTR/PFR references. ' ...
                 'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
             tableGrid = uigridlayout(app.Disp_C_exitPanel, [1 1], ...
                 'Padding', [6 6 6 6]) ;
@@ -5727,7 +5782,7 @@ classdef NonIdealReactorApp < handle
                 'RowName', {}) ;
             app.Disp_C_exitTable.Layout.Row = 1 ;
             app.Disp_C_exitTable.Tooltip = ...
-                ['Reactants show concentration and conversion. Products, intermediates and inerts show concentration only. ' ...
+                ['Functional reactants show concentration and conversion. Products and inerts show concentration only, and intermediates can also show conversion when they are consumed. ' ...
                 'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
 
             % E(t) plot
@@ -6034,11 +6089,11 @@ classdef NonIdealReactorApp < handle
             app.ensurePredictionReactantSelector(app.DisplayControls.Dispersion.reactant, reactantInfo) ;
             selectedReactants = app.getPredictionSelectedReactants(app.DisplayControls.Dispersion.reactant, reactantInfo) ;
             if isempty(reactantInfo.reactantIndices)
-                text(app.Disp_AxesComparison, 0.5, 0.5, 'No reactants with C_0 > 0', ...
+                text(app.Disp_AxesComparison, 0.5, 0.5, 'No functional reactants with C_0 > 0', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.Disp_AxesComparison, 'off') ;
             elseif isempty(selectedReactants)
-                text(app.Disp_AxesComparison, 0.5, 0.5, 'No reactants selected', ...
+                text(app.Disp_AxesComparison, 0.5, 0.5, 'No functional reactants selected', ...
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.Disp_AxesComparison, 'off') ;
             else
@@ -6372,7 +6427,7 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.KeyComponentLabel = lbl ;
             app.DesignUI.Reactive.KeyComponentDropdown = uidropdown(leftGrid, 'Items', {'1'}, 'ItemsData', 1, 'Value', 1) ;
             app.DesignUI.Reactive.KeyComponentDropdown.Layout.Row = 6 ; app.DesignUI.Reactive.KeyComponentDropdown.Layout.Column = 2 ;
-            app.setTooltip('Main reactant used to report conversion X across the reactive models.', ...
+            app.setTooltip('Main reactant used to report conversion X across the reactive models. In reversible or bidirectional systems this can default to a consumed intermediate acting as a functional reactant.', ...
                 lbl, app.DesignUI.Reactive.KeyComponentDropdown) ;
             lbl = uilabel(leftGrid, 'Text', 'Desired product:') ;
             app.DesignUI.Reactive.DesiredProductLabel = lbl ;
@@ -7329,10 +7384,30 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.ByproductDropdown.Items = labels ;
             app.DesignUI.Reactive.ByproductDropdown.ItemsData = itemsData ;
 
-            app.DesignUI.Reactive.KeyComponentDropdown.Value = min(max(app.DesignState.reactionSpec.keyComponentIndex, 1), nComp) ;
+            keyComponentIndex = app.DW_resolveReactiveKeyComponentIndex(RS, ...
+                app.DesignState.reactionSpec.keyComponentIndex) ;
+            app.DesignState.reactionSpec.keyComponentIndex = keyComponentIndex ;
+            app.DesignUI.Reactive.KeyComponentDropdown.Value = keyComponentIndex ;
             app.DesignUI.Reactive.DesiredProductDropdown.Value = min(max(app.DesignState.reactionSpec.desiredProductIndex, 1), nComp) ;
             app.DesignUI.Reactive.ByproductDropdown.Value = min(max(app.DesignState.reactionSpec.byproductIndex, 1), nComp) ;
             app.DW_refreshReactiveContext() ;
+        end
+
+        function keyComponentIndex = DW_resolveReactiveKeyComponentIndex(app, RS, currentIndex)
+            nComp = RS.nComponents ;
+            keyComponentIndex = min(max(currentIndex, 1), nComp) ;
+            feedStream = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+            if isempty(feedStream) || ~isa(feedStream, 'Stream')
+                return
+            end
+
+            functionalIndices = app.getFunctionalReactantIndices(RS, feedStream.concentration(:)') ;
+            if isempty(functionalIndices)
+                return
+            end
+            if ~any(functionalIndices == keyComponentIndex)
+                keyComponentIndex = functionalIndices(1) ;
+            end
         end
 
         function label = getComponentLabel(~, RS, idx)
