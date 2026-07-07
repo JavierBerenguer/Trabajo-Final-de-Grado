@@ -8,7 +8,7 @@ classdef NonIdealReactorApp < handle
 %
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 28, 2026
+% Created: March 21, 2026. Last update: July 7, 2026
 % =========================================================================
 
     properties (Access = private)

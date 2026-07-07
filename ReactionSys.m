@@ -5,7 +5,7 @@ classdef ReactionSys
 %   - Includes the function that computes the rate of reaction for a given reactive system
 % =========================================================================
 % Isabela Fons Moreno-Palancas
-% Last update: April 9, 2020
+% Last update: July 7, 2026
 % =========================================================================
     properties
         componentNames

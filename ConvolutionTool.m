@@ -26,7 +26,7 @@ classdef ConvolutionTool
 %
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 26, 2026. Last update: March 28, 2026
+% Created: March 26, 2026. Last update: July 7, 2026
 % =========================================================================
 
     methods (Static)

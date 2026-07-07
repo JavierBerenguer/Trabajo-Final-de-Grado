@@ -10,7 +10,7 @@ classdef RTD
 %   - Plot E(t), F(t), E(theta)
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: March 28, 2026
+% Created: March 21, 2026. Last update: July 7, 2026
 % Precision update: increased resolution for numerical accuracy
 % =========================================================================
 

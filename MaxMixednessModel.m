@@ -10,7 +10,7 @@ classdef MaxMixednessModel
 % isothermal route implemented in compute_isothermal().
 % =========================================================================
 % Javier Berenguer Sabater
-% Created: March 21, 2026. Last update: April 26, 2026
+% Created: March 21, 2026. Last update: July 7, 2026
 % =========================================================================
 
 % Internal units (SI):
