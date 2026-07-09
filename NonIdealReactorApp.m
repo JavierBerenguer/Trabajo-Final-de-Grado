@@ -6468,13 +6468,16 @@ classdef NonIdealReactorApp < handle
             rightGrid = uigridlayout(right, [4 1]) ;
             rightGrid.RowHeight = {'fit', 150, 180, '1x'} ;
 
-            app.DesignUI.Reactive.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting reactive calculation.', 'WordWrap', 'on') ;
+            app.DesignUI.Reactive.SummaryLabel = uilabel(rightGrid, ...
+                'Text', app.DW_getReactiveMetricFormulaText(), ...
+                'WordWrap', 'off', ...
+                'Interpreter', 'latex') ;
             app.DesignUI.Reactive.SummaryLabel.Layout.Row = 1 ;
-            app.DesignUI.Reactive.SummaryLabel.Tooltip = 'Short summary of conversion X, selectivity = desired/reacted key reactant, and yield = desired/feed key reactant.' ;
+            app.DesignUI.Reactive.SummaryLabel.Tooltip = 'Reactive metrics are computed as Selectivity = C_desired / (C_in,key - C_out,key) and Yield = C_desired / C_in,key.' ;
             app.DesignUI.Reactive.ResultTable = uitable(rightGrid, 'ColumnName', {'Model', 'X', 'Selectivity', 'Yield'}, 'RowName', {}) ;
             app.DesignUI.Reactive.ResultTable.Layout.Row = 2 ;
             app.DesignUI.Reactive.ResultTable.Tooltip = app.buildTooltipFromColumns( ...
-                'Reactive-performance summary by model. X denotes conversion of the key reactant, selectivity = desired/reacted key reactant, and yield = desired/feed key reactant.', ...
+                'Reactive-performance summary by model. X denotes conversion of the key reactant, Selectivity = C_desired / (C_in,key - C_out,key), and Yield = C_desired / C_in,key.', ...
                 {'Model', 'X', 'Selectivity', 'Yield'}) ;
             app.DesignUI.Reactive.CoutTable = uitable(rightGrid, 'ColumnName', {'Component', 'C_in', 'Seg', 'MM', 'CSTR', 'PFR'}, 'RowName', {}) ;
             app.DesignUI.Reactive.CoutTable.Layout.Row = 3 ;
@@ -7029,6 +7032,11 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.ByproductDropdown.Enable = app.ternary(nComp >= 3, 'on', 'off') ;
         end
 
+        function txt = DW_getReactiveMetricFormulaText(app) %#ok<MANU>
+            txt = ['$Selectivity = \frac{C_{\mathrm{desired}}}{C_{\mathrm{in,key}} - C_{\mathrm{out,key}}}' ...
+                '\qquad Yield = \frac{C_{\mathrm{desired}}}{C_{\mathrm{in,key}}}$'] ;
+        end
+
         function DW_applyOptimizationTableStyles(app, relevantRows)
             try
                 removeStyle(app.DesignUI.Optimization.DecisionTable) ;
@@ -7319,7 +7327,7 @@ classdef NonIdealReactorApp < handle
                 app.DesignUI.Reactive.ResultTable.Data = cell(0, 4) ;
                 app.DesignUI.Reactive.CoutTable.Data = cell(0, 6) ;
                 app.DesignUI.Reactive.CoutTable.ColumnName = app.DW_buildReactiveCoutColumnNames(concDD) ;
-                app.DesignUI.Reactive.SummaryLabel.Text = 'Awaiting reactive calculation.' ;
+                app.DesignUI.Reactive.SummaryLabel.Text = app.DW_getReactiveMetricFormulaText() ;
                 cla(app.DesignUI.Reactive.Axes) ;
                 [~, titleText, yLabel] = app.DW_getReactiveMetricSpec() ;
                 title(app.DesignUI.Reactive.Axes, titleText) ;
@@ -7337,7 +7345,7 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.ResultTable.Data = app.DW_buildReactiveSummaryTable(result) ;
             app.DesignUI.Reactive.CoutTable.ColumnName = app.DW_buildReactiveCoutColumnNames(concDD) ;
             app.DesignUI.Reactive.CoutTable.Data = app.DW_buildReactiveCoutTable(result, RS, C0, concDD) ;
-            app.DesignUI.Reactive.SummaryLabel.Text = result.summaryText ;
+            app.DesignUI.Reactive.SummaryLabel.Text = app.DW_getReactiveMetricFormulaText() ;
             app.DW_refreshReactivePlot(result) ;
         end
 
