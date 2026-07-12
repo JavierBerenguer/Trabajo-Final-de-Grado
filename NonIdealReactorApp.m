@@ -4727,18 +4727,22 @@ classdef NonIdealReactorApp < handle
             app.Pred_MixingEffectPanel.Layout.Row = 2 ;
             app.Pred_MixingEffectPanel.Layout.Column = 2 ;
             app.Pred_MixingEffectPanel.Tooltip = '' ;
+            app.Pred_MixingEffectPanel.BackgroundColor = [1 1 1] ;
             mixGrid = uigridlayout(app.Pred_MixingEffectPanel, [1 1], ...
                 'Padding', [6 6 6 6], ...
                 'RowSpacing', 6) ;
+            mixGrid.BackgroundColor = [1 1 1] ;
             app.Pred_MixingEffectLabel = uilabel(mixGrid, ...
                 'Text', 'Compute a case to populate this macromixing/micromixing map.', ...
                 'WordWrap', 'on') ;
             app.Pred_MixingEffectLabel.HorizontalAlignment = 'center' ;
             app.Pred_MixingEffectLabel.VerticalAlignment = 'top' ;
+            app.Pred_MixingEffectLabel.BackgroundColor = [1 1 1] ;
             app.Pred_MixingEffectLabel.Layout.Row = 1 ;
             app.Pred_MixingEffectLabel.Layout.Column = 1 ;
             app.Pred_MixingEffectAxes = uiaxes(mixGrid, ...
                 'Visible', 'off') ;
+            app.Pred_MixingEffectAxes.Color = [1 1 1] ;
             app.Pred_MixingEffectAxes.Layout.Row = 1 ;
             app.Pred_MixingEffectAxes.Layout.Column = 1 ;
         end
