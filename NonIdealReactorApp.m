@@ -4357,8 +4357,11 @@ classdef NonIdealReactorApp < handle
 
             for k = 1:numel(overlayHandles)
                 h = overlayHandles{k} ;
-                if ~isempty(h) && isgraphics(h)
-                    delete(h) ;
+                if ~isempty(h)
+                    validHandles = h(isgraphics(h)) ;
+                    if ~isempty(validHandles)
+                        delete(validHandles) ;
+                    end
                 end
             end
 
@@ -4382,8 +4385,11 @@ classdef NonIdealReactorApp < handle
 
             for k = 1:numel(overlayHandles)
                 h = overlayHandles{k} ;
-                if ~isempty(h) && isgraphics(h)
-                    delete(h) ;
+                if ~isempty(h)
+                    validHandles = h(isgraphics(h)) ;
+                    if ~isempty(validHandles)
+                        delete(validHandles) ;
+                    end
                 end
             end
 
