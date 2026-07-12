@@ -3108,16 +3108,57 @@ classdef NonIdealReactorApp < handle
                     'Load a Feed Stream to define the C_in,i units used in optimization.'] ;
                 return
             end
+            concUnit = app.DW_getOptimizationInputConcentrationUnit() ;
+            noticeText = sprintf([ ...
+                'Input concentrations inherited from Feed Stream: C_in,i [%s]. ' ...
+                'Change them in defineStreamApp if needed.'], concUnit) ;
+        end
+
+        function columnNames = DW_buildOptimizationDecisionColumnNames(app)
+            concUnit = app.DW_getOptimizationInputConcentrationUnit() ;
+            columnNames = {'Use', 'Variable', ...
+                sprintf('Lower [%s]', concUnit), ...
+                sprintf('Upper [%s]', concUnit)} ;
+        end
+
+        function concUnit = DW_getOptimizationInputConcentrationUnit(app)
             concUnit = 'mol/m^3' ;
+            feedStream = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+            if isempty(feedStream) || ~isa(feedStream, 'Stream')
+                return
+            end
             try
                 if ~isempty(feedStream.concentration_Units)
                     concUnit = char(string(feedStream.concentration_Units)) ;
                 end
             catch
             end
-            noticeText = sprintf([ ...
-                'Input concentrations inherited from Feed Stream: C_in,i [%s]. ' ...
-                'Change them in defineStreamApp if needed.'], concUnit) ;
+        end
+
+        function valueSI = DW_convertOptimizationInputToSI(~, valueDisplay, def, concUnit)
+            unitCategory = '' ;
+            if isstruct(def) && isfield(def, 'unitCategory')
+                unitCategory = char(string(def.unitCategory)) ;
+            end
+            switch unitCategory
+                case 'Concentration'
+                    valueSI = UnitConverterHelper.convertToSI('Concentration', valueDisplay, concUnit) ;
+                otherwise
+                    valueSI = valueDisplay ;
+            end
+        end
+
+        function valueDisplay = DW_convertOptimizationInputFromSI(~, valueSI, def, concUnit)
+            unitCategory = '' ;
+            if isstruct(def) && isfield(def, 'unitCategory')
+                unitCategory = char(string(def.unitCategory)) ;
+            end
+            switch unitCategory
+                case 'Concentration'
+                    valueDisplay = UnitConverterHelper.convertFromSI('Concentration', valueSI, concUnit) ;
+                otherwise
+                    valueDisplay = valueSI ;
+            end
         end
 
         function updateConcentrationHeader(app, labelHandle, concDropdown)
@@ -6809,6 +6850,7 @@ classdef NonIdealReactorApp < handle
         function rows = DW_parseDecisionTable(app)
             data = app.DesignUI.Optimization.DecisionTable.Data ;
             definitions = app.DW_getOptimizationDecisionDefinitions() ;
+            inputUnit = app.DW_getOptimizationInputConcentrationUnit() ;
             if isempty(definitions) || size(data, 1) ~= numel(definitions)
                 rows = struct('use', {}, 'variable', {}, 'displayName', {}, 'group', {}, ...
                     'speciesIndex', {}, 'initialValue', {}, 'lowerBound', {}, 'upperBound', {}) ;
@@ -6823,8 +6865,8 @@ classdef NonIdealReactorApp < handle
                 rows(i).group = char(string(definitions(i).group)) ;
                 rows(i).speciesIndex = definitions(i).speciesIndex ;
                 rows(i).initialValue = definitions(i).defaultValue ;
-                rows(i).lowerBound = double(data{i, 3}) ;
-                rows(i).upperBound = double(data{i, 4}) ;
+                rows(i).lowerBound = app.DW_convertOptimizationInputToSI(double(data{i, 3}), definitions(i), inputUnit) ;
+                rows(i).upperBound = app.DW_convertOptimizationInputToSI(double(data{i, 4}), definitions(i), inputUnit) ;
             end
         end
 
@@ -6937,6 +6979,7 @@ classdef NonIdealReactorApp < handle
             end
             defs = app.DW_getOptimizationDecisionDefinitions() ;
             if isempty(defs)
+                app.DesignUI.Optimization.DecisionTable.ColumnName = {'Use', 'Variable', 'Lower', 'Upper'} ;
                 app.DesignUI.Optimization.DecisionTable.Data = {false, 'Load Feed Stream first', NaN, NaN} ;
                 app.DesignUI.Optimization.DecisionTable.UserData = struct( ...
                     'definitions', struct([]), 'isPlaceholder', true, 'inactiveRows', 1) ;
@@ -6944,6 +6987,8 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
+            inputUnit = app.DW_getOptimizationInputConcentrationUnit() ;
+            app.DesignUI.Optimization.DecisionTable.ColumnName = app.DW_buildOptimizationDecisionColumnNames() ;
             data = cell(numel(defs), 4) ;
             for i = 1:numel(defs)
                 rowState = app.DW_findOptimizationDecisionState(state, defs(i).variable) ;
@@ -6955,7 +7000,9 @@ classdef NonIdealReactorApp < handle
                     lowerBound = rowState.lowerBound ;
                     upperBound = rowState.upperBound ;
                 end
-                data(i, :) = {useValue, defs(i).displayName, lowerBound, upperBound} ;
+                data(i, :) = {useValue, defs(i).displayName, ...
+                    app.DW_convertOptimizationInputFromSI(lowerBound, defs(i), inputUnit), ...
+                    app.DW_convertOptimizationInputFromSI(upperBound, defs(i), inputUnit)} ;
             end
             app.DesignUI.Optimization.DecisionTable.Data = data ;
             app.DesignUI.Optimization.DecisionTable.UserData = struct( ...
@@ -6979,6 +7026,7 @@ classdef NonIdealReactorApp < handle
             end
             defs = table.UserData.definitions ;
             data = table.Data ;
+            inputUnit = app.DW_getOptimizationInputConcentrationUnit() ;
             if size(data, 1) ~= numel(defs)
                 return
             end
@@ -6986,8 +7034,8 @@ classdef NonIdealReactorApp < handle
             for i = 1:numel(defs)
                 state(i).variable = defs(i).variable ;
                 state(i).use = logical(data{i, 1}) ;
-                state(i).lowerBound = data{i, 3} ;
-                state(i).upperBound = data{i, 4} ;
+                state(i).lowerBound = app.DW_convertOptimizationInputToSI(double(data{i, 3}), defs(i), inputUnit) ;
+                state(i).upperBound = app.DW_convertOptimizationInputToSI(double(data{i, 4}), defs(i), inputUnit) ;
             end
         end
 
@@ -7665,7 +7713,10 @@ classdef NonIdealReactorApp < handle
                     return
                 end
             end
-            if double(src.Data{rowIdx, 3}) > double(src.Data{rowIdx, 4})
+            inputUnit = app.DW_getOptimizationInputConcentrationUnit() ;
+            lowerValueSI = app.DW_convertOptimizationInputToSI(double(src.Data{rowIdx, 3}), defs(rowIdx), inputUnit) ;
+            upperValueSI = app.DW_convertOptimizationInputToSI(double(src.Data{rowIdx, 4}), defs(rowIdx), inputUnit) ;
+            if lowerValueSI > upperValueSI
                 src.Data{rowIdx, 4} = src.Data{rowIdx, 3} ;
             end
             app.DesignState.lastSolutions.optimizationResult = [] ;
