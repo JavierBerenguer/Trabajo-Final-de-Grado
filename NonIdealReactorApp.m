@@ -69,6 +69,14 @@ classdef NonIdealReactorApp < handle
         RTD_FQueryPointHandle = []
         RTD_FQueryVerticalHandle = []
         RTD_FQueryHorizontalHandle = []
+        RTD_EtSigmaBandHandle = []
+        RTD_EtSigmaCenterHandle = []
+        RTD_EtSigmaLowerHandle = []
+        RTD_EtSigmaUpperHandle = []
+        RTD_EthetaSigmaBandHandle = []
+        RTD_EthetaSigmaCenterHandle = []
+        RTD_EthetaSigmaLowerHandle = []
+        RTD_EthetaSigmaUpperHandle = []
         RTD_QvLabel
         RTD_QvField
         RTD_ResultTau
@@ -4191,16 +4199,34 @@ classdef NonIdealReactorApp < handle
                 return
             end
 
+            app.RTD_clearMomentOverlays() ;
+
             timeDD = app.DisplayControls.RTD.time ;
             t_display = app.convertOutputVectorFromTime('time', app.rtd.t, timeDD) ;
             Et_display = app.convertOutputVectorFromTime('timeInverse', app.rtd.Et, timeDD) ;
+            tol = 1e-12 ;
 
             % E(t) plot
             cla(app.RTD_AxesEt) ;
+            hold(app.RTD_AxesEt, 'on') ;
+            tau_display = app.convertOutputFromTime('time', app.rtd.tau, timeDD) ;
+            sigma_display = app.convertOutputFromTime('time', sqrt(max(app.rtd.sigma2, 0)), timeDD) ;
+            t_lower = max(0, tau_display - sigma_display) ;
+            t_upper = tau_display + sigma_display ;
+            if isfinite(sigma_display) && sigma_display > tol
+                [xPatch, yPatch] = app.RTD_buildMomentBandPatch(t_display, Et_display, t_lower, t_upper) ;
+                if ~isempty(xPatch)
+                    app.RTD_EtSigmaBandHandle = patch(app.RTD_AxesEt, xPatch, yPatch, [0.64 0.80 1.00], ...
+                        'FaceAlpha', 0.15, 'EdgeColor', 'none', 'HandleVisibility', 'off') ;
+                end
+            end
             plot(app.RTD_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
             title(app.RTD_AxesEt, 'E(t)') ;
             xlabel(app.RTD_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.RTD_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+            [app.RTD_EtSigmaCenterHandle, app.RTD_EtSigmaLowerHandle, app.RTD_EtSigmaUpperHandle] = ...
+                app.RTD_drawMomentGuideLines(app.RTD_AxesEt, tau_display, t_lower, t_upper, sigma_display, [0.00 0.20 0.75], tol) ;
+            hold(app.RTD_AxesEt, 'off') ;
 
             % F(t) plot
             cla(app.RTD_AxesFt) ;
@@ -4212,13 +4238,32 @@ classdef NonIdealReactorApp < handle
 
             % E(theta) plot
             cla(app.RTD_AxesEtheta) ;
+            hold(app.RTD_AxesEtheta, 'on') ;
             if ~isempty(app.rtd.theta) && ~isempty(app.rtd.Etheta)
+                sigma_theta = sqrt(max(app.rtd.sigma2_theta, 0)) ;
+                theta_lower = max(0, 1 - sigma_theta) ;
+                theta_upper = 1 + sigma_theta ;
+                if ~isempty(app.rtd.tau) && isfinite(app.rtd.tau) && app.rtd.tau > 0 && ...
+                        ~isempty(sigma_theta) && ...
+                        isfinite(sigma_theta) && sigma_theta > tol
+                    [thetaPatch, ethetaPatch] = app.RTD_buildMomentBandPatch( ...
+                        app.rtd.theta, app.rtd.Etheta, theta_lower, theta_upper) ;
+                    if ~isempty(thetaPatch)
+                        app.RTD_EthetaSigmaBandHandle = patch(app.RTD_AxesEtheta, thetaPatch, ethetaPatch, [0.72 0.90 0.72], ...
+                            'FaceAlpha', 0.15, 'EdgeColor', 'none', 'HandleVisibility', 'off') ;
+                    end
+                end
                 plot(app.RTD_AxesEtheta, app.rtd.theta, app.rtd.Etheta, ...
                      'Color', [0 0.6 0], 'LineWidth', 1.5) ;
+                if ~isempty(app.rtd.tau) && isfinite(app.rtd.tau) && app.rtd.tau > 0
+                    [app.RTD_EthetaSigmaCenterHandle, app.RTD_EthetaSigmaLowerHandle, app.RTD_EthetaSigmaUpperHandle] = ...
+                        app.RTD_drawMomentGuideLines(app.RTD_AxesEtheta, 1, theta_lower, theta_upper, sigma_theta, [0.00 0.45 0.00], tol) ;
+                end
             end
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
             xlabel(app.RTD_AxesEtheta, '\Theta = t/\tau') ;
             ylabel(app.RTD_AxesEtheta, 'E(\Theta)') ;
+            hold(app.RTD_AxesEtheta, 'off') ;
         end
 
         function RTD_queryValueChanged(app)
@@ -4314,6 +4359,94 @@ classdef NonIdealReactorApp < handle
             app.RTD_FQueryPointHandle = [] ;
             app.RTD_FQueryVerticalHandle = [] ;
             app.RTD_FQueryHorizontalHandle = [] ;
+        end
+
+        function RTD_clearMomentOverlays(app)
+            overlayHandles = { ...
+                app.RTD_EtSigmaBandHandle, ...
+                app.RTD_EtSigmaCenterHandle, ...
+                app.RTD_EtSigmaLowerHandle, ...
+                app.RTD_EtSigmaUpperHandle, ...
+                app.RTD_EthetaSigmaBandHandle, ...
+                app.RTD_EthetaSigmaCenterHandle, ...
+                app.RTD_EthetaSigmaLowerHandle, ...
+                app.RTD_EthetaSigmaUpperHandle} ;
+
+            for k = 1:numel(overlayHandles)
+                h = overlayHandles{k} ;
+                if ~isempty(h) && isgraphics(h)
+                    delete(h) ;
+                end
+            end
+
+            app.RTD_EtSigmaBandHandle = [] ;
+            app.RTD_EtSigmaCenterHandle = [] ;
+            app.RTD_EtSigmaLowerHandle = [] ;
+            app.RTD_EtSigmaUpperHandle = [] ;
+            app.RTD_EthetaSigmaBandHandle = [] ;
+            app.RTD_EthetaSigmaCenterHandle = [] ;
+            app.RTD_EthetaSigmaLowerHandle = [] ;
+            app.RTD_EthetaSigmaUpperHandle = [] ;
+        end
+
+        function [xPatch, yPatch] = RTD_buildMomentBandPatch(~, xData, yData, xLower, xUpper)
+            xPatch = [] ;
+            yPatch = [] ;
+
+            if isempty(xData) || isempty(yData) || numel(xData) ~= numel(yData)
+                return
+            end
+
+            xData = xData(:)' ;
+            yData = yData(:)' ;
+            validMask = isfinite(xData) & isfinite(yData) ;
+            xData = xData(validMask) ;
+            yData = yData(validMask) ;
+            if numel(xData) < 2
+                return
+            end
+
+            xStart = max(xLower, xData(1)) ;
+            xEnd = min(xUpper, xData(end)) ;
+            if ~isfinite(xStart) || ~isfinite(xEnd) || xEnd <= xStart
+                return
+            end
+
+            yStart = interp1(xData, yData, xStart, 'linear') ;
+            yEnd = interp1(xData, yData, xEnd, 'linear') ;
+            interiorMask = xData > xStart & xData < xEnd ;
+            xSegment = [xStart, xData(interiorMask), xEnd] ;
+            ySegment = [yStart, yData(interiorMask), yEnd] ;
+
+            xPatch = [xSegment, fliplr(xSegment)] ;
+            yPatch = [zeros(size(ySegment)), fliplr(ySegment)] ;
+        end
+
+        function [centerHandle, lowerHandle, upperHandle] = RTD_drawMomentGuideLines(~, ax, centerValue, lowerValue, upperValue, sigmaValue, lineColor, tol)
+            centerHandle = [] ;
+            lowerHandle = [] ;
+            upperHandle = [] ;
+
+            if isempty(ax) || ~isvalid(ax) || ~isfinite(centerValue)
+                return
+            end
+
+            yLimits = ylim(ax) ;
+            centerHandle = plot(ax, [centerValue centerValue], yLimits, '-', ...
+                'Color', lineColor, 'LineWidth', 1.6, 'HandleVisibility', 'off') ;
+
+            if isempty(sigmaValue) || ~isfinite(sigmaValue) || sigmaValue <= tol
+                return
+            end
+
+            if isfinite(lowerValue) && abs(lowerValue - centerValue) > tol
+                lowerHandle = plot(ax, [lowerValue lowerValue], yLimits, '--', ...
+                    'Color', lineColor, 'LineWidth', 1.0, 'HandleVisibility', 'off') ;
+            end
+            if isfinite(upperValue) && abs(upperValue - centerValue) > tol
+                upperHandle = plot(ax, [upperValue upperValue], yLimits, '--', ...
+                    'Color', lineColor, 'LineWidth', 1.0, 'HandleVisibility', 'off') ;
+            end
         end
 
         function RTD_drawFQueryOverlay(app, querySI, fValue)
