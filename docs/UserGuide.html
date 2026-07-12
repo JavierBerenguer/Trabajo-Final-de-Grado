@@ -274,14 +274,14 @@ app = NonIdealReactorApp;</code></pre>
 
       <h3>Input Modes</h3>
       <ul>
-        <li><strong>Manual:</strong> enter <code>Bo</code>, the boundary condition, and <code>tau</code> directly.</li>
+        <li><strong>Manual:</strong> enter <code>Pe</code>, the boundary condition, and <code>tau</code> directly. The interface shows <code>Bo = 1/Pe</code> as a derived value.</li>
         <li><strong>From Calculated Data:</strong> estimate <code>Bo</code> from the RTD in Tab 1 and import <code>ReactionSys</code> plus <code>Stream</code> from Tab 2 when they are available.</li>
       </ul>
 
       <h3>Boundary Conditions</h3>
       <ul>
-        <li><strong>closed-closed</strong></li>
-        <li><strong>open-open</strong></li>
+        <li><strong>closed-closed:</strong> full reactive axial-dispersion model with Danckwerts conditions.</li>
+        <li><strong>open-open:</strong> RTD route kept for hydrodynamics and linear first-order reactive cases only.</li>
       </ul>
 
       <h3>Workflow</h3>
@@ -291,14 +291,14 @@ app = NonIdealReactorApp;</code></pre>
         <li>Load or create the <code>ReactionSys</code>.</li>
         <li>Load or create the feed <code>Stream</code>.</li>
         <li>Click <strong>Compute</strong>.</li>
-        <li>Review <code>Outlet Concentration vs Bo</code>, <code>Conversion vs Bo</code>, the <code>Exit Summary</code> table, and the <code>E(t)</code> plot with <code>Bo</code>, <code>Pe</code>, and <code>tau</code>.</li>
+        <li>Review <code>Outlet Concentration vs Pe</code>, <code>Conversion vs Pe</code>, the <code>Exit Summary</code> table, and the <code>E(t)</code> plot with <code>Bo</code>, <code>Pe</code>, and <code>tau</code>.</li>
       </ol>
 
       <h3>Display Units and Results</h3>
       <ul>
         <li><strong>E(t) Plot:</strong> uses the local <code>Time base</code> selector only.</li>
-        <li><strong>Outlet Concentration vs Bo:</strong> uses the <code>Concentration</code> selector and a multiselect <code>Species</code> list.</li>
-        <li><strong>Conversion vs Bo:</strong> uses a multiselect <code>Reactants</code> list.</li>
+        <li><strong>Outlet Concentration vs Pe:</strong> uses the <code>Concentration</code> selector and a multiselect <code>Species</code> list.</li>
+        <li><strong>Conversion vs Pe:</strong> uses a multiselect <code>Reactants</code> list.</li>
         <li><strong>Exit Summary:</strong> shows <code>C_in</code>, <code>Disp C_out</code>, <code>CSTR C_out</code>, <code>PFR C_out</code>, <code>X_Disp</code>, <code>X_CSTR</code>, and <code>X_PFR</code>.</li>
         <li>The lower-left table is not filtered by the species/reactant selectors; those selectors only affect the plots.</li>
       </ul>
@@ -312,7 +312,7 @@ app = NonIdealReactorApp;</code></pre>
       <ul>
         <li><strong>Diagnosis &amp; Fit:</strong> fit <code>Tanks-in-Series</code>, <code>Axial Dispersion</code>, <code>CSTR + Dead Volume</code>, <code>CSTR + Bypass</code>, and <code>CSTR + Dead Volume + Bypass</code> to the RTD from Tab 1.</li>
         <li><strong>Reactive Performance:</strong> compare <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>, and report conversion, selectivity, yield, and outlet concentrations.</li>
-        <li><strong>Optimization:</strong> optimize equivalent hydrodynamic parameters for the chemistry already loaded in <code>Reactive Performance</code>.</li>
+        <li><strong>Optimization:</strong> keep the selected RTD fixed, clone the loaded <code>Feed Stream</code>, and optimize only inlet process variables while preserving the original chemistry and RTD.</li>
       </ul>
 
       <h3>Typical Workflow</h3>
@@ -320,14 +320,17 @@ app = NonIdealReactorApp;</code></pre>
         <li>In <strong>Tab 1</strong>, generate or import the RTD.</li>
         <li>In <strong>Diagnosis &amp; Fit</strong>, choose a family and run the fit if you want an equivalent hydrodynamic model.</li>
         <li>In <strong>Reactive Performance</strong>, load a <code>ReactionSys</code> and a feed <code>Stream</code> from the workspace, choose the key species, and compute the reference models using either <code>Tab 1 RTD</code> or <code>Fitted RTD</code>.</li>
-        <li>In <strong>Optimization</strong>, reuse that same chemistry to optimize <code>tau</code>, <code>N</code>, <code>Bo</code>, <code>bypass</code>, <code>activeFraction</code>, and <code>recycleRatio</code>.</li>
+        <li>In <strong>Optimization</strong>, choose the fixed RTD source, the reaction mode, the contextual species selectors, and the active inlet concentration variables <code>C_in,i</code>.</li>
       </ol>
 
       <h3>Notes</h3>
       <ul>
         <li>Tab 5 is <strong>isothermal</strong> and <strong>steady-state</strong> in this version.</li>
         <li>RTD preprocessing belongs to <strong>Tab 1</strong>, so Tab 5 does not include a separate hydrodynamics editor.</li>
-        <li>Optimization reuses the chemistry already loaded in <strong>Reactive Performance</strong>.</li>
+        <li>Optimization has its own species selectors, but it still reuses the <code>ReactionSys</code> and <code>Feed Stream</code> already loaded in <strong>Reactive Performance</strong>.</li>
+        <li>In the current implementation, optimization only exposes <code>C_in,i</code> because, with fixed RTD, those are the inlet variables that directly affect the reactive result.</li>
+        <li>Input units in <strong>Optimization</strong> are inherited from the loaded <code>Feed Stream</code>; the local unit selector is only used to display concentrations in the results tables.</li>
+        <li>The results area includes a short <code>Base vs Optimum</code> table plus one wide comparison table for <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>.</li>
         <li>Session save/load preserves the Tab 5 workspace through <code>designWorkspace</code>.</li>
       </ul>
     </section>

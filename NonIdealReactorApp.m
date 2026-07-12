@@ -452,7 +452,8 @@ classdef NonIdealReactorApp < handle
                         'object_class', 'RTD', ...
                         't', obj.t, ...
                         'Et', obj.Et, ...
-                        'source', obj.source) ;
+                        'source', obj.source, ...
+                        'modelInfo', obj.modelInfo) ;
                     return
             end
 
@@ -503,6 +504,9 @@ classdef NonIdealReactorApp < handle
                     end
                     if isfield(snapshot, 'source')
                         obj.source = snapshot.source ;
+                    end
+                    if isfield(snapshot, 'modelInfo') && isstruct(snapshot.modelInfo)
+                        obj.modelInfo = snapshot.modelInfo ;
                     end
                     return
             end
@@ -965,9 +969,11 @@ classdef NonIdealReactorApp < handle
                 'rsStatus', app.captureLabelState(app.TIS_RSStatusLabel), ...
                 'streamStatus', app.captureLabelState(app.TIS_StreamStatusLabel)) ;
 
+            currentDispPe = app.Disp_BoField.Value ;
             snapshot.dispersion = struct( ...
                 'inputMethod', app.Disp_InputMethodDropdown.Value, ...
-                'boValue', app.Disp_BoField.Value, ...
+                'peValue', currentDispPe, ...
+                'boValue', 1 / max(currentDispPe, 1e-12), ...
                 'boundary', app.Disp_BCDropdown.Value, ...
                 'tauField', app.captureFieldWithUnit(app.Disp_tauField), ...
                 'rs', app.serializeValueObject(app.Disp_RS), ...
@@ -1105,7 +1111,17 @@ classdef NonIdealReactorApp < handle
             app.Disp_RSNameField.Value = app.getStructField(dispSnapshot, 'rsName', app.Disp_RSNameField.Value) ;
             app.Disp_feedStream = app.deserializeValueObject(app.getStructField(dispSnapshot, 'feedStream', []), 'Stream') ;
             app.Disp_StreamNameField.Value = app.getStructField(dispSnapshot, 'streamName', app.Disp_StreamNameField.Value) ;
-            app.Disp_BoField.Value = app.getStructField(dispSnapshot, 'boValue', app.Disp_BoField.Value) ;
+            peSnapshotValue = app.getStructField(dispSnapshot, 'peValue', []) ;
+            if isempty(peSnapshotValue)
+                legacyBoValue = app.getStructField(dispSnapshot, 'boValue', []) ;
+                if ~isempty(legacyBoValue) && isfinite(legacyBoValue) && legacyBoValue > 0
+                    peSnapshotValue = 1 / legacyBoValue ;
+                end
+            end
+            if isempty(peSnapshotValue)
+                peSnapshotValue = app.Disp_BoField.Value ;
+            end
+            app.Disp_BoField.Value = peSnapshotValue ;
             app.setDropdownValueIfValid(app.Disp_BCDropdown, app.getStructField(dispSnapshot, 'boundary', app.Disp_BCDropdown.Value)) ;
             app.applyFieldWithUnit(app.Disp_tauField, app.getStructField(dispSnapshot, 'tauField', struct())) ;
             app.setDropdownValueIfValid(app.Disp_InputMethodDropdown, app.getStructField(dispSnapshot, 'inputMethod', app.Disp_InputMethodDropdown.Value)) ;
@@ -1127,7 +1143,7 @@ classdef NonIdealReactorApp < handle
                 app.Disp_StreamEditButton.Enable = app.enableStateForObject(app.Disp_feedStream) ;
             end
             if isempty(app.disp_reactor)
-                app.disp_reactor = DispersionReactor(app.Disp_BoField.Value, app.Disp_BCDropdown.Value) ;
+                app.disp_reactor = DispersionReactor(1 / max(app.Disp_BoField.Value, 1e-12), app.Disp_BCDropdown.Value) ;
             end
             if isfield(app.DisplayCache, 'Dispersion') && ~isempty(app.DisplayCache.Dispersion)
                 app.refreshDisplayUnits('Dispersion') ;
@@ -1887,8 +1903,23 @@ classdef NonIdealReactorApp < handle
             end
         end
 
-        function labels = getComponentLabels(~, nComp)
-            labels = arrayfun(@(i) sprintf('C%d', i), 1:nComp, 'UniformOutput', false) ;
+        function labels = getComponentLabels(app, nComp)
+            labels = arrayfun(@(i) ['C' app.componentLetterSuffix(i)], ...
+                1:nComp, 'UniformOutput', false) ;
+        end
+
+        function suffix = componentLetterSuffix(~, idx)
+            alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' ;
+            suffix = '' ;
+            idx = round(double(idx)) ;
+            if ~isfinite(idx) || idx < 1
+                idx = 1 ;
+            end
+            while idx > 0
+                remIdx = mod(idx - 1, numel(alphabet)) + 1 ;
+                suffix = [alphabet(remIdx) suffix] ; %#ok<AGROW>
+                idx = floor((idx - 1) / numel(alphabet)) ;
+            end
         end
 
         function labels = getReactionComponentLabels(app, RS)
@@ -2405,21 +2436,17 @@ classdef NonIdealReactorApp < handle
             end
         end
 
-        function idx = getSelectedComponentIndices(~, dropdown, nComp)
+        function idx = getSelectedComponentIndices(app, dropdown, nComp)
             if isempty(dropdown) || ~isvalid(dropdown) || strcmp(dropdown.Value, 'All')
                 idx = 1:nComp ;
                 return
             end
 
-            token = regexp(dropdown.Value, '^C(\d+)$', 'tokens', 'once') ;
-            if isempty(token)
+            labels = app.getComponentLabels(nComp) ;
+            idx = find(strcmp(labels, dropdown.Value), 1) ;
+            if isempty(idx)
                 idx = 1:nComp ;
                 return
-            end
-
-            idx = str2double(token{1}) ;
-            if ~isfinite(idx) || idx < 1 || idx > nComp
-                idx = 1:nComp ;
             end
         end
 
@@ -2457,8 +2484,8 @@ classdef NonIdealReactorApp < handle
             text = sprintf('%s&tau;=%.2f, N=%.2f', prefixText, tauValue, nValue) ;
         end
 
-        function text = htmlStatusTauBo(~, prefixText, tauValue, boValue)
-            text = sprintf('%s&tau;=%.2f, Bo=%.4g', prefixText, tauValue, boValue) ;
+        function text = htmlStatusTauPe(~, prefixText, tauValue, peValue)
+            text = sprintf('%s&tau;=%.2f, Pe=%.4g', prefixText, tauValue, peValue) ;
         end
 
         function text = buildFitSummaryText(~, result)
@@ -2998,130 +3025,99 @@ classdef NonIdealReactorApp < handle
                 sprintf('PFR [%s]', unitName)} ;
         end
 
-        function tableData = DW_buildOptimizationComparisonTable(app, result, timeDropdown)
-            baseline = app.getStructField(result, 'baseline', struct()) ;
-            optimum = app.getStructField(result, 'optimum', struct()) ;
-            baselineParams = app.getStructField(baseline, 'params', struct()) ;
-            optimumParams = app.getStructField(optimum, 'params', struct()) ;
-            timeUnit = app.getControlValue(timeDropdown, 's') ;
-            tableData = { ...
-                'Conversion [-]', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(baseline, 'metrics', struct()), 'conversion', NaN)), app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(optimum, 'metrics', struct()), 'conversion', NaN)) ; ...
-                'Selectivity [-]', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(baseline, 'metrics', struct()), 'selectivity', NaN)), app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(optimum, 'metrics', struct()), 'selectivity', NaN)) ; ...
-                'Yield [-]', app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(baseline, 'metrics', struct()), 'yield', NaN)), app.DW_formatFitDisplayNumber(app.getStructField(app.getStructField(optimum, 'metrics', struct()), 'yield', NaN)) ; ...
-                sprintf('tau [%s]', timeUnit), app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', app.getStructField(baselineParams, 'tau', NaN), timeDropdown)), app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', app.getStructField(optimumParams, 'tau', NaN), timeDropdown)) ; ...
-                'Recycle ratio [-]', app.DW_formatFitDisplayNumber(app.getStructField(baselineParams, 'recycleRatio', 0)), app.DW_formatFitDisplayNumber(app.getStructField(optimumParams, 'recycleRatio', 0))} ;
+        function tableData = DW_buildOptimizationComparisonTable(app, result)
+            rows = app.getStructField(result, 'comparisonRows', struct([])) ;
+            tableData = cell(numel(rows), 3) ;
+            concDropdown = app.getDisplayControl('DesignOptimization', 'concentration') ;
+            for i = 1:numel(rows)
+                tableData{i, 1} = app.getStructField(rows(i), 'label', '-') ;
+                tableData{i, 2} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'baseValue', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 3} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'optimumValue', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+            end
         end
 
-        function tableData = DW_buildOptimizationConstraintResultTable(app, result, timeDropdown, concDropdown)
-            optimum = app.getStructField(result, 'optimum', struct()) ;
-            params = app.getStructField(optimum, 'params', struct()) ;
-            constraints = app.DW_parseConstraintTable() ;
-            rows = {} ;
-            for i = 1:numel(constraints)
-                row = constraints(i) ;
-                if ~isfield(row, 'use') || ~row.use
-                    continue
-                end
-                rawValue = app.DW_constraintMetricValue(row.metric, row.speciesIndex, optimum, params) ;
-                rawTarget = row.value ;
-                satisfied = app.DW_constraintSatisfied(row.type, rawValue, rawTarget) ;
-                metricLabel = char(string(row.metric)) ;
-                switch metricLabel
-                    case 'Residence Time'
-                        metricLabel = sprintf('Residence Time [%s]', app.getControlValue(timeDropdown, 's')) ;
-                        valueText = app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', rawValue, timeDropdown)) ;
-                        targetText = app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', rawTarget, timeDropdown)) ;
-                    case 'C_out'
-                        metricLabel = sprintf('C_out [%s]', app.concentrationUnitName(concDropdown)) ;
-                        valueText = app.DW_formatFitDisplayNumber(app.convertOutputConcentration(rawValue, concDropdown)) ;
-                        targetText = app.DW_formatFitDisplayNumber(app.convertOutputConcentration(rawTarget, concDropdown)) ;
-                    otherwise
-                        if any(strcmp(metricLabel, {'Conversion', 'Selectivity', 'Yield', 'Recycle Ratio'}))
-                            metricLabel = sprintf('%s [-]', metricLabel) ;
-                        end
-                        valueText = app.DW_formatFitDisplayNumber(rawValue) ;
-                        targetText = app.DW_formatFitDisplayNumber(rawTarget) ;
-                end
-                rows(end+1, :) = {metricLabel, valueText, targetText, app.DW_flagText(satisfied)} ; %#ok<AGROW>
+        function tableData = DW_buildOptimizationModelTable(app, result)
+            rows = app.getStructField(result, 'modelComparisonRows', struct([])) ;
+            concDropdown = app.getDisplayControl('DesignOptimization', 'concentration') ;
+            tableData = cell(numel(rows), 9) ;
+            for i = 1:numel(rows)
+                tableData{i, 1} = app.getStructField(rows(i), 'label', '-') ;
+                tableData{i, 2} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'cstrBase', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 3} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'cstrOptimum', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 4} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'segBase', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 5} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'segOptimum', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 6} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'mmBase', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 7} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'mmOptimum', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 8} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'pfrBase', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
+                tableData{i, 9} = app.DW_formatOptimizationDisplayValue( ...
+                    app.getStructField(rows(i), 'pfrOptimum', NaN), ...
+                    app.getStructField(rows(i), 'valueType', 'dimensionless'), ...
+                    concDropdown) ;
             end
-            if isempty(rows)
-                rows = cell(0, 4) ;
-            end
-            tableData = rows ;
         end
 
-        function value = DW_constraintMetricValue(app, metric, speciesIndex, scenario, params)
-            switch char(string(metric))
-                case 'Conversion'
-                    value = app.getStructField(app.getStructField(scenario, 'metrics', struct()), 'conversion', NaN) ;
-                case 'Selectivity'
-                    value = app.DW_safeMetric(app.getStructField(app.getStructField(scenario, 'metrics', struct()), 'selectivity', NaN)) ;
-                case 'Yield'
-                    value = app.DW_safeMetric(app.getStructField(app.getStructField(scenario, 'metrics', struct()), 'yield', NaN)) ;
-                case 'Residence Time'
-                    value = app.getStructField(params, 'tau', NaN) ;
-                case 'Recycle Ratio'
-                    value = app.getStructField(params, 'recycleRatio', 0) ;
-                case 'C_out'
-                    cOut = app.getStructField(scenario, 'C_out', []) ;
-                    idx = max(1, min(numel(cOut), speciesIndex)) ;
-                    if isempty(cOut)
-                        value = NaN ;
-                    else
-                        value = cOut(idx) ;
-                    end
+        function text = DW_formatOptimizationDisplayValue(app, valueSI, valueType, concDropdown)
+            switch char(string(valueType))
+                case 'concentration'
+                    valueDisplay = app.convertOutputScalar('Concentration', valueSI, concDropdown) ;
                 otherwise
-                    value = NaN ;
+                    valueDisplay = valueSI ;
             end
+            text = app.DW_formatFitDisplayNumber(valueDisplay) ;
         end
 
-        function tf = DW_constraintSatisfied(~, type, value, target)
-            switch char(string(type))
-                case 'Lower bound'
-                    tf = value >= target ;
-                case 'Upper bound'
-                    tf = value <= target ;
-                otherwise
-                    tf = abs(value - target) <= max(1e-9, 0.01 * abs(target)) ;
-            end
+        function columnNames = DW_buildOptimizationModelColumnNames(~)
+            columnNames = {'Variable', ...
+                'CSTR Base', 'CSTR Optimum', ...
+                'Seg Base', 'Seg Optimum', ...
+                'MM Base', 'MM Optimum', ...
+                'PFR Base', 'PFR Optimum'} ;
         end
 
-        function value = DW_safeMetric(~, value)
-            if isempty(value) || ~isfinite(value)
-                value = 0 ;
-            end
-        end
-
-        function out = DW_flagText(~, flag)
-            if flag
-                out = 'Yes' ;
-            else
-                out = 'No' ;
-            end
-        end
-
-        function tableData = DW_buildOptimizationSensitivityTable(app, result, timeDropdown)
-            storedTable = app.getStructField(result, 'sensitivityTable', cell(0, 3)) ;
-            optimumParams = app.getStructField(result, 'optimalParameters', struct()) ;
-            if isempty(storedTable)
-                tableData = cell(0, 3) ;
+        function noticeText = DW_buildOptimizationInputUnitNotice(app)
+            feedStream = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+            if isempty(feedStream) || ~isa(feedStream, 'Stream')
+                noticeText = ['Input units are inherited from the Feed Stream. ' ...
+                    'Load a Feed Stream to define the C_in,i units used in optimization.'] ;
                 return
             end
-
-            tableData = cell(size(storedTable, 1), 3) ;
-            for i = 1:size(storedTable, 1)
-                variableName = char(string(storedTable{i, 1})) ;
-                baseValue = app.getStructField(optimumParams, variableName, NaN) ;
-                labelText = variableName ;
-                baseText = app.DW_formatFitDisplayNumber(baseValue) ;
-                if strcmp(variableName, 'tau')
-                    labelText = sprintf('tau [%s]', app.getControlValue(timeDropdown, 's')) ;
-                    baseText = app.DW_formatFitDisplayNumber(app.convertOutputFromTime('time', baseValue, timeDropdown)) ;
+            concUnit = 'mol/m^3' ;
+            try
+                if ~isempty(feedStream.concentration_Units)
+                    concUnit = char(string(feedStream.concentration_Units)) ;
                 end
-                tableData{i, 1} = labelText ;
-                tableData{i, 2} = baseText ;
-                tableData{i, 3} = storedTable{i, 3} ;
+            catch
             end
+            noticeText = sprintf([ ...
+                'Input concentrations inherited from Feed Stream: C_in,i [%s]. ' ...
+                'Change them in defineStreamApp if needed.'], concUnit) ;
         end
 
         function updateConcentrationHeader(app, labelHandle, concDropdown)
@@ -3835,7 +3831,8 @@ classdef NonIdealReactorApp < handle
 
                     case 'Dispersion (open)'
                         Bo = app.RTD_BoField.Value ;
-                        app.rtd = RTD.dispersion_open(Bo, tau_val) ;
+                        tauSpace = tau_val / (1 + 2 * Bo) ;
+                        app.rtd = RTD.dispersion_open(Bo, tauSpace) ;
 
                     case 'Dispersion (closed)'
                         Bo = app.RTD_BoField.Value ;
@@ -5561,22 +5558,23 @@ classdef NonIdealReactorApp < handle
             app.Disp_RTDStatusLabel.Tooltip = 'Shows the RTD source currently imported into the dispersion model.' ;
             app.Disp_RTDStatusLabel.Visible = 'off' ;
 
-            % Row 3: Bo
-            app.Disp_BoLabel = uilabel(leftGrid, 'Text', 'Bo [= D<sub>e</sub>/uL]:', 'Interpreter', 'html') ;
+            % Row 3: Pe
+            app.Disp_BoLabel = uilabel(leftGrid, 'Text', 'Pe [-]:') ;
             app.Disp_BoLabel.Layout.Row = 3 ; app.Disp_BoLabel.Layout.Column = 1 ;
             app.Disp_BoLabel.FontWeight = 'bold' ;
             app.Disp_BoField = uieditfield(leftGrid, 'numeric', ...
-                'Value', 0.025, 'Limits', [1e-6 100], ...
+                'Value', 40, 'Limits', [1e-3 Inf], ...
                 'ValueChangedFcn', @(~,~) app.Disp_updatePe(), ...
                 'Tooltip', 'Dispersion number Bo = De/(u·L). Bo→0: plug flow (PFR), Bo→∞: perfect mixing (CSTR).') ;
             app.Disp_BoField.Layout.Row = 3 ; app.Disp_BoField.Layout.Column = 2 ;
+            app.Disp_BoField.Tooltip = 'Peclet number used by the dispersion model. Larger Pe means weaker axial dispersion and behavior closer to PFR.' ;
 
-            % Row 4: Pe display (read-only)
-            lbl = uilabel(leftGrid, 'Text', '$Pe = 1/Bo$:', 'Interpreter', 'latex') ;
+            % Row 4: Bo display (read-only)
+            lbl = uilabel(leftGrid, 'Text', '$Bo = 1/Pe$:', 'Interpreter', 'latex') ;
             lbl.Layout.Row = 4 ; lbl.Layout.Column = 1 ;
-            app.Disp_PeLabel = uilabel(leftGrid, 'Text', sprintf('%.2f', 1/0.025)) ;
+            app.Disp_PeLabel = uilabel(leftGrid, 'Text', sprintf('%.4g', 1/40)) ;
             app.Disp_PeLabel.Layout.Row = 4 ; app.Disp_PeLabel.Layout.Column = 2 ;
-            app.setTooltip('Peclet number corresponding to the current Bo value. Pe = 1 / Bo.', lbl, app.Disp_PeLabel) ;
+            app.setTooltip('Dispersion number corresponding to the current Peclet value. Bo = 1 / Pe.', lbl, app.Disp_PeLabel) ;
 
             % Row 5: Boundary conditions
             app.Disp_BCLabel = uilabel(leftGrid, 'Text', 'Boundary:') ;
@@ -5586,7 +5584,10 @@ classdef NonIdealReactorApp < handle
                 'Value', 'closed-closed', ...
                 'Tooltip', 'closed-closed: confined reactor (Danckwerts). open-open: open reactor (Gaussian approximation).') ;
             app.Disp_BCDropdown.Layout.Row = 5 ; app.Disp_BCDropdown.Layout.Column = 2 ;
+            app.Disp_BCDropdown.Tooltip = 'closed-closed uses Danckwerts boundary conditions for the reactive axial-dispersion model. open-open is kept for RTD work and linear first-order reactive cases only.' ;
             app.setTooltip('Boundary condition used by the axial dispersion model.', app.Disp_BCLabel, app.Disp_BCDropdown) ;
+            app.Disp_BCLabel.Tooltip = 'closed-closed uses Danckwerts boundary conditions for the reactive axial-dispersion model. open-open is kept for RTD work and linear first-order reactive cases only.' ;
+            app.Disp_BCDropdown.Tooltip = 'closed-closed uses Danckwerts boundary conditions for the reactive axial-dispersion model. open-open is kept for RTD work and linear first-order reactive cases only.' ;
 
             % Row 6: tau
             app.Disp_tauLabel = uilabel(leftGrid, 'Text', '$\tau$:', 'Interpreter', 'latex') ;
@@ -5595,7 +5596,7 @@ classdef NonIdealReactorApp < handle
                 leftGrid, 6, 2, 10, 'Time', ...
                 'Limits', [0.001 Inf], ...
                 'Tooltip', 'Mean residence time: tau = V/Q = L/u.') ;
-            app.setTooltip('Mean residence time assigned to the dispersion reactor.', app.Disp_tauLabel, app.Disp_tauField) ;
+            app.setTooltip('Mean residence time assigned to the dispersion model. For open-open RTDs the internal tau_space is derived from this mean tau and Bo.', app.Disp_tauLabel, app.Disp_tauField) ;
 
             % Row 7: Reaction System header
             lbl = uilabel(leftGrid, 'Text', 'Reaction System:', 'FontWeight', 'bold') ;
@@ -5688,7 +5689,7 @@ classdef NonIdealReactorApp < handle
                 'ButtonPushedFcn', @(~,~) app.Disp_compute()) ;
             app.Disp_ComputeButton.Layout.Row = 15 ;
             app.Disp_ComputeButton.Layout.Column = [1 2] ;
-            app.Disp_ComputeButton.Tooltip = 'Compute the axial dispersion reactor and compare it with the ideal references.' ;
+            app.Disp_ComputeButton.Tooltip = 'Compute the reactive dispersion result and compare it with the ideal references. closed-closed uses the axial-dispersion BVP; open-open is limited to linear first-order kinetics.' ;
 
             % Row 16: Display units title
             lbl = uilabel(leftGrid, 'Text', 'Display units:', ...
@@ -5713,7 +5714,7 @@ classdef NonIdealReactorApp < handle
             app.DisplayControls.Dispersion.time = app.createDisplayUnitControl( ...
                 rtdGrid, 1, 1, 'Time base:', 'Time', 's', @(~,~) app.refreshDisplayUnits('Dispersion'), 84) ;
 
-            concPanel = uipanel(unitsGrid, 'Title', 'Outlet Concentration vs Bo') ;
+            concPanel = uipanel(unitsGrid, 'Title', 'Outlet Concentration vs Pe') ;
             concPanel.Layout.Row = 2 ;
             concPanel.Layout.Column = 1 ;
             concGrid = uigridlayout(concPanel, [2 1], ...
@@ -5725,7 +5726,7 @@ classdef NonIdealReactorApp < handle
             app.DisplayControls.Dispersion.species = app.createDisplayMultiSelectControl( ...
                 concGrid, 2, 1, 'Species:', @(~,~) app.refreshDisplayUnits('Dispersion'), '1x') ;
 
-            convPanel = uipanel(unitsGrid, 'Title', 'Conversion vs Bo') ;
+            convPanel = uipanel(unitsGrid, 'Title', 'Conversion vs Pe') ;
             convPanel.Layout.Row = 2 ;
             convPanel.Layout.Column = 2 ;
             convGrid = uigridlayout(convPanel, [2 1], ...
@@ -5744,21 +5745,21 @@ classdef NonIdealReactorApp < handle
             rightGrid.RowSpacing = 6 ;
             rightGrid.ColumnSpacing = 6 ;
 
-            % Outlet concentration vs Bo plot
+            % Outlet concentration vs Pe plot
             app.Disp_AxesXvsBo = uiaxes(rightGrid) ;
             app.Disp_AxesXvsBo.Layout.Row = 1 ;
             app.Disp_AxesXvsBo.Layout.Column = 1 ;
-            title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
-            xlabel(app.Disp_AxesXvsBo, 'Bo [dispersion number]') ;
+            title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Pe') ;
+            xlabel(app.Disp_AxesXvsBo, 'Pe [-]') ;
             ylabel(app.Disp_AxesXvsBo, 'C [mol/m^3]') ;
             grid(app.Disp_AxesXvsBo, 'on') ;
 
-            % Conversion vs Bo plot
+            % Conversion vs Pe plot
             app.Disp_AxesComparison = uiaxes(rightGrid) ;
             app.Disp_AxesComparison.Layout.Row = 1 ;
             app.Disp_AxesComparison.Layout.Column = 2 ;
-            title(app.Disp_AxesComparison, 'Conversion vs Bo') ;
-            xlabel(app.Disp_AxesComparison, 'Bo [dispersion number]') ;
+            title(app.Disp_AxesComparison, 'Conversion vs Pe') ;
+            xlabel(app.Disp_AxesComparison, 'Pe [-]') ;
             ylabel(app.Disp_AxesComparison, 'Conversion X') ;
             grid(app.Disp_AxesComparison, 'on') ;
 
@@ -5798,9 +5799,9 @@ classdef NonIdealReactorApp < handle
         %% ============== DISPERSION CALLBACKS ==============
 
         function Disp_updatePe(app)
-            Bo = app.Disp_BoField.Value ;
-            Pe = 1 / Bo ;
-            app.Disp_PeLabel.Text = sprintf('%.2f', Pe) ;
+            Pe = max(app.Disp_BoField.Value, 1e-12) ;
+            Bo = 1 / Pe ;
+            app.Disp_PeLabel.Text = sprintf('%.4g', Bo) ;
         end
 
         function Disp_loadRS(app)
@@ -5852,7 +5853,7 @@ classdef NonIdealReactorApp < handle
                     bcType = app.Disp_BCDropdown.Value ;
 
                     % Compute Bo from sigma2_theta
-                    Bo_calc = app.compute_Bo_from_variance(sigma2_theta, bcType) ;
+                    Bo_calc = app.compute_Bo_from_variance(sigma2_theta, bcType, app.rtd) ;
                     if isnan(Bo_calc) || isinf(Bo_calc) || Bo_calc < 1e-6 || Bo_calc > 100
                         msg = sprintf(['Calculated Bo = %g is outside the valid range [1e-6, 100].\n\n' ...
                             'Possible causes:\n' ...
@@ -5864,10 +5865,10 @@ classdef NonIdealReactorApp < handle
                         uialert(app.UIFigure, msg, 'Bo Out of Range', 'Icon', 'warning') ;
                         return
                     end
-                    app.Disp_BoField.Value = Bo_calc ;
+                    app.Disp_BoField.Value = 1 / max(Bo_calc, 1e-12) ;
                     app.Disp_updatePe() ;
 
-                    infoLines{end+1} = app.htmlStatusTauBo('RTD: ', app.rtd.tau, Bo_calc) ;
+                    infoLines{end+1} = app.htmlStatusTauPe('RTD: ', app.rtd.tau, 1 / max(Bo_calc, 1e-12)) ;
                 else
                     infoLines{end+1} = 'RTD: not loaded' ;
                 end
@@ -5948,7 +5949,8 @@ classdef NonIdealReactorApp < handle
                     return ;
                 end
 
-                Bo_val = app.Disp_BoField.Value ;
+                Pe_val = max(app.Disp_BoField.Value, 1e-12) ;
+                Bo_val = 1 / Pe_val ;
                 bcType = app.Disp_BCDropdown.Value ;
                 tau_val = app.readInputField(app.Disp_tauField) ;
 
@@ -5967,6 +5969,7 @@ classdef NonIdealReactorApp < handle
 
                 app.DisplayCache.Dispersion = struct( ...
                     'Bo_val', Bo_val, ...
+                    'Pe_val', Pe_val, ...
                     'tau_val', tau_val, ...
                     'RS', RS, ...
                     'C0', C0, ...
@@ -6009,9 +6012,14 @@ classdef NonIdealReactorApp < handle
             ylabel(app.Disp_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
 
             tau_display = app.convertOutputScalar('Time', tau_val, timeDD) ;
-            text(app.Disp_AxesEt, 0.95, 0.90, ...
-                sprintf('Bo = %.4g\nPe = %.4g\n\\tau = %.4g %s', ...
-                        Bo_val, 1/Bo_val, tau_display, timeDD.Value), ...
+            annotationText = sprintf('Bo = %.4g\nPe = %.4g\n\\tau_m = %.4g %s', ...
+                Bo_val, 1 / Bo_val, tau_display, timeDD.Value) ;
+            if strcmp(bcType, 'open-open') && isstruct(rtd_obj.modelInfo) && isfield(rtd_obj.modelInfo, 'tauSpace')
+                tauSpace_display = app.convertOutputScalar('Time', rtd_obj.modelInfo.tauSpace, timeDD) ;
+                annotationText = sprintf('%s\n\\tau_{space} = %.4g %s', ...
+                    annotationText, tauSpace_display, timeDD.Value) ;
+            end
+            text(app.Disp_AxesEt, 0.95, 0.90, annotationText, ...
                 'Units', 'normalized', 'HorizontalAlignment', 'right', ...
                 'VerticalAlignment', 'top', 'FontSize', 9, ...
                 'Interpreter', 'tex', ...
@@ -6032,19 +6040,19 @@ classdef NonIdealReactorApp < handle
                 C_out_disp, C_out_cstr, C_out_pfr, ...
                 reactantInfo.reactantIndices, X_disp_all, X_cstr_all, X_pfr_all, concDD) ;
 
-            % ---- Plot 2: Outlet concentration vs Bo sweep ----
+            % ---- Plot 2: Outlet concentration vs Pe sweep ----
             cla(app.Disp_AxesXvsBo) ;
-            [Bo_sweep, ~, C_sweep] = app.disp_reactor.sweep_Bo_general(RS, C0, tau_val) ;
+            [Pe_sweep, ~, C_sweep] = app.disp_reactor.sweep_Pe_general(RS, C0, tau_val) ;
             app.ensurePredictionSpeciesSelector(app.DisplayControls.Dispersion.species, speciesInfo) ;
             selectedIdx = app.getPredictionSelectedSpecies(app.DisplayControls.Dispersion.species, speciesInfo) ;
             C_sweep_display = app.convertOutputConcentration(C_sweep, concDD) ;
             C_cstr_display = app.convertOutputConcentration(C_out_cstr, concDD) ;
             C_pfr_display = app.convertOutputConcentration(C_out_pfr, concDD) ;
             colors = lines(RS.nComponents) ;
-            title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
+            title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Pe') ;
             hold(app.Disp_AxesXvsBo, 'on') ;
             for i = selectedIdx
-                semilogx(app.Disp_AxesXvsBo, Bo_sweep, C_sweep_display(:, i), '-', ...
+                semilogx(app.Disp_AxesXvsBo, Pe_sweep, C_sweep_display(:, i), '-', ...
                     'Color', colors(i,:), 'LineWidth', 1.5, ...
                     'DisplayName', compLabels{i}) ;
                 if isscalar(selectedIdx)
@@ -6057,7 +6065,7 @@ classdef NonIdealReactorApp < handle
                 end
             end
             if ~isempty(selectedIdx)
-                xline(app.Disp_AxesXvsBo, Bo_val, ':', sprintf('Bo = %.4g', Bo_val), ...
+                xline(app.Disp_AxesXvsBo, 1 / Bo_val, ':', sprintf('Pe = %.4g', 1 / Bo_val), ...
                     'Color', [0.35 0.35 0.35], ...
                     'LineWidth', 1, ...
                     'LabelVerticalAlignment', 'middle', ...
@@ -6071,11 +6079,11 @@ classdef NonIdealReactorApp < handle
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.Disp_AxesXvsBo, 'off') ;
             elseif isscalar(selectedIdx)
-                title(app.Disp_AxesXvsBo, sprintf('Outlet Concentration vs Bo - %s', compLabels{selectedIdx})) ;
+                title(app.Disp_AxesXvsBo, sprintf('Outlet Concentration vs Pe - %s', compLabels{selectedIdx})) ;
             else
-                title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Bo') ;
+                title(app.Disp_AxesXvsBo, 'Outlet Concentration vs Pe') ;
             end
-            xlabel(app.Disp_AxesXvsBo, 'Bo [dispersion number]') ;
+            xlabel(app.Disp_AxesXvsBo, 'Pe [-]') ;
             ylabel(app.Disp_AxesXvsBo, app.axisLabelWithUnit('C', concDD)) ;
             if isempty(selectedIdx) || isscalar(selectedIdx)
                 legend(app.Disp_AxesXvsBo, 'off') ;
@@ -6085,7 +6093,7 @@ classdef NonIdealReactorApp < handle
 
             % ---- Plot 3: Comparison bar chart (CSTR → Disp → PFR) ----
             cla(app.Disp_AxesComparison) ;
-            title(app.Disp_AxesComparison, 'Conversion vs Bo') ;
+            title(app.Disp_AxesComparison, 'Conversion vs Pe') ;
             app.ensurePredictionReactantSelector(app.DisplayControls.Dispersion.reactant, reactantInfo) ;
             selectedReactants = app.getPredictionSelectedReactants(app.DisplayControls.Dispersion.reactant, reactantInfo) ;
             if isempty(reactantInfo.reactantIndices)
@@ -6097,8 +6105,8 @@ classdef NonIdealReactorApp < handle
                     'Units', 'normalized', 'HorizontalAlignment', 'center') ;
                 legend(app.Disp_AxesComparison, 'off') ;
             else
-                X_sweep_all = zeros(numel(Bo_sweep), numel(reactantInfo.reactantIndices)) ;
-                for idx = 1:numel(Bo_sweep)
+                X_sweep_all = zeros(numel(Pe_sweep), numel(reactantInfo.reactantIndices)) ;
+                for idx = 1:numel(Pe_sweep)
                     X_sweep_all(idx, :) = app.computeSpeciesConversion( ...
                         C0, C_sweep(idx, :), reactantInfo.reactantIndices) ;
                 end
@@ -6108,7 +6116,7 @@ classdef NonIdealReactorApp < handle
                 hold(app.Disp_AxesComparison, 'on') ;
                 for k = 1:numel(selectedReactants)
                     pos = reactantPlotPos(k) ;
-                    semilogx(app.Disp_AxesComparison, Bo_sweep, X_sweep_all(:, pos), 'o-', ...
+                    semilogx(app.Disp_AxesComparison, Pe_sweep, X_sweep_all(:, pos), 'o-', ...
                         'Color', reactantColors(pos, :), ...
                         'LineWidth', 1.5, ...
                         'MarkerFaceColor', reactantColors(pos, :), ...
@@ -6124,7 +6132,7 @@ classdef NonIdealReactorApp < handle
                             'LabelHorizontalAlignment', 'left') ;
                     end
                 end
-                xline(app.Disp_AxesComparison, Bo_val, ':', sprintf('Bo = %.4g', Bo_val), ...
+                xline(app.Disp_AxesComparison, 1 / Bo_val, ':', sprintf('Pe = %.4g', 1 / Bo_val), ...
                     'Color', [0.35 0.35 0.35], ...
                     'LineWidth', 1, ...
                     'LabelVerticalAlignment', 'middle', ...
@@ -6132,9 +6140,9 @@ classdef NonIdealReactorApp < handle
                     'HandleVisibility', 'off') ;
                 hold(app.Disp_AxesComparison, 'off') ;
                 if isscalar(selectedReactants)
-                    title(app.Disp_AxesComparison, sprintf('Conversion vs Bo - %s', reactantLabels{1})) ;
+                    title(app.Disp_AxesComparison, sprintf('Conversion vs Pe - %s', reactantLabels{1})) ;
                 else
-                    title(app.Disp_AxesComparison, 'Conversion vs Bo') ;
+                    title(app.Disp_AxesComparison, 'Conversion vs Pe') ;
                 end
                 plotLimitMatrix = X_sweep_all(:, reactantPlotPos) ;
                 app.setPredictionAnnotatedYLimits(app.Disp_AxesComparison, plotLimitMatrix, 1) ;
@@ -6144,7 +6152,7 @@ classdef NonIdealReactorApp < handle
                     legend(app.Disp_AxesComparison, 'Location', 'best') ;
                 end
             end
-            xlabel(app.Disp_AxesComparison, 'Bo [dispersion number]') ;
+            xlabel(app.Disp_AxesComparison, 'Pe [-]') ;
             ylabel(app.Disp_AxesComparison, 'Conversion X (-)') ;
         end
 
@@ -6191,13 +6199,14 @@ classdef NonIdealReactorApp < handle
             D.reaction.result = app.getStructField(app.DesignState.lastSolutions, 'reactiveResult', []) ;
 
             D.optimization = struct() ;
-            D.optimization.family = app.DesignUI.Optimization.FamilyDropdown.Value ;
+            D.optimization.rtdSource = app.DesignUI.Optimization.RTDSourceDropdown.Value ;
             D.optimization.reactionMode = app.DesignUI.Optimization.ReactionModeDropdown.Value ;
-            D.optimization.boundary = app.DesignUI.Optimization.BoundaryDropdown.Value ;
             D.optimization.objective = app.DesignUI.Optimization.ObjectiveDropdown.Value ;
+            D.optimization.keyReactant = app.DesignUI.Optimization.KeyReactantDropdown.Value ;
+            D.optimization.desiredProduct = app.DesignUI.Optimization.DesiredProductDropdown.Value ;
+            D.optimization.byproduct = app.DesignUI.Optimization.ByproductDropdown.Value ;
             D.optimization.decisionTable = app.DesignUI.Optimization.DecisionTable.Data ;
             D.optimization.constraintTable = app.DesignUI.Optimization.ConstraintTable.Data ;
-            D.optimization.displayTimeUnit = app.getControlValue(app.getDisplayControl('DesignOptimization', 'time'), 's') ;
             D.optimization.displayConcentrationUnit = app.getControlValue(app.getDisplayControl('DesignOptimization', 'concentration'), 'mol/m^3') ;
             D.optimization.result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
         end
@@ -6239,17 +6248,20 @@ classdef NonIdealReactorApp < handle
             app.DesignState.lastSolutions.reactiveResult = app.getStructField(reaction, 'result', []) ;
 
             opt = app.getStructField(snapshot, 'optimization', struct()) ;
-            app.setDropdownValueIfValid(app.DesignUI.Optimization.FamilyDropdown, app.getStructField(opt, 'family', app.DesignUI.Optimization.FamilyDropdown.Value)) ;
+            app.setDropdownValueIfValid(app.DesignUI.Optimization.RTDSourceDropdown, app.getStructField(opt, 'rtdSource', app.DesignUI.Optimization.RTDSourceDropdown.Value)) ;
             app.setDropdownValueIfValid(app.DesignUI.Optimization.ReactionModeDropdown, app.getStructField(opt, 'reactionMode', app.DesignUI.Optimization.ReactionModeDropdown.Value)) ;
-            app.setDropdownValueIfValid(app.DesignUI.Optimization.BoundaryDropdown, app.getStructField(opt, 'boundary', app.DesignUI.Optimization.BoundaryDropdown.Value)) ;
             app.setDropdownValueIfValid(app.DesignUI.Optimization.ObjectiveDropdown, app.getStructField(opt, 'objective', app.DesignUI.Optimization.ObjectiveDropdown.Value)) ;
-            app.DesignUI.Optimization.DecisionTable.Data = app.getStructField(opt, 'decisionTable', app.DesignUI.Optimization.DecisionTable.Data) ;
-            app.DesignUI.Optimization.ConstraintTable.Data = app.getStructField(opt, 'constraintTable', app.DesignUI.Optimization.ConstraintTable.Data) ;
-            optTimeControl = app.getDisplayControl('DesignOptimization', 'time') ;
-            app.setDropdownValueIfValid(optTimeControl, app.getStructField(opt, 'displayTimeUnit', app.getControlValue(optTimeControl, 's'))) ;
             optConcControl = app.getDisplayControl('DesignOptimization', 'concentration') ;
             app.setDropdownValueIfValid(optConcControl, app.getStructField(opt, 'displayConcentrationUnit', app.getControlValue(optConcControl, 'mol/m^3'))) ;
-            app.DesignState.lastSolutions.optimizationResult = app.getStructField(opt, 'result', []) ;
+            app.DW_resetOptimizationTables() ;
+            app.DW_applyOptimizationSelectorSnapshot(opt) ;
+            app.DW_applyOptimizationDecisionSnapshot(app.getStructField(opt, 'decisionTable', [])) ;
+            app.DW_applyOptimizationConstraintSnapshot(app.getStructField(opt, 'constraintTable', [])) ;
+            if isfield(opt, 'rtdSource')
+                app.DesignState.lastSolutions.optimizationResult = app.getStructField(opt, 'result', []) ;
+            else
+                app.DesignState.lastSolutions.optimizationResult = [] ;
+            end
 
             app.DW_refreshChemicalSelectors() ;
             app.DW_refreshAll() ;
@@ -6492,109 +6504,149 @@ classdef NonIdealReactorApp < handle
         function DW_createOptimizationTab(app)
             tab = uitab(app.DesignUI.TabGroup, 'Title', 'Optimization') ;
             grid = uigridlayout(tab, [1 2]) ;
-            grid.ColumnWidth = {430, '1x'} ;
+            grid.ColumnWidth = {470, '1x'} ;
 
             left = uipanel(grid, 'Title', 'Optimization Setup') ;
             left.Layout.Column = 1 ;
-            leftGrid = uigridlayout(left, [6 1]) ;
-            leftGrid.RowHeight = {'fit', 190, 150, 34, 'fit', '1x'} ;
+            leftGrid = uigridlayout(left, [11 1]) ;
+            leftGrid.RowHeight = {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 180, 140, 34, 'fit', 'fit'} ;
+            leftGrid.Padding = [8 8 8 8] ;
 
-            headerGrid = uigridlayout(leftGrid, [4 2]) ;
-            headerGrid.RowHeight = {'fit', 'fit', 'fit', 'fit'} ;
+            headerGrid = uigridlayout(leftGrid, [6 2]) ;
+            headerGrid.ColumnWidth = {132, '1x'} ;
+            headerGrid.RowHeight = {'fit', 'fit', 'fit', 'fit', 'fit', 'fit'} ;
             headerGrid.Layout.Row = 1 ;
-            lbl = uilabel(headerGrid, 'Text', 'Family:') ;
-            app.DesignUI.Optimization.FamilyDropdown = uidropdown(headerGrid, ...
-                'Items', {'Tanks-in-Series', 'Axial Dispersion', 'CSTR + Dead Volume', 'CSTR + Bypass', 'CSTR + Dead Volume + Bypass'}) ;
-            app.DesignUI.Optimization.FamilyDropdown.Layout.Row = 1 ; app.DesignUI.Optimization.FamilyDropdown.Layout.Column = 2 ;
-            app.setTooltip('Hydrodynamic family explored during optimization.', ...
-                lbl, app.DesignUI.Optimization.FamilyDropdown) ;
+            app.DesignUI.Optimization.SetupGrid = headerGrid ;
+
+            lbl = uilabel(headerGrid, 'Text', 'RTD source:') ;
+            app.DesignUI.Optimization.RTDSourceDropdown = uidropdown(headerGrid, ...
+                'Items', {'Tab 1 RTD', 'Fitted RTD'}) ;
+            app.DesignUI.Optimization.RTDSourceDropdown.Layout.Row = 1 ;
+            app.DesignUI.Optimization.RTDSourceDropdown.Layout.Column = 2 ;
+            app.setTooltip('Choose which RTD remains fixed during process optimization.', ...
+                lbl, app.DesignUI.Optimization.RTDSourceDropdown) ;
+
             lbl = uilabel(headerGrid, 'Text', 'Reaction mode:') ;
-            app.DesignUI.Optimization.ReactionModeDropdown = uidropdown(headerGrid, 'Items', {'Segregation', 'Max Mixedness'}) ;
-            app.DesignUI.Optimization.ReactionModeDropdown.Layout.Row = 2 ; app.DesignUI.Optimization.ReactionModeDropdown.Layout.Column = 2 ;
-            app.setTooltip('Reactive model used when evaluating each hydrodynamic scenario.', ...
+            app.DesignUI.Optimization.ReactionModeDropdown = uidropdown(headerGrid, ...
+                'Items', {'Segregation', 'Max Mixedness'}) ;
+            app.DesignUI.Optimization.ReactionModeDropdown.Layout.Row = 2 ;
+            app.DesignUI.Optimization.ReactionModeDropdown.Layout.Column = 2 ;
+            app.setTooltip('Reactive model used to evaluate each process scenario on the fixed RTD.', ...
                 lbl, app.DesignUI.Optimization.ReactionModeDropdown) ;
 
-            boundaryGrid = uigridlayout(headerGrid, [1 2]) ;
-            boundaryGrid.Layout.Row = 3 ;
-            boundaryGrid.Layout.Column = [1 2] ;
-            boundaryGrid.ColumnWidth = {120, '1x'} ;
-            app.DesignUI.Optimization.BoundaryGrid = boundaryGrid ;
-            lbl = uilabel(boundaryGrid, 'Text', 'Boundary:') ;
-            app.DesignUI.Optimization.BoundaryLabel = lbl ;
-            app.DesignUI.Optimization.BoundaryDropdown = uidropdown(boundaryGrid, 'Items', {'closed-closed', 'open-open'}) ;
-
-            lbl2 = uilabel(headerGrid, 'Text', 'Objective:') ;
-            lbl2.Layout.Row = 4 ; lbl2.Layout.Column = 1 ;
-            app.DesignUI.Optimization.ObjectiveLabel = lbl2 ;
+            lbl = uilabel(headerGrid, 'Text', 'Objective:') ;
+            app.DesignUI.Optimization.ObjectiveLabel = lbl ;
             app.DesignUI.Optimization.ObjectiveDropdown = uidropdown(headerGrid, ...
-                'Items', {'Max conversion', 'Max selectivity', 'Max yield', 'Min residence time', 'Min recycle ratio'}) ;
-            app.DesignUI.Optimization.ObjectiveDropdown.Layout.Row = 4 ;
+                'Items', {'Max conversion', 'Max selectivity', 'Max yield', ...
+                'Max outlet concentration', 'Min outlet concentration'}) ;
+            app.DesignUI.Optimization.ObjectiveDropdown.Layout.Row = 3 ;
             app.DesignUI.Optimization.ObjectiveDropdown.Layout.Column = 2 ;
-            app.setTooltip('Boundary condition for dispersion-based families and optimization objective for the search.', ...
-                lbl, app.DesignUI.Optimization.BoundaryDropdown, lbl2, app.DesignUI.Optimization.ObjectiveDropdown) ;
+            app.setTooltip('Process objective optimized with fixed RTD, fixed ReactionSys and a duplicated Feed Stream.', ...
+                lbl, app.DesignUI.Optimization.ObjectiveDropdown) ;
+
+            lbl = uilabel(headerGrid, 'Text', 'Key reactant:') ;
+            app.DesignUI.Optimization.KeyReactantLabel = lbl ;
+            app.DesignUI.Optimization.KeyReactantDropdown = uidropdown(headerGrid, ...
+                'Items', {'CA'}, 'Value', 'CA') ;
+            app.DesignUI.Optimization.KeyReactantDropdown.Layout.Row = 4 ;
+            app.DesignUI.Optimization.KeyReactantDropdown.Layout.Column = 2 ;
+            app.setTooltip('Species used to define conversion and the reference reactant for selectivity and yield.', ...
+                lbl, app.DesignUI.Optimization.KeyReactantDropdown) ;
+
+            lbl = uilabel(headerGrid, 'Text', 'Desired product:') ;
+            app.DesignUI.Optimization.DesiredProductLabel = lbl ;
+            app.DesignUI.Optimization.DesiredProductDropdown = uidropdown(headerGrid, ...
+                'Items', {'CB'}, 'Value', 'CB') ;
+            app.DesignUI.Optimization.DesiredProductDropdown.Layout.Row = 5 ;
+            app.DesignUI.Optimization.DesiredProductDropdown.Layout.Column = 2 ;
+            app.setTooltip('Species used for selectivity, yield and maximum outlet concentration objectives.', ...
+                lbl, app.DesignUI.Optimization.DesiredProductDropdown) ;
+
+            lbl = uilabel(headerGrid, 'Text', 'Byproduct:') ;
+            app.DesignUI.Optimization.ByproductLabel = lbl ;
+            app.DesignUI.Optimization.ByproductDropdown = uidropdown(headerGrid, ...
+                'Items', {'CC'}, 'Value', 'CC') ;
+            app.DesignUI.Optimization.ByproductDropdown.Layout.Row = 6 ;
+            app.DesignUI.Optimization.ByproductDropdown.Layout.Column = 2 ;
+            app.setTooltip('Species used for minimum outlet concentration objective.', ...
+                lbl, app.DesignUI.Optimization.ByproductDropdown) ;
 
             app.DesignUI.Optimization.DecisionTable = uitable(leftGrid, ...
-                'ColumnName', {'Use', 'Variable', 'Initial', 'Lower', 'Upper'}, ...
-                'ColumnEditable', [true false true true true], ...
+                'ColumnName', {'Use', 'Variable', 'Lower', 'Upper'}, ...
+                'ColumnEditable', [true false true true], ...
+                'ColumnWidth', {42, 150, 100, 100}, ...
                 'RowName', {}, ...
-                'Data', {true, 'tau', 60, 1, 1000; true, 'N', 4, 1, 25; false, 'Bo', 0.05, 1e-5, 2; false, 'bypass', 0, 0, 0.8; false, 'activeFraction', 1, 0.1, 1; false, 'recycleRatio', 0, 0, 5}, ...
+                'Data', {false, 'Load Feed Stream first', NaN, NaN}, ...
                 'CellEditCallback', @(src,event) app.DW_handleDecisionTableEdit(src, event)) ;
-            app.DesignUI.Optimization.DecisionTable.Layout.Row = 2 ;
+            app.DesignUI.Optimization.DecisionTable.Layout.Row = 7 ;
             app.DesignUI.Optimization.DecisionTable.Tooltip = app.buildTooltipFromColumns( ...
-                ['Decision variables enabled for optimization. Some rows become inactive depending on the selected family. bypass is the feed fraction that avoids the main reactor, ' ...
-                'activeFraction is the fraction of active reactor volume, and recycleRatio is recycle flow divided by net outlet flow.'], ...
-                {'Use', 'Variable', 'Initial', 'Lower', 'Upper'}) ;
+                ['Dynamic inlet concentration variables built from the loaded Feed Stream. ' ...
+                'Only C_in,i rows are optimizable because, with fixed RTD, they are the process inputs that affect the reactive result.'], ...
+                {'Use', 'Variable', 'Lower', 'Upper'}) ;
 
             app.DesignUI.Optimization.ConstraintTable = uitable(leftGrid, ...
-                'ColumnName', {'Use', 'Metric', 'SpeciesIdx', 'Type', 'Value'}, ...
+                'ColumnName', {'Use', 'Variable', 'Species', 'Type', 'Value'}, ...
                 'ColumnEditable', [true true true true true], ...
+                'ColumnWidth', {42, 124, 90, 98, 92}, ...
                 'RowName', {}, ...
-                'Data', {true, 'Conversion', 1, 'Lower bound', 0.5; false, 'Selectivity', 2, 'Lower bound', 0.5; false, 'Yield', 2, 'Lower bound', 0.2; false, 'C_out', 2, 'Lower bound', 0}) ;
-            app.DesignUI.Optimization.ConstraintTable.Layout.Row = 3 ;
+                'Data', {false, 'Conversion', 'CA', 'Lower bound', 0.5}) ;
+            app.DesignUI.Optimization.ConstraintTable.Layout.Row = 8 ;
             app.DesignUI.Optimization.ConstraintTable.Tooltip = app.buildTooltipFromColumns( ...
-                'Optional optimization constraints. SpeciesIdx points to the component associated with the selected metric.', ...
-                {'Use', 'Metric', 'SpeciesIdx', 'Type', 'Value'}) ;
+                'Optional constraints on reactive metrics or outlet concentration at the optimized solution.', ...
+                {'Use', 'Variable', 'Species', 'Type', 'Value'}) ;
+            app.DesignUI.Optimization.ConstraintTable.CellEditCallback = @(src,event) app.DW_handleOptimizationConstraintEdit(src, event) ;
 
             app.DesignUI.Optimization.RunButton = uibutton(leftGrid, 'push', 'Text', 'Run Optimization', ...
                 'ButtonPushedFcn', @(~,~) app.DW_runOptimization()) ;
-            app.DesignUI.Optimization.RunButton.Layout.Row = 4 ;
+            app.DesignUI.Optimization.RunButton.Layout.Row = 9 ;
             app.DesignUI.Optimization.RunButton.Tooltip = 'Run the constrained optimization using the active decision variables and objective.' ;
 
-            unitsGrid = uigridlayout(leftGrid, [2 1], ...
+            app.DesignUI.Optimization.InputUnitsNotice = uilabel(leftGrid, ...
+                'Text', app.DW_buildOptimizationInputUnitNotice(), ...
+                'WordWrap', 'on') ;
+            app.DesignUI.Optimization.InputUnitsNotice.Layout.Row = 10 ;
+            app.DesignUI.Optimization.InputUnitsNotice.Tooltip = ...
+                'Optimization inherits its input units from the loaded Feed Stream.' ;
+
+            unitsGrid = uigridlayout(leftGrid, [1 1], ...
                 'Padding', [0 0 0 0], ...
                 'RowSpacing', 6, ...
                 'ColumnSpacing', 0) ;
-            unitsGrid.Layout.Row = 5 ;
-            app.DisplayControls.DesignOptimization.time = app.createDisplayUnitControl( ...
-                unitsGrid, 1, 1, 'Display time:', 'Time', 's', @(~,~) app.refreshDisplayUnits('DesignOptimization'), 92) ;
+            unitsGrid.Layout.Row = 11 ;
+            unitsGrid.RowHeight = {'fit'} ;
             app.DisplayControls.DesignOptimization.concentration = app.createDisplayUnitControl( ...
-                unitsGrid, 2, 1, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('DesignOptimization'), 92) ;
+                unitsGrid, 1, 1, 'Concentration:', 'Concentration', 'mol/m^3', @(~,~) app.refreshDisplayUnits('DesignOptimization'), 110) ;
 
             right = uipanel(grid, 'Title', 'Optimization Results') ;
             right.Layout.Column = 2 ;
-            rightGrid = uigridlayout(right, [4 1]) ;
-            rightGrid.RowHeight = {'fit', 170, 170, '1x'} ;
+            rightGrid = uigridlayout(right, [3 1]) ;
+            rightGrid.RowHeight = {'fit', 190, '1x'} ;
 
             app.DesignUI.Optimization.SummaryLabel = uilabel(rightGrid, 'Text', 'Awaiting optimization.', 'WordWrap', 'on') ;
             app.DesignUI.Optimization.SummaryLabel.Layout.Row = 1 ;
             app.DesignUI.Optimization.SummaryLabel.Tooltip = 'Optimization summary comparing baseline and optimum performance for the selected objective.' ;
-            app.DesignUI.Optimization.ComparisonTable = uitable(rightGrid, 'ColumnName', {'Metric', 'Baseline', 'Optimum'}, 'RowName', {}) ;
+            app.DesignUI.Optimization.ComparisonTable = uitable(rightGrid, ...
+                'ColumnName', {'Variable', 'Base', 'Optimum'}, ...
+                'RowName', {}) ;
             app.DesignUI.Optimization.ComparisonTable.Layout.Row = 2 ;
             app.DesignUI.Optimization.ComparisonTable.Tooltip = app.buildTooltipFromColumns( ...
-                'Comparison between the starting point and the optimized solution. Baseline is the initial scenario and Optimum is the best penalized solution found.', ...
-                {'Metric', 'Baseline', 'Optimum'}) ;
-            app.DesignUI.Optimization.ConstraintResultTable = uitable(rightGrid, 'ColumnName', {'Metric', 'Value', 'Target', 'Satisfied'}, 'RowName', {}) ;
-            app.DesignUI.Optimization.ConstraintResultTable.Layout.Row = 3 ;
-            app.DesignUI.Optimization.ConstraintResultTable.Tooltip = app.buildTooltipFromColumns( ...
-                'Constraint evaluation at the optimized solution. Satisfied indicates whether each target is met.', ...
-                {'Metric', 'Value', 'Target', 'Satisfied'}) ;
-            app.DesignUI.Optimization.SensitivityTable = uitable(rightGrid, 'ColumnName', {'Variable', 'Base', 'Sensitivity'}, 'RowName', {}) ;
-            app.DesignUI.Optimization.SensitivityTable.Layout.Row = 4 ;
-            app.DesignUI.Optimization.SensitivityTable.Tooltip = app.buildTooltipFromColumns( ...
-                'Local sensitivity of the objective around the optimized point. Base is the variable value and Sensitivity shows the local response trend.', ...
-                {'Variable', 'Base', 'Sensitivity'}) ;
-            app.DesignUI.Optimization.FamilyDropdown.ValueChangedFcn = @(~,~) app.DW_refreshOptimizationContext() ;
-            app.DW_refreshOptimizationContext() ;
+                'Comparison of objective, optimized variables and active constraints before and after optimization.', ...
+                {'Variable', 'Base', 'Optimum'}) ;
+            app.DesignUI.Optimization.ModelTable = uitable(rightGrid, ...
+                'ColumnName', app.DW_buildOptimizationModelColumnNames(), ...
+                'RowName', {}) ;
+            app.DesignUI.Optimization.ModelTable.Layout.Row = 3 ;
+            app.DesignUI.Optimization.ModelTable.Tooltip = app.buildTooltipFromColumns( ...
+                'Single wide table comparing inlet concentration, conversion and outlet concentration across the four reactive models for base and optimized feeds.', ...
+                app.DW_buildOptimizationModelColumnNames()) ;
+
+            app.DesignUI.Optimization.RTDSourceDropdown.ValueChangedFcn = @(~,~) app.DW_handleOptimizationSetupChanged() ;
+            app.DesignUI.Optimization.ReactionModeDropdown.ValueChangedFcn = @(~,~) app.DW_handleOptimizationSetupChanged() ;
+            app.DesignUI.Optimization.ObjectiveDropdown.ValueChangedFcn = @(~,~) app.DW_handleOptimizationObjectiveChanged() ;
+            app.DesignUI.Optimization.KeyReactantDropdown.ValueChangedFcn = @(~,~) app.DW_handleOptimizationSetupChanged() ;
+            app.DesignUI.Optimization.DesiredProductDropdown.ValueChangedFcn = @(~,~) app.DW_handleOptimizationSetupChanged() ;
+            app.DesignUI.Optimization.ByproductDropdown.ValueChangedFcn = @(~,~) app.DW_handleOptimizationSetupChanged() ;
+            app.DW_resetOptimizationTables() ;
         end
 
         function DW_runFit(app)
@@ -6646,6 +6698,10 @@ classdef NonIdealReactorApp < handle
                 end
                 app.DesignState.reactionSpec.rs = RS ;
                 app.DW_refreshChemicalSelectors() ;
+                app.DW_refreshOptimizationDecisionTable(true) ;
+                app.DW_refreshOptimizationConstraintTable(true) ;
+                app.DesignState.lastSolutions.optimizationResult = [] ;
+                app.DW_refreshOptimization() ;
                 app.updateStatus('ReactionSys loaded for Design workspace') ;
             catch ME
                 uialert(app.UIFigure, ME.message, 'Reaction System Error') ;
@@ -6660,6 +6716,7 @@ classdef NonIdealReactorApp < handle
                 end
                 app.DesignState.reactionSpec.feedStream = F ;
                 app.DW_refreshChemicalSelectors() ;
+                app.DW_resetOptimizationTables() ;
                 app.updateStatus('Feed Stream loaded for Design workspace') ;
             catch ME
                 uialert(app.UIFigure, ME.message, 'Feed Stream Error') ;
@@ -6695,31 +6752,45 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_runOptimization(app)
+            app.DesignUI.Optimization.RunButton.Enable = 'off' ;
+            drawnow limitrate ;
+            cleanupObj = onCleanup(@() app.DW_finishOptimizationRun()) ;
             try
                 app.updateStatus('Running optimization...') ;
+                rtdObj = app.DW_resolveRTDSource(app.DesignUI.Optimization.RTDSourceDropdown.Value) ;
                 RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
                 F = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
                 if isempty(RS) || isempty(F)
                     error('Optimization reuses the chemistry loaded in Reactive Performance. Load RS and Feed first.') ;
                 end
+                decisionVariables = app.DW_parseDecisionTable() ;
+                constraints = app.DW_parseConstraintTable() ;
+                app.DW_validateOptimizationSetup(decisionVariables, constraints) ;
                 spec = struct( ...
-                    'family', app.DesignUI.Optimization.FamilyDropdown.Value, ...
+                    'rtd', rtdObj, ...
+                    'rtdSource', app.DesignUI.Optimization.RTDSourceDropdown.Value, ...
                     'reactionMode', app.DesignUI.Optimization.ReactionModeDropdown.Value, ...
-                    'boundaryType', app.DesignUI.Optimization.BoundaryDropdown.Value, ...
                     'objective', app.DesignUI.Optimization.ObjectiveDropdown.Value, ...
                     'RS', RS, ...
-                    'C0', F.concentration(:)', ...
-                    'keyComponentIndex', app.DesignUI.Reactive.KeyComponentDropdown.Value, ...
-                    'desiredProductIndex', app.DesignUI.Reactive.DesiredProductDropdown.Value, ...
-                    'byproductIndex', app.DesignUI.Reactive.ByproductDropdown.Value, ...
-                    'decisionVariables', app.DW_parseDecisionTable(), ...
-                    'constraints', app.DW_parseConstraintTable()) ;
+                    'feedStream', F, ...
+                    'keyComponentIndex', app.DW_getOptimizationSelectorIndex(app.DesignUI.Optimization.KeyReactantDropdown), ...
+                    'desiredProductIndex', app.DW_getOptimizationSelectorIndex(app.DesignUI.Optimization.DesiredProductDropdown), ...
+                    'byproductIndex', app.DW_getOptimizationSelectorIndex(app.DesignUI.Optimization.ByproductDropdown), ...
+                    'decisionVariables', decisionVariables, ...
+                    'constraints', constraints) ;
                 app.DesignState.lastSolutions.optimizationResult = DesignWorkspaceHelper.solveOptimization(spec) ;
                 app.DW_refreshOptimization() ;
                 app.updateStatus('Optimization completed') ;
             catch ME
                 app.updateStatus('Error') ;
                 uialert(app.UIFigure, ME.message, 'Optimization Error') ;
+            end
+        end
+
+        function DW_finishOptimizationRun(app)
+            try
+                app.DW_refreshOptimizationContext() ;
+            catch
             end
         end
 
@@ -6737,42 +6808,469 @@ classdef NonIdealReactorApp < handle
 
         function rows = DW_parseDecisionTable(app)
             data = app.DesignUI.Optimization.DecisionTable.Data ;
-            rows = repmat(struct('use', false, 'variable', '', 'initialValue', 0, 'lowerBound', 0, 'upperBound', 0), size(data, 1), 1) ;
+            definitions = app.DW_getOptimizationDecisionDefinitions() ;
+            if isempty(definitions) || size(data, 1) ~= numel(definitions)
+                rows = struct('use', {}, 'variable', {}, 'displayName', {}, 'group', {}, ...
+                    'speciesIndex', {}, 'initialValue', {}, 'lowerBound', {}, 'upperBound', {}) ;
+                return
+            end
+            rows = repmat(struct('use', false, 'variable', '', 'displayName', '', 'group', '', ...
+                'speciesIndex', NaN, 'initialValue', 0, 'lowerBound', 0, 'upperBound', 0), size(data, 1), 1) ;
             for i = 1:size(data, 1)
                 rows(i).use = logical(data{i, 1}) ;
-                rows(i).variable = char(string(data{i, 2})) ;
-                rows(i).initialValue = data{i, 3} ;
-                rows(i).lowerBound = data{i, 4} ;
-                rows(i).upperBound = data{i, 5} ;
+                rows(i).variable = char(string(definitions(i).variable)) ;
+                rows(i).displayName = char(string(definitions(i).displayName)) ;
+                rows(i).group = char(string(definitions(i).group)) ;
+                rows(i).speciesIndex = definitions(i).speciesIndex ;
+                rows(i).initialValue = definitions(i).defaultValue ;
+                rows(i).lowerBound = double(data{i, 3}) ;
+                rows(i).upperBound = double(data{i, 4}) ;
             end
         end
 
         function rows = DW_parseConstraintTable(app)
             data = app.DesignUI.Optimization.ConstraintTable.Data ;
-            rows = repmat(struct('use', false, 'metric', '', 'speciesIndex', 1, 'type', 'Lower bound', 'value', 0), size(data, 1), 1) ;
+            speciesLabels = app.DW_getOptimizationSpeciesLabels() ;
+            rows = repmat(struct('use', false, 'metric', '', 'speciesIndex', 1, 'speciesLabel', '', 'type', 'Lower bound', 'value', 0), size(data, 1), 1) ;
             for i = 1:size(data, 1)
                 rows(i).use = logical(data{i, 1}) ;
                 rows(i).metric = char(string(data{i, 2})) ;
-                rows(i).speciesIndex = double(data{i, 3}) ;
+                rows(i).speciesLabel = char(string(data{i, 3})) ;
+                rows(i).speciesIndex = find(strcmp(speciesLabels, rows(i).speciesLabel), 1) ;
+                if isempty(rows(i).speciesIndex)
+                    rows(i).speciesIndex = 1 ;
+                end
                 rows(i).type = char(string(data{i, 4})) ;
                 rows(i).value = double(data{i, 5}) ;
             end
         end
 
-        function relevant = DW_relevantOptimizationVariables(~, family)
-            relevant = {'tau', 'recycleRatio'} ;
-            switch char(string(family))
-                case 'Tanks-in-Series'
-                    relevant = {'tau', 'N', 'recycleRatio'} ;
-                case 'Axial Dispersion'
-                    relevant = {'tau', 'Bo', 'recycleRatio'} ;
-                case 'CSTR + Dead Volume'
-                    relevant = {'tau', 'activeFraction', 'recycleRatio'} ;
-                case 'CSTR + Bypass'
-                    relevant = {'tau', 'bypass', 'recycleRatio'} ;
-                case 'CSTR + Dead Volume + Bypass'
-                    relevant = {'tau', 'activeFraction', 'bypass', 'recycleRatio'} ;
+        function DW_validateOptimizationSetup(~, decisionVariables, constraints)
+            activeCount = 0 ;
+            for i = 1:numel(decisionVariables)
+                row = decisionVariables(i) ;
+                if ~row.use
+                    continue
+                end
+                activeCount = activeCount + 1 ;
+                if ~isfinite(row.lowerBound) || ~isfinite(row.upperBound)
+                    error('All active optimization bounds must be finite.') ;
+                end
+                if row.lowerBound > row.upperBound
+                    error('Each active optimization variable requires Lower <= Upper.') ;
+                end
             end
+            if activeCount < 1
+                error('Select at least one optimization variable.') ;
+            end
+            for i = 1:numel(constraints)
+                row = constraints(i) ;
+                if row.use && ~isfinite(row.value)
+                    error('All active constraints require a finite Value.') ;
+                end
+            end
+        end
+
+        function defs = DW_getOptimizationDecisionDefinitions(app)
+            defs = struct('variable', {}, 'displayName', {}, 'group', {}, ...
+                'speciesIndex', {}, 'defaultValue', {}, 'lowerBound', {}, 'upperBound', {}, 'unitCategory', {}) ;
+            feedStream = app.getStructField(app.DesignState.reactionSpec, 'feedStream', []) ;
+            if isempty(feedStream) || ~isa(feedStream, 'Stream')
+                return
+            end
+            try
+                concentration = reshape(double(feedStream.concentration), 1, []) ;
+            catch
+                return
+            end
+            if isempty(concentration) || any(~isfinite(concentration))
+                return
+            end
+            nComp = numel(concentration) ;
+            defs(nComp) = app.DW_makeOptimizationDecisionDef('', '', 'concentration', NaN, 0, 'Concentration') ;
+            for i = 1:nComp
+                compLabel = app.DW_getOptimizationComponentLabel(i) ;
+                compToken = app.DW_getOptimizationComponentToken(compLabel) ;
+                defs(i) = app.DW_makeOptimizationDecisionDef( ...
+                    sprintf('C_in_%d', i), sprintf('C_%s,in', compToken), 'concentration', i, concentration(i), 'Concentration') ;
+            end
+        end
+
+        function def = DW_makeOptimizationDecisionDef(~, variable, displayName, group, speciesIndex, defaultValue, unitCategory)
+            magnitude = max(abs(defaultValue), 1e-12) ;
+            lowerBound = 0 ;
+            upperBound = max(2 * magnitude, magnitude + 1) ;
+            def = struct( ...
+                'variable', char(string(variable)), ...
+                'displayName', char(string(displayName)), ...
+                'group', char(string(group)), ...
+                'speciesIndex', speciesIndex, ...
+                'defaultValue', double(defaultValue), ...
+                'lowerBound', lowerBound, ...
+                'upperBound', upperBound, ...
+                'unitCategory', char(string(unitCategory))) ;
+        end
+
+        function label = DW_getOptimizationComponentLabel(app, idx)
+            RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+            label = app.getComponentLabels(idx) ;
+            label = label{end} ;
+            if ~isempty(RS)
+                label = app.getComponentLabel(RS, idx) ;
+            end
+        end
+
+        function token = DW_getOptimizationComponentToken(~, compLabel)
+            token = char(string(compLabel)) ;
+            if ~isempty(regexp(token, '^C[A-Z]+$', 'once'))
+                token = token(2:end) ;
+            end
+        end
+
+        function DW_refreshOptimizationDecisionTable(app, preserveExisting)
+            if nargin < 2
+                preserveExisting = false ;
+            end
+            state = struct('variable', {}, 'use', {}, 'lowerBound', {}, 'upperBound', {}) ;
+            if preserveExisting
+                state = app.DW_captureOptimizationDecisionState() ;
+            end
+            defs = app.DW_getOptimizationDecisionDefinitions() ;
+            if isempty(defs)
+                app.DesignUI.Optimization.DecisionTable.Data = {false, 'Load Feed Stream first', NaN, NaN} ;
+                app.DesignUI.Optimization.DecisionTable.UserData = struct( ...
+                    'definitions', struct([]), 'isPlaceholder', true, 'inactiveRows', 1) ;
+                app.DW_applyOptimizationTableStyles() ;
+                return
+            end
+
+            data = cell(numel(defs), 4) ;
+            for i = 1:numel(defs)
+                rowState = app.DW_findOptimizationDecisionState(state, defs(i).variable) ;
+                useValue = false ;
+                lowerBound = defs(i).lowerBound ;
+                upperBound = defs(i).upperBound ;
+                if ~isempty(rowState)
+                    useValue = rowState.use ;
+                    lowerBound = rowState.lowerBound ;
+                    upperBound = rowState.upperBound ;
+                end
+                data(i, :) = {useValue, defs(i).displayName, lowerBound, upperBound} ;
+            end
+            app.DesignUI.Optimization.DecisionTable.Data = data ;
+            app.DesignUI.Optimization.DecisionTable.UserData = struct( ...
+                'definitions', defs, 'isPlaceholder', false, 'inactiveRows', []) ;
+            app.DW_refreshOptimizationContext() ;
+        end
+
+        function DW_resetOptimizationTables(app)
+            app.DW_refreshOptimizationDecisionTable(false) ;
+            app.DW_refreshOptimizationConstraintTable(false) ;
+            app.DesignState.lastSolutions.optimizationResult = [] ;
+            app.DW_refreshOptimization() ;
+        end
+
+        function state = DW_captureOptimizationDecisionState(app)
+            state = struct('variable', {}, 'use', {}, 'lowerBound', {}, 'upperBound', {}) ;
+            table = app.DesignUI.Optimization.DecisionTable ;
+            if isempty(table) || ~isvalid(table) || ~isstruct(table.UserData) || ...
+                    ~isfield(table.UserData, 'definitions') || isempty(table.UserData.definitions)
+                return
+            end
+            defs = table.UserData.definitions ;
+            data = table.Data ;
+            if size(data, 1) ~= numel(defs)
+                return
+            end
+            state = repmat(struct('variable', '', 'use', false, 'lowerBound', 0, 'upperBound', 0), numel(defs), 1) ;
+            for i = 1:numel(defs)
+                state(i).variable = defs(i).variable ;
+                state(i).use = logical(data{i, 1}) ;
+                state(i).lowerBound = data{i, 3} ;
+                state(i).upperBound = data{i, 4} ;
+            end
+        end
+
+        function rowState = DW_findOptimizationDecisionState(~, state, variableName)
+            rowState = [] ;
+            for i = 1:numel(state)
+                if strcmp(state(i).variable, variableName)
+                    rowState = state(i) ;
+                    return
+                end
+            end
+        end
+
+        function DW_applyOptimizationDecisionSnapshot(app, snapshotData)
+            if isempty(snapshotData) || ~iscell(snapshotData)
+                return
+            end
+            table = app.DesignUI.Optimization.DecisionTable ;
+            if isempty(table) || ~isvalid(table) || ~isstruct(table.UserData) || ...
+                    ~isfield(table.UserData, 'definitions') || isempty(table.UserData.definitions)
+                return
+            end
+            defs = table.UserData.definitions ;
+            data = table.Data ;
+            for i = 1:size(snapshotData, 1)
+                if size(snapshotData, 2) < 4
+                    continue
+                end
+                label = char(string(snapshotData{i, 2})) ;
+                idx = find(strcmp({defs.displayName}, label), 1) ;
+                if isempty(idx)
+                    continue
+                end
+                data{idx, 1} = logical(snapshotData{i, 1}) ;
+                if size(snapshotData, 2) >= 5
+                    data{idx, 3} = snapshotData{i, 4} ;
+                    data{idx, 4} = snapshotData{i, 5} ;
+                else
+                    data{idx, 3} = snapshotData{i, 3} ;
+                    data{idx, 4} = snapshotData{i, 4} ;
+                end
+            end
+            table.Data = data ;
+            app.DW_refreshOptimizationContext() ;
+        end
+
+        function DW_refreshOptimizationConstraintTable(app, preserveExisting)
+            if nargin < 2
+                preserveExisting = false ;
+            end
+            state = struct('metric', {}, 'use', {}, 'speciesLabel', {}, 'type', {}, 'value', {}) ;
+            if preserveExisting
+                state = app.DW_captureOptimizationConstraintState() ;
+            end
+            speciesLabels = app.DW_getOptimizationSpeciesLabels() ;
+            metricLabels = {'Conversion', 'Selectivity', 'Yield', 'Outlet concentration'} ;
+            defaultSpecies = app.DW_getOptimizationDefaultConstraintSpecies(metricLabels, speciesLabels) ;
+            if isempty(speciesLabels)
+                app.DesignUI.Optimization.ConstraintTable.Data = {false, 'Load ReactionSys first', 'CA', 'Lower bound', NaN} ;
+                app.DesignUI.Optimization.ConstraintTable.UserData = struct('isPlaceholder', true) ;
+                app.DesignUI.Optimization.ConstraintTable.ColumnFormat = {'logical', {'Load ReactionSys first'}, {'CA'}, {'Lower bound'}, 'short g'} ;
+                return
+            end
+
+            data = cell(numel(metricLabels), 5) ;
+            for i = 1:numel(metricLabels)
+                rowState = app.DW_findOptimizationConstraintState(state, metricLabels{i}) ;
+                useValue = false ;
+                speciesLabel = defaultSpecies{i} ;
+                typeValue = 'Lower bound' ;
+                metricValue = app.DW_defaultOptimizationConstraintValue(metricLabels{i}) ;
+                if ~isempty(rowState)
+                    useValue = rowState.use ;
+                    speciesLabel = rowState.speciesLabel ;
+                    typeValue = rowState.type ;
+                    metricValue = rowState.value ;
+                end
+                if ~any(strcmp(speciesLabels, speciesLabel))
+                    speciesLabel = defaultSpecies{i} ;
+                end
+                data(i, :) = {useValue, metricLabels{i}, speciesLabel, typeValue, metricValue} ;
+            end
+            app.DesignUI.Optimization.ConstraintTable.Data = data ;
+            app.DesignUI.Optimization.ConstraintTable.ColumnFormat = { ...
+                'logical', metricLabels, speciesLabels, {'Lower bound', 'Upper bound'}, 'short g'} ;
+            app.DesignUI.Optimization.ConstraintTable.UserData = struct( ...
+                'isPlaceholder', false, ...
+                'speciesLabels', {speciesLabels}, ...
+                'metricLabels', {metricLabels}) ;
+        end
+
+        function state = DW_captureOptimizationConstraintState(app)
+            state = struct('metric', {}, 'use', {}, 'speciesLabel', {}, 'type', {}, 'value', {}) ;
+            table = app.DesignUI.Optimization.ConstraintTable ;
+            if isempty(table) || ~isvalid(table) || ~iscell(table.Data)
+                return
+            end
+            data = table.Data ;
+            state = repmat(struct('metric', '', 'use', false, 'speciesLabel', '', 'type', 'Lower bound', 'value', 0), size(data, 1), 1) ;
+            for i = 1:size(data, 1)
+                state(i).metric = char(string(data{i, 2})) ;
+                state(i).use = logical(data{i, 1}) ;
+                state(i).speciesLabel = char(string(data{i, 3})) ;
+                state(i).type = char(string(data{i, 4})) ;
+                state(i).value = double(data{i, 5}) ;
+            end
+        end
+
+        function rowState = DW_findOptimizationConstraintState(~, state, metricName)
+            rowState = [] ;
+            for i = 1:numel(state)
+                if strcmp(state(i).metric, metricName)
+                    rowState = state(i) ;
+                    return
+                end
+            end
+        end
+
+        function DW_applyOptimizationConstraintSnapshot(app, snapshotData)
+            if isempty(snapshotData) || ~iscell(snapshotData)
+                return
+            end
+            table = app.DesignUI.Optimization.ConstraintTable ;
+            if isempty(table) || ~isvalid(table)
+                return
+            end
+            userData = table.UserData ;
+            if isstruct(userData) && app.getStructField(userData, 'isPlaceholder', false)
+                return
+            end
+            data = table.Data ;
+            speciesLabels = app.DW_getOptimizationSpeciesLabels() ;
+            for i = 1:size(snapshotData, 1)
+                if size(snapshotData, 2) < 5
+                    continue
+                end
+                metricLabel = app.DW_normalizeOptimizationConstraintMetric(char(string(snapshotData{i, 2}))) ;
+                idx = find(strcmp(data(:, 2), metricLabel), 1) ;
+                if isempty(idx)
+                    continue
+                end
+                speciesValue = snapshotData{i, 3} ;
+                speciesLabel = app.DW_resolveOptimizationSpeciesLabel(speciesValue, speciesLabels) ;
+                if isempty(speciesLabel)
+                    speciesLabel = data{idx, 3} ;
+                end
+                data{idx, 1} = logical(snapshotData{i, 1}) ;
+                data{idx, 3} = speciesLabel ;
+                data{idx, 4} = char(string(snapshotData{i, 4})) ;
+                data{idx, 5} = double(snapshotData{i, 5}) ;
+            end
+            table.Data = data ;
+        end
+
+        function metric = DW_normalizeOptimizationConstraintMetric(~, metric)
+            metric = char(string(metric)) ;
+            switch metric
+                case 'C_out'
+                    metric = 'Outlet concentration' ;
+            end
+        end
+
+        function speciesLabel = DW_resolveOptimizationSpeciesLabel(~, speciesValue, speciesLabels)
+            speciesLabel = '' ;
+            if isempty(speciesLabels)
+                return
+            end
+            if isnumeric(speciesValue) || islogical(speciesValue)
+                idx = round(double(speciesValue)) ;
+                if isfinite(idx) && idx >= 1 && idx <= numel(speciesLabels)
+                    speciesLabel = speciesLabels{idx} ;
+                end
+                return
+            end
+            speciesLabel = char(string(speciesValue)) ;
+            if ~any(strcmp(speciesLabels, speciesLabel))
+                speciesLabel = '' ;
+            end
+        end
+
+        function speciesLabels = DW_getOptimizationSpeciesLabels(app)
+            RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
+            if isempty(RS) || ~isa(RS, 'ReactionSys') || RS.nComponents < 1
+                speciesLabels = {} ;
+                return
+            end
+            speciesLabels = app.getReactionComponentLabels(RS) ;
+        end
+
+        function defaults = DW_getOptimizationDefaultConstraintSpecies(app, metricLabels, speciesLabels)
+            defaults = cell(size(metricLabels)) ;
+            if isempty(speciesLabels)
+                defaults(:) = {'CA'} ;
+                return
+            end
+            keyIdx = app.DW_getOptimizationSelectorIndex(app.DesignUI.Optimization.KeyReactantDropdown) ;
+            desiredIdx = app.DW_getOptimizationSelectorIndex(app.DesignUI.Optimization.DesiredProductDropdown) ;
+            for i = 1:numel(metricLabels)
+                switch metricLabels{i}
+                    case 'Conversion'
+                        idx = keyIdx ;
+                    otherwise
+                        idx = desiredIdx ;
+                end
+                idx = min(max(idx, 1), numel(speciesLabels)) ;
+                defaults{i} = speciesLabels{idx} ;
+            end
+        end
+
+        function value = DW_defaultOptimizationConstraintValue(~, metricLabel)
+            switch metricLabel
+                case 'Conversion'
+                    value = 0.5 ;
+                case 'Selectivity'
+                    value = 0.5 ;
+                case 'Yield'
+                    value = 0.2 ;
+                otherwise
+                    value = 0 ;
+            end
+        end
+
+        function idx = DW_getOptimizationSelectorIndex(app, dropdown)
+            speciesLabels = app.DW_getOptimizationSpeciesLabels() ;
+            if isempty(dropdown) || ~isvalid(dropdown) || isempty(speciesLabels)
+                idx = 1 ;
+                return
+            end
+            idx = find(strcmp(speciesLabels, char(string(dropdown.Value))), 1) ;
+            if isempty(idx)
+                idx = 1 ;
+            end
+        end
+
+        function DW_applyOptimizationSelectorSnapshot(app, optSnapshot)
+            speciesLabels = app.DW_getOptimizationSpeciesLabels() ;
+            if isempty(speciesLabels)
+                return
+            end
+            keyLabel = app.DW_resolveOptimizationSpeciesLabel( ...
+                app.getStructField(optSnapshot, 'keyReactant', speciesLabels{1}), speciesLabels) ;
+            desiredLabel = app.DW_resolveOptimizationSpeciesLabel( ...
+                app.getStructField(optSnapshot, 'desiredProduct', speciesLabels{min(2, numel(speciesLabels))}), speciesLabels) ;
+            byproductLabel = app.DW_resolveOptimizationSpeciesLabel( ...
+                app.getStructField(optSnapshot, 'byproduct', speciesLabels{min(max(numel(speciesLabels), 1), numel(speciesLabels))}), speciesLabels) ;
+            if isempty(keyLabel)
+                keyLabel = speciesLabels{1} ;
+            end
+            if isempty(desiredLabel)
+                desiredLabel = speciesLabels{min(2, numel(speciesLabels))} ;
+            end
+            if isempty(byproductLabel)
+                byproductLabel = speciesLabels{min(max(numel(speciesLabels), 1), numel(speciesLabels))} ;
+            end
+            app.DesignUI.Optimization.KeyReactantDropdown.Value = keyLabel ;
+            app.DesignUI.Optimization.DesiredProductDropdown.Value = desiredLabel ;
+            app.DesignUI.Optimization.ByproductDropdown.Value = byproductLabel ;
+        end
+
+        function DW_handleOptimizationSetupChanged(app)
+            app.DesignState.lastSolutions.optimizationResult = [] ;
+            app.DW_refreshOptimization() ;
+        end
+
+        function DW_handleOptimizationObjectiveChanged(app)
+            app.DW_refreshOptimizationConstraintTable(true) ;
+            app.DW_handleOptimizationSetupChanged() ;
+        end
+
+        function DW_handleOptimizationConstraintEdit(app, src, event)
+            if ~iscell(src.Data) || ~isstruct(src.UserData) || ...
+                    app.getStructField(src.UserData, 'isPlaceholder', false)
+                src.Data{event.Indices(1), event.Indices(2)} = event.PreviousData ;
+                app.updateStatus('Load a ReactionSys before editing optimization constraints') ;
+                return
+            end
+            app.DesignState.lastSolutions.optimizationResult = [] ;
+            app.DW_refreshOptimizationContext() ;
+            app.DW_refreshOptimization() ;
+        end
+
+        function basis = DW_getOptimizationActiveBasis(~, ~, ~)
+            basis = 'concentration' ;
         end
 
         function tf = DW_familyNeedsBoundary(~, family)
@@ -7037,57 +7535,120 @@ classdef NonIdealReactorApp < handle
                 '\qquad Yield = \frac{C_{\mathrm{desired}}}{C_{\mathrm{in,key}}}$'] ;
         end
 
-        function DW_applyOptimizationTableStyles(app, relevantRows)
+        function DW_applyOptimizationTableStyles(app)
+            table = app.DesignUI.Optimization.DecisionTable ;
             try
-                removeStyle(app.DesignUI.Optimization.DecisionTable) ;
+                removeStyle(table) ;
             catch
             end
+            if isempty(table) || ~isvalid(table) || ~isstruct(table.UserData)
+                return
+            end
+            inactiveRows = app.getStructField(table.UserData, 'inactiveRows', []) ;
             try
-                inactiveRows = setdiff(1:size(app.DesignUI.Optimization.DecisionTable.Data, 1), relevantRows) ;
                 if isempty(inactiveRows)
                     return
                 end
                 style = uistyle('BackgroundColor', [0.94 0.94 0.94], 'FontColor', [0.45 0.45 0.45]) ;
-                addStyle(app.DesignUI.Optimization.DecisionTable, style, 'row', inactiveRows) ;
+                addStyle(table, style, 'row', inactiveRows) ;
             catch
             end
         end
 
-        function DW_refreshOptimizationContext(app)
-            family = app.DesignUI.Optimization.FamilyDropdown.Value ;
-            showBoundary = app.DW_familyNeedsBoundary(family) ;
-            app.DesignUI.Optimization.BoundaryGrid.Visible = app.ternary(showBoundary, 'on', 'off') ;
-            app.DesignUI.Optimization.BoundaryLabel.Visible = app.ternary(showBoundary, 'on', 'off') ;
-            app.DesignUI.Optimization.BoundaryDropdown.Visible = app.ternary(showBoundary, 'on', 'off') ;
-            app.DesignUI.Optimization.BoundaryDropdown.Enable = app.ternary(showBoundary, 'on', 'off') ;
-
-            relevant = app.DW_relevantOptimizationVariables(family) ;
-            data = app.DesignUI.Optimization.DecisionTable.Data ;
-            relevantRows = [] ;
-            for i = 1:size(data, 1)
-                variableName = char(string(data{i, 2})) ;
-                if any(strcmp(variableName, relevant))
-                    relevantRows(end+1) = i ; %#ok<AGROW>
-                else
-                    data{i, 1} = false ;
-                end
+        function DW_setOptimizationDropdownEnabled(~, labelHandle, dropdownHandle, isEnabled)
+            labelColor = [0.15 0.15 0.15] ;
+            dropdownState = 'on' ;
+            if ~isEnabled
+                labelColor = [0.55 0.55 0.55] ;
+                dropdownState = 'off' ;
             end
-            app.DesignUI.Optimization.DecisionTable.Data = data ;
-            app.DesignUI.Optimization.DecisionTable.UserData = struct('relevantRows', relevantRows, 'family', family) ;
-            app.DW_applyOptimizationTableStyles(relevantRows) ;
+            if ~isempty(labelHandle) && isvalid(labelHandle)
+                labelHandle.FontColor = labelColor ;
+            end
+            if ~isempty(dropdownHandle) && isvalid(dropdownHandle)
+                dropdownHandle.Enable = dropdownState ;
+            end
+        end
+
+        function DW_refreshOptimizationContext(app)
+            table = app.DesignUI.Optimization.DecisionTable ;
+            if isempty(table) || ~isvalid(table)
+                return
+            end
+            app.DesignUI.Optimization.InputUnitsNotice.Text = app.DW_buildOptimizationInputUnitNotice() ;
+
+            objective = app.DesignUI.Optimization.ObjectiveDropdown.Value ;
+            hasSpecies = ~isempty(app.DW_getOptimizationSpeciesLabels()) ;
+            showKey = strcmp(objective, 'Max conversion') || any(strcmp(objective, {'Max selectivity', 'Max yield'})) ;
+            showDesired = any(strcmp(objective, {'Max selectivity', 'Max yield', 'Max outlet concentration'})) ;
+            showByproduct = strcmp(objective, 'Min outlet concentration') ;
+            app.DW_setOptimizationDropdownEnabled(app.DesignUI.Optimization.KeyReactantLabel, ...
+                app.DesignUI.Optimization.KeyReactantDropdown, showKey && hasSpecies) ;
+            app.DW_setOptimizationDropdownEnabled(app.DesignUI.Optimization.DesiredProductLabel, ...
+                app.DesignUI.Optimization.DesiredProductDropdown, showDesired && hasSpecies) ;
+            app.DW_setOptimizationDropdownEnabled(app.DesignUI.Optimization.ByproductLabel, ...
+                app.DesignUI.Optimization.ByproductDropdown, showByproduct && hasSpecies) ;
+
+            userData = table.UserData ;
+            if ~isstruct(userData) || app.getStructField(userData, 'isPlaceholder', false)
+                if ~isstruct(userData)
+                    userData = struct() ;
+                end
+                if ~isfield(userData, 'inactiveRows')
+                    userData.inactiveRows = 1:size(table.Data, 1) ;
+                end
+                table.UserData = userData ;
+                app.DW_applyOptimizationTableStyles() ;
+                app.DesignUI.Optimization.RunButton.Enable = 'off' ;
+                return
+            end
+
+            data = table.Data ;
+            defs = app.getStructField(userData, 'definitions', struct([])) ;
+            if size(data, 1) ~= numel(defs)
+                app.DesignUI.Optimization.RunButton.Enable = 'off' ;
+                return
+            end
+            activeBasis = app.DW_getOptimizationActiveBasis(defs, data) ;
+            inactiveMask = false(1, numel(defs)) ;
+            table.Data = data ;
+            userData.inactiveRows = find(inactiveMask) ;
+            userData.activeBasis = activeBasis ;
+            table.UserData = userData ;
+            app.DW_applyOptimizationTableStyles() ;
+            activeRows = arrayfun(@(i) logical(data{i, 1}), 1:size(data, 1)) ;
+            hasRS = ~isempty(app.getStructField(app.DesignState.reactionSpec, 'rs', [])) ;
+            hasFeed = ~isempty(app.getStructField(app.DesignState.reactionSpec, 'feedStream', [])) ;
+            app.DesignUI.Optimization.RunButton.Enable = app.ternary(any(activeRows) && hasRS && hasFeed, 'on', 'off') ;
         end
 
         function DW_handleDecisionTableEdit(app, src, event)
-            relevantRows = [] ;
-            if isstruct(src.UserData) && isfield(src.UserData, 'relevantRows')
-                relevantRows = src.UserData.relevantRows ;
-            end
-            rowIdx = event.Indices(1) ;
-            if any(relevantRows == rowIdx)
+            if ~isstruct(src.UserData) || app.getStructField(src.UserData, 'isPlaceholder', false)
+                src.Data{event.Indices(1), event.Indices(2)} = event.PreviousData ;
+                app.updateStatus('Load a Feed Stream before editing optimization variables') ;
                 return
             end
-            src.Data{rowIdx, event.Indices(2)} = event.PreviousData ;
-            app.updateStatus('That decision variable is inactive for the selected family') ;
+            defs = app.getStructField(src.UserData, 'definitions', struct([])) ;
+            rowIdx = event.Indices(1) ;
+            if rowIdx > numel(defs)
+                src.Data{rowIdx, event.Indices(2)} = event.PreviousData ;
+                return
+            end
+            colIdx = event.Indices(2) ;
+            if colIdx >= 3
+                currentValue = double(src.Data{rowIdx, colIdx}) ;
+                if ~isfinite(currentValue)
+                    src.Data{rowIdx, colIdx} = event.PreviousData ;
+                    app.updateStatus('Optimization bounds must be finite numeric values') ;
+                    return
+                end
+            end
+            if double(src.Data{rowIdx, 3}) > double(src.Data{rowIdx, 4})
+                src.Data{rowIdx, 4} = src.Data{rowIdx, 3} ;
+            end
+            app.DesignState.lastSolutions.optimizationResult = [] ;
+            app.DW_refreshOptimizationContext() ;
+            app.DW_refreshOptimization() ;
         end
 
         function out = ternary(~, condition, trueValue, falseValue)
@@ -7352,45 +7913,39 @@ classdef NonIdealReactorApp < handle
         function DW_refreshOptimization(app)
             app.DW_refreshOptimizationContext() ;
             result = app.getStructField(app.DesignState.lastSolutions, 'optimizationResult', []) ;
-            timeDD = app.getDisplayControl('DesignOptimization', 'time') ;
-            concDD = app.getDisplayControl('DesignOptimization', 'concentration') ;
             if isempty(result)
                 app.DesignUI.Optimization.ComparisonTable.Data = cell(0, 3) ;
-                app.DesignUI.Optimization.ConstraintResultTable.Data = cell(0, 4) ;
-                app.DesignUI.Optimization.SensitivityTable.Data = cell(0, 3) ;
+                app.DesignUI.Optimization.ModelTable.Data = cell(0, 9) ;
+                app.DesignUI.Optimization.ModelTable.ColumnName = app.DW_buildOptimizationModelColumnNames() ;
                 app.DesignUI.Optimization.SummaryLabel.Text = 'Awaiting optimization.' ;
             else
                 app.DesignUI.Optimization.SummaryLabel.Text = result.summaryText ;
-                if isfield(result, 'baseline') && isfield(result, 'optimum')
-                    app.DesignUI.Optimization.ComparisonTable.Data = app.DW_buildOptimizationComparisonTable(result, timeDD) ;
-                    app.DesignUI.Optimization.ConstraintResultTable.Data = app.DW_buildOptimizationConstraintResultTable(result, timeDD, concDD) ;
-                    app.DesignUI.Optimization.SensitivityTable.Data = app.DW_buildOptimizationSensitivityTable(result, timeDD) ;
-                else
-                    app.DesignUI.Optimization.ComparisonTable.Data = app.getStructField(result, 'comparisonTable', cell(0, 3)) ;
-                    app.DesignUI.Optimization.ConstraintResultTable.Data = app.getStructField(result, 'constraintTable', cell(0, 4)) ;
-                    app.DesignUI.Optimization.SensitivityTable.Data = app.getStructField(result, 'sensitivityTable', cell(0, 3)) ;
-                end
+                app.DesignUI.Optimization.ComparisonTable.Data = app.DW_buildOptimizationComparisonTable(result) ;
+                app.DesignUI.Optimization.ModelTable.ColumnName = app.DW_buildOptimizationModelColumnNames() ;
+                app.DesignUI.Optimization.ModelTable.Data = app.DW_buildOptimizationModelTable(result) ;
             end
         end
 
         function DW_refreshChemicalSelectors(app)
             RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
             if isempty(RS)
+                app.DW_refreshOptimizationConstraintTable(false) ;
                 app.DW_refreshReactiveContext() ;
+                app.DW_refreshOptimizationContext() ;
                 return
             end
             nComp = RS.nComponents ;
-            labels = cell(1, nComp) ;
+            labels = app.getReactionComponentLabels(RS) ;
             itemsData = 1:nComp ;
-            for i = 1:nComp
-                labels{i} = sprintf('%d - %s', i, app.getComponentLabel(RS, i)) ;
-            end
             app.DesignUI.Reactive.KeyComponentDropdown.Items = labels ;
             app.DesignUI.Reactive.KeyComponentDropdown.ItemsData = itemsData ;
             app.DesignUI.Reactive.DesiredProductDropdown.Items = labels ;
             app.DesignUI.Reactive.DesiredProductDropdown.ItemsData = itemsData ;
             app.DesignUI.Reactive.ByproductDropdown.Items = labels ;
             app.DesignUI.Reactive.ByproductDropdown.ItemsData = itemsData ;
+            app.DesignUI.Optimization.KeyReactantDropdown.Items = labels ;
+            app.DesignUI.Optimization.DesiredProductDropdown.Items = labels ;
+            app.DesignUI.Optimization.ByproductDropdown.Items = labels ;
 
             keyComponentIndex = app.DW_resolveReactiveKeyComponentIndex(RS, ...
                 app.DesignState.reactionSpec.keyComponentIndex) ;
@@ -7398,7 +7953,12 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.KeyComponentDropdown.Value = keyComponentIndex ;
             app.DesignUI.Reactive.DesiredProductDropdown.Value = min(max(app.DesignState.reactionSpec.desiredProductIndex, 1), nComp) ;
             app.DesignUI.Reactive.ByproductDropdown.Value = min(max(app.DesignState.reactionSpec.byproductIndex, 1), nComp) ;
+            app.DesignUI.Optimization.KeyReactantDropdown.Value = labels{keyComponentIndex} ;
+            app.DesignUI.Optimization.DesiredProductDropdown.Value = labels{min(max(app.DesignState.reactionSpec.desiredProductIndex, 1), nComp)} ;
+            app.DesignUI.Optimization.ByproductDropdown.Value = labels{min(max(app.DesignState.reactionSpec.byproductIndex, 1), nComp)} ;
+            app.DW_refreshOptimizationConstraintTable(true) ;
             app.DW_refreshReactiveContext() ;
+            app.DW_refreshOptimizationContext() ;
         end
 
         function keyComponentIndex = DW_resolveReactiveKeyComponentIndex(app, RS, currentIndex)
@@ -7418,8 +7978,9 @@ classdef NonIdealReactorApp < handle
             end
         end
 
-        function label = getComponentLabel(~, RS, idx)
-            label = sprintf('C%d', idx) ;
+        function label = getComponentLabel(app, RS, idx)
+            label = app.getComponentLabels(idx) ;
+            label = label{end} ;
             try
                 if ~isempty(RS.componentNames) && numel(RS.componentNames) >= idx
                     label = char(string(RS.componentNames{idx})) ;
@@ -7447,50 +8008,95 @@ classdef NonIdealReactorApp < handle
     end
 
     methods (Static, Access = private)
-        function Bo = compute_Bo_from_variance(sigma2_theta, bcType)
-            % Compute Bodenstein number (Bo) from dimensionless variance
-            %
-            % For open-open BCs:
-            %   sigma2_theta = 2*Bo  =>  Bo = sigma2_theta / 2
-            %
-            % For closed-closed BCs:
-            %   sigma2_theta = 2*Bo - 2*Bo^2 * (1 - exp(-1/Bo))
-            %   This cannot be solved analytically, so we use fzero
-            %   with initial guess Bo0 = sigma2_theta / 2
+        function Bo = compute_Bo_from_variance(sigma2_theta, bcType, rtdObj)
+            if nargin < 3
+                rtdObj = [] ;
+            end
 
             switch bcType
                 case 'open-open'
-                    Bo = sigma2_theta / 2 ;
-
-                case 'closed-closed'
-                    % Define f(Bo) = 2*Bo - 2*Bo^2*(1-exp(-1/Bo)) - sigma2_theta
-                    f = @(Bo_val) 2*Bo_val - 2*Bo_val^2*(1 - exp(-1/Bo_val)) - sigma2_theta ;
-                    lowerBound = 1e-8 ;
-                    upperBound = max(1, sigma2_theta + 1) ;
-
-                    try
-                        fLow = f(lowerBound) ;
-                        fHigh = f(upperBound) ;
-                        while ~isfinite(fHigh) || sign(fLow) == sign(fHigh)
-                            upperBound = upperBound * 2 ;
-                            if upperBound > 1e6
-                                error('Could not bracket a physical Bo root for the current variance.') ;
-                            end
-                            fHigh = f(upperBound) ;
+                    if isfinite(sigma2_theta) && sigma2_theta > 0
+                        tauSpace = NonIdealReactorApp.extractOpenOpenTauSpace(rtdObj) ;
+                        if ~isnan(tauSpace) && ~isempty(rtdObj) && isprop(rtdObj, 'sigma2') && isfinite(rtdObj.sigma2)
+                            sigmaSpace = rtdObj.sigma2 / max(tauSpace^2, eps) ;
+                            Bo = NonIdealReactorApp.solve_open_open_bo_from_space_variance(sigmaSpace) ;
+                        else
+                            Bo = NonIdealReactorApp.solve_open_open_bo_from_mean_variance(sigma2_theta) ;
                         end
-                        Bo = fzero(f, [lowerBound, upperBound]) ;
-                    catch
-                        % Fallback: use open-open approximation
-                        Bo = max(sigma2_theta / 2, lowerBound) ;
-                        warning('Could not solve for closed-closed Bo. Using approximation Bo = sigma2_theta/2') ;
+                    else
+                        Bo = NaN ;
                     end
 
-                    % Ensure positive
-                    Bo = max(Bo, 1e-8) ;
+                case 'closed-closed'
+                    Pe = NonIdealReactorApp.solve_closed_closed_pe_from_variance(sigma2_theta) ;
+                    Bo = 1 / Pe ;
 
                 otherwise
-                    Bo = sigma2_theta / 2 ;
+                    Bo = NaN ;
             end
+
+            if isfinite(Bo)
+                Bo = max(Bo, 1e-8) ;
+            end
+        end
+
+        function tauSpace = extractOpenOpenTauSpace(rtdObj)
+            tauSpace = NaN ;
+            if isempty(rtdObj) || ~isprop(rtdObj, 'modelInfo') || ~isstruct(rtdObj.modelInfo)
+                return
+            end
+            if isfield(rtdObj.modelInfo, 'tauSpace') && isfinite(rtdObj.modelInfo.tauSpace) && rtdObj.modelInfo.tauSpace > 0
+                tauSpace = rtdObj.modelInfo.tauSpace ;
+            end
+        end
+
+        function Bo = solve_open_open_bo_from_space_variance(sigmaSpace)
+            if ~(isfinite(sigmaSpace) && sigmaSpace > 0)
+                error('Open-open variance must be positive and finite.') ;
+            end
+            Bo = (-1 + sqrt(1 + 8 * sigmaSpace)) / 8 ;
+        end
+
+        function Bo = solve_open_open_bo_from_mean_variance(sigmaMean)
+            if ~(isfinite(sigmaMean) && sigmaMean > 0 && sigmaMean < 2)
+                error('For open-open dispersion model, sigmaTheta2 must satisfy 0 < sigmaTheta2 < 2.') ;
+            end
+
+            a = 4 * sigmaMean - 8 ;
+            b = 4 * sigmaMean - 2 ;
+            c = sigmaMean ;
+            rootsVec = roots([a b c]) ;
+            rootsVec = rootsVec(abs(imag(rootsVec)) < 1e-10) ;
+            rootsVec = real(rootsVec) ;
+            rootsVec = rootsVec(rootsVec > 0) ;
+
+            if isempty(rootsVec)
+                error('Could not recover a physical open-open Bo from the RTD variance.') ;
+            end
+
+            Bo = min(rootsVec) ;
+        end
+
+        function Pe = solve_closed_closed_pe_from_variance(sigma2_theta)
+            if ~(isfinite(sigma2_theta) && sigma2_theta > 0 && sigma2_theta < 1)
+                error('For closed-closed dispersion model, sigmaTheta2 must satisfy 0 < sigmaTheta2 < 1.') ;
+            end
+
+            f = @(Pe_val) 2 ./ Pe_val - 2 ./ Pe_val.^2 .* (1 - exp(-Pe_val)) - sigma2_theta ;
+            lowerBound = 1e-8 ;
+            upperBound = 1 ;
+            fLow = f(lowerBound) ;
+            fHigh = f(upperBound) ;
+
+            while ~isfinite(fHigh) || sign(fLow) == sign(fHigh)
+                upperBound = upperBound * 2 ;
+                if upperBound > 1e8
+                    error('Could not bracket a physical Peclet root for the current variance.') ;
+                end
+                fHigh = f(upperBound) ;
+            end
+
+            Pe = fzero(f, [lowerBound, upperBound]) ;
         end
 
         function showTechnicalGuide(~)
@@ -7601,9 +8207,9 @@ classdef NonIdealReactorApp < handle
                 '  Computes N from variance or accepts manual input.', ...
                 '', ...
                 'Tab 4: Dispersion Model', ...
-                '  Reactor with axial dispersion (Bo = u*L/De).', ...
+                '  Reactor with axial dispersion (Bo = D_e/(uL) = 1/Pe).', ...
                 '  Boundary conditions: open-open or closed-closed (Danckwerts).', ...
-                '  Bo->0 = CSTR, Bo->inf = PFR.', ...
+                '  Smaller Bo and larger Pe approach PFR; larger Bo approaches strong backmixing.', ...
                 '', ...
                 '==================================', ...
                 'Internal units: SI (s, m^3, mol/m^3, m^3/s, Pa, K)', ...

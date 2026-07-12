@@ -377,16 +377,16 @@
       <p>This tab represents the reactor as a one-dimensional flow with axial dispersion.</p>
 
       <h3>9.1 Governing idea</h3>
-      <p>The key hydrodynamic parameter is the <strong>Bodenstein number</strong>, <code>Bo</code>, which measures the ratio between convective transport and axial dispersion. The interface also reports <code>Pe = 1/Bo</code>.</p>
+      <p>The key hydrodynamic parameter is the <strong>dispersion number</strong>, <code>Bo = D_e/(uL)</code>, and the interface also reports the equivalent <code>Pe = 1/Bo</code>.</p>
       <p>In engineering terms:</p>
       <ul>
-        <li>low <code>Bo</code> means weaker dispersion resistance and behavior closer to plug flow in the implementation's convention,</li>
+        <li>low <code>Bo</code> and high <code>Pe</code> mean weaker axial dispersion and behavior closer to plug flow,</li>
         <li>high <code>Bo</code> means broader backmixed behavior relative to that limit.</li>
       </ul>
 
       <h3>9.2 Current computational route</h3>
-      <p>The active implementation builds an RTD associated with the selected dispersion parameters and then solves the reaction problem with the same general kinetic framework used elsewhere.</p>
-      <p>This keeps the dispersion route compatible with multicomponent kinetics rather than restricting it to a small set of analytical formulas.</p>
+      <p>The active implementation now separates RTD generation from reactive prediction. For <code>closed-closed</code>, the reactive result is obtained from a steady axial-dispersion boundary-value problem with Danckwerts conditions.</p>
+      <p>The <code>open-open</code> route is kept for RTD work and for linear first-order reactive cases only; nonlinear kinetics are blocked instead of being labeled as a general dispersion-model prediction.</p>
 
       <h3>9.3 Boundary conditions</h3>
       <p>The class retains the boundary-condition choice for the RTD model:</p>
@@ -394,12 +394,12 @@
         <li><code>closed-closed</code></li>
         <li><code>open-open</code></li>
       </ul>
-      <p>This matters because both formulations do not produce exactly the same RTD shape outside limiting cases.</p>
+      <p>This matters because both formulations do not produce exactly the same RTD shape or the same interpretation of <code>tau</code> outside limiting cases.</p>
 
       <h3>9.4 Data flow</h3>
       <p>In calculated mode, the tab imports:</p>
       <ul>
-        <li><code>tau</code> and a variance-based estimate of <code>Bo</code> from Tab 1,</li>
+        <li><code>tau</code> and a variance-based estimate of <code>Bo</code> from Tab 1, reconstructed consistently with <code>Pe</code> and the selected boundary model,</li>
         <li>and the chemistry from Tab 2 if available.</li>
       </ul>
     </section>

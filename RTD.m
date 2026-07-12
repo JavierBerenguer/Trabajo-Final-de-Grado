@@ -25,6 +25,7 @@ classdef RTD
         source = ''     % char: 'experimental_pulse', 'experimental_step',
                         %       'cstr', 'pfr', 'tanks_in_series',
                         %       'dispersion', 'custom'
+        modelInfo = struct()  % optional metadata for model-specific parameters
     end
 
     properties (SetAccess = private)
@@ -372,32 +373,47 @@ classdef RTD
         end
 
         function obj = dispersion_open(Bo, tau_val, tspan)
-            % Generate E(t) for the dispersion model (small dispersion / open-open)
-            %   obj = RTD.dispersion_open(Bo, tau)
-            %   obj = RTD.dispersion_open(Bo, tau, tspan)
+            % Generate E(t) for the dispersion model with open-open BCs.
+            %   obj = RTD.dispersion_open(Bo, tau_space)
+            %   obj = RTD.dispersion_open(Bo, tau_space, tspan)
             %
-            % E(t) = 1/(t_bar * sqrt(4*pi*Bo)) * exp(-(1 - t/t_bar)^2 / (4*Bo))
-            %
-            % Valid approximation for small dispersion (Bo < 0.01, i.e., Pe > 100)
-            % Bo = De/(u*L) = 1/Pe (Bodenstein inverse = dispersion number)
+            % tau_val is interpreted as tau_space = L/u.
+            % E(t) = sqrt(Pe) / (tau_space * sqrt(4*pi*theta))
+            %        * exp(-Pe * (1-theta)^2 / (4*theta))
+            % where theta = t / tau_space and Pe = 1 / Bo.
+
+            Bo = max(Bo, 1e-12) ;
+            Pe = 1 / Bo ;
+            tauSpace = tau_val ;
+            tauMean = tauSpace * (1 + 2 * Bo) ;
+            sigma2 = tauSpace^2 * (2 * Bo + 8 * Bo^2) ;
 
             if nargin < 3
-                spread = max(3, 1 + 6*sqrt(Bo)) ;  % wider range for large Bo
-                tspan = linspace(0, spread * tau_val, 2000) ;
+                sigma = sqrt(max(sigma2, 0)) ;
+                tmax = max(5 * tauMean, tauMean + 8 * sigma) ;
+                tspan = linspace(0, tmax, 2000) ;
             end
 
+            theta = tspan / tauSpace ;
             Et = zeros(size(tspan)) ;
-            idx = tspan > 0 ;  % avoid division by zero at t=0
-            Et(idx) = (1 ./ (tau_val * sqrt(4*pi*Bo))) .* ...
-                      exp(-(1 - tspan(idx)/tau_val).^2 ./ (4*Bo)) ;
+            idx = tspan > 0 ;
+            Et(idx) = sqrt(Pe) ./ (tauSpace * sqrt(4 * pi * theta(idx))) .* ...
+                      exp(-Pe * (1 - theta(idx)).^2 ./ (4 * theta(idx))) ;
 
             obj = RTD(tspan, Et) ;
             obj.source = 'dispersion' ;
+            obj.modelInfo = struct( ...
+                'boundaryType', 'open-open', ...
+                'Bo', Bo, ...
+                'Pe', Pe, ...
+                'tauSpace', tauSpace, ...
+                'tauMean', tauMean, ...
+                'tauRTDParameter', tauSpace) ;
 
-            % Override with exact analytical moments (open-open BC)
+            % Override with analytical moments while keeping tau as the mean RTD.
             % sigma2_theta = 2*Bo + 8*Bo^2 → sigma2 = tau^2 * (2*Bo + 8*Bo^2)
-            obj.tau    = tau_val ;
-            obj.sigma2 = tau_val^2 * (2*Bo + 8*Bo^2) ;
+            obj.tau    = tauMean ;
+            obj.sigma2 = sigma2 ;
         end
 
         function obj = dispersion_closed(Bo, tau_val, tspan)
@@ -466,6 +482,13 @@ classdef RTD
             Et = Etheta / tau_val ;
             obj = RTD(tspan, Et) ;
             obj.source = 'dispersion' ;
+            obj.modelInfo = struct( ...
+                'boundaryType', 'closed-closed', ...
+                'Bo', Bo, ...
+                'Pe', Pe, ...
+                'tauSpace', tau_val, ...
+                'tauMean', tau_val, ...
+                'tauRTDParameter', tau_val) ;
 
             % Override with exact analytical moments (closed-closed BC)
             % sigma2_theta = 2*Bo - 2*Bo^2*(1-exp(-1/Bo))

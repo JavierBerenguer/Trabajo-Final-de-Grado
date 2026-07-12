@@ -62,12 +62,14 @@ app = ReactorApp;
 
 ### Tab 4 - Dispersion Model
 
-- Modelo de dispersion axial parametrizado con `Bo`.
+- Modelo de dispersion axial parametrizado con `Bo = 1/Pe`.
+- En modo manual, la UI de Tab 4 pide `Pe` directamente y deja `Bo` solo como valor derivado.
 - Soporte para contornos `open-open` y `closed-closed`.
+- En reactivo general, `closed-closed` resuelve el BVP axial con Danckwerts; `open-open` queda limitado a casos lineales de 1er orden.
 - `Display units` reorganizado como en `Tanks-in-Series`: `Time base` solo para `E(t)`, `Concentration` para concentraciones y listas multiseleccion para `Species` y `Reactants`.
-- Graficas superiores `Outlet Concentration vs Bo` y `Conversion vs Bo`, ambas filtrables por multiseleccion.
+- Graficas superiores `Outlet Concentration vs Pe` y `Conversion vs Pe`, ambas filtrables por multiseleccion.
 - Tabla `Exit Summary` con `C_in`, `Disp C_out`, referencias `CSTR`/`PFR` y conversion por reactivo.
-- `E(t)` se mantiene en la parte inferior derecha con anotacion de `Bo`, `Pe` y `tau`.
+- `E(t)` se mantiene en la parte inferior derecha con anotacion de `Bo`, `Pe` y `tau`; para `open-open` tambien se distingue `tau_space`.
 
 ### Tab 5 - Design & Optimization
 
@@ -78,7 +80,7 @@ app = ReactorApp;
 - La caracterizacion RTD se hace en `Tab 1 - RTD Analysis`; Tab 5 ya no duplica esa etapa.
 - `Diagnosis & Fit` ajusta `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass` y `CSTR + Dead Volume + Bypass` a partir de la RTD de Tab 1.
 - `Reactive Performance` compara `Ideal CSTR`, `Segregation`, `Max Mixedness` e `Ideal PFR`, e incluye deteccion directa de 1er orden cuando aplica.
-- `Optimization` optimiza sobre `tau`, `N`, `Bo`, `bypass`, `activeFraction` y `recycleRatio` reutilizando la quimica cargada en `Reactive Performance`.
+- `Optimization` ha sido rehecha desde cero como optimizacion de proceso con RTD fija: usa `Tab 1 RTD` o `Fitted RTD`, selectores propios de especies, optimiza solo `C_in,i`, aplica restricciones sobre metricas reactivas y muestra una comparativa base-vs-optimo sobre `Ideal CSTR`, `Segregation`, `Max Mixedness` e `Ideal PFR`.
 - La persistencia de sesion ya incluye snapshot propio `designWorkspace`.
 
 ## Unidades

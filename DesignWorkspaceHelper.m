@@ -435,70 +435,79 @@ classdef DesignWorkspaceHelper
         end
 
         function optimizationResult = solveOptimization(optSpec)
+            rtdObj = DesignWorkspaceHelper.getRequiredRTD(optSpec) ;
             RS = DesignWorkspaceHelper.getRequiredField(optSpec, 'RS') ;
-            C0 = DesignWorkspaceHelper.ensureRowVector( ...
-                DesignWorkspaceHelper.getRequiredField(optSpec, 'C0')) ;
+            feedStream = DesignWorkspaceHelper.getRequiredField(optSpec, 'feedStream') ;
+            baseFeed = DesignWorkspaceHelper.extractOptimizationFeedState(feedStream) ;
 
             decisionVariables = DesignWorkspaceHelper.getStructField(optSpec, 'decisionVariables', struct([])) ;
             constraints = DesignWorkspaceHelper.getStructField(optSpec, 'constraints', struct([])) ;
             objective = char(string(DesignWorkspaceHelper.getStructField( ...
                 optSpec, 'objective', 'Max conversion'))) ;
+            basisMode = DesignWorkspaceHelper.resolveOptimizationBasis(decisionVariables) ;
 
-            [x0, lb, ub, names, fixedParams] = DesignWorkspaceHelper.unpackDecisionVariables(decisionVariables) ;
+            [x0, lb, ub, names, fixedParams, definitions] = DesignWorkspaceHelper.unpackDecisionVariables(decisionVariables, baseFeed) ;
             if isempty(x0)
                 error('At least one active decision variable is required.') ;
             end
 
             objFun = @(x) DesignWorkspaceHelper.optimizationPenaltyObjective( ...
-                x, lb, ub, names, fixedParams, constraints, objective, optSpec, RS, C0) ;
+                x, lb, ub, names, fixedParams, definitions, basisMode, constraints, objective, ...
+                optSpec, RS, rtdObj, baseFeed) ;
             xOpt = DesignWorkspaceHelper.penalizedFminsearch(objFun, x0, lb, ub) ;
 
             baselineParams = DesignWorkspaceHelper.combineParams(names, x0, fixedParams) ;
             optimumParams = DesignWorkspaceHelper.combineParams(names, xOpt, fixedParams) ;
+            reactionMode = DesignWorkspaceHelper.getStructField(optSpec, 'reactionMode', 'Segregation') ;
+            keyIdx = DesignWorkspaceHelper.getStructField(optSpec, 'keyComponentIndex', 1) ;
+            desiredIdx = DesignWorkspaceHelper.getStructField(optSpec, 'desiredProductIndex', []) ;
+            byproductIdx = DesignWorkspaceHelper.getStructField(optSpec, 'byproductIndex', []) ;
 
-            baseline = DesignWorkspaceHelper.evaluateHydroScenario(struct( ...
-                'family', DesignWorkspaceHelper.getStructField(optSpec, 'family', 'Tanks-in-Series'), ...
-                'boundaryType', DesignWorkspaceHelper.getStructField(optSpec, 'boundaryType', 'closed-closed'), ...
-                'reactionMode', DesignWorkspaceHelper.getStructField(optSpec, 'reactionMode', 'Segregation'), ...
+            baseline = DesignWorkspaceHelper.evaluateProcessScenario(struct( ...
+                'rtd', rtdObj, ...
+                'reactionMode', reactionMode, ...
+                'objective', objective, ...
+                'computeFullModelSet', true, ...
                 'RS', RS, ...
-                'C0', C0, ...
-                'keyComponentIndex', DesignWorkspaceHelper.getStructField(optSpec, 'keyComponentIndex', 1), ...
-                'desiredProductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'desiredProductIndex', []), ...
-                'byproductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'byproductIndex', []), ...
-                'params', baselineParams)) ;
-            optimum = DesignWorkspaceHelper.evaluateHydroScenario(struct( ...
-                'family', DesignWorkspaceHelper.getStructField(optSpec, 'family', 'Tanks-in-Series'), ...
-                'boundaryType', DesignWorkspaceHelper.getStructField(optSpec, 'boundaryType', 'closed-closed'), ...
-                'reactionMode', DesignWorkspaceHelper.getStructField(optSpec, 'reactionMode', 'Segregation'), ...
+                'baseFeed', baseFeed, ...
+                'keyComponentIndex', keyIdx, ...
+                'desiredProductIndex', desiredIdx, ...
+                'byproductIndex', byproductIdx, ...
+                'params', baselineParams, ...
+                'decisionDefinitions', definitions, ...
+                'basisMode', basisMode)) ;
+            optimum = DesignWorkspaceHelper.evaluateProcessScenario(struct( ...
+                'rtd', rtdObj, ...
+                'reactionMode', reactionMode, ...
+                'objective', objective, ...
+                'computeFullModelSet', true, ...
                 'RS', RS, ...
-                'C0', C0, ...
-                'keyComponentIndex', DesignWorkspaceHelper.getStructField(optSpec, 'keyComponentIndex', 1), ...
-                'desiredProductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'desiredProductIndex', []), ...
-                'byproductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'byproductIndex', []), ...
-                'params', optimumParams)) ;
-
-            constraintTable = DesignWorkspaceHelper.evaluateConstraints(constraints, optimum) ;
-            sensitivityTable = DesignWorkspaceHelper.computeSensitivity(names, optimumParams, optSpec, RS, C0, objective) ;
+                'baseFeed', baseFeed, ...
+                'keyComponentIndex', keyIdx, ...
+                'desiredProductIndex', desiredIdx, ...
+                'byproductIndex', byproductIdx, ...
+                'params', optimumParams, ...
+                'decisionDefinitions', definitions, ...
+                'basisMode', basisMode)) ;
+            baseline = DesignWorkspaceHelper.slimOptimizationScenario(baseline) ;
+            optimum = DesignWorkspaceHelper.slimOptimizationScenario(optimum) ;
 
             optimizationResult = struct() ;
-            optimizationResult.family = DesignWorkspaceHelper.getStructField(optSpec, 'family', 'Tanks-in-Series') ;
+            optimizationResult.rtdSource = DesignWorkspaceHelper.getStructField(optSpec, 'rtdSource', 'Tab 1 RTD') ;
             optimizationResult.objective = objective ;
+            optimizationResult.reactionMode = reactionMode ;
             optimizationResult.baseline = baseline ;
             optimizationResult.optimum = optimum ;
             optimizationResult.optimalParameters = optimumParams ;
-            optimizationResult.comparisonTable = { ...
-                'Conversion', DesignWorkspaceHelper.formatNumber(baseline.metrics.conversion), DesignWorkspaceHelper.formatNumber(optimum.metrics.conversion) ; ...
-                'Selectivity', DesignWorkspaceHelper.formatNumber(baseline.metrics.selectivity), DesignWorkspaceHelper.formatNumber(optimum.metrics.selectivity) ; ...
-                'Yield', DesignWorkspaceHelper.formatNumber(baseline.metrics.yield), DesignWorkspaceHelper.formatNumber(optimum.metrics.yield) ; ...
-                'tau', DesignWorkspaceHelper.formatNumber(DesignWorkspaceHelper.getStructField(baselineParams, 'tau', NaN)), DesignWorkspaceHelper.formatNumber(DesignWorkspaceHelper.getStructField(optimumParams, 'tau', NaN)) ; ...
-                'Recycle ratio', DesignWorkspaceHelper.formatNumber(DesignWorkspaceHelper.getStructField(baselineParams, 'recycleRatio', 0)), DesignWorkspaceHelper.formatNumber(DesignWorkspaceHelper.getStructField(optimumParams, 'recycleRatio', 0))} ;
-            optimizationResult.constraintTable = constraintTable ;
-            optimizationResult.sensitivityTable = sensitivityTable ;
-            optimizationResult.summaryText = sprintf([ ...
-                'Objective: %s. Baseline conversion = %.6g, optimum conversion = %.6g, ' ...
-                'baseline selectivity = %.6g, optimum selectivity = %.6g.'], ...
-                objective, baseline.metrics.conversion, optimum.metrics.conversion, ...
-                baseline.metrics.selectivity, optimum.metrics.selectivity) ;
+            optimizationResult.decisionVariables = decisionVariables ;
+            optimizationResult.activeDecisionVariables = decisionVariables(arrayfun(@(row) isfield(row, 'use') && row.use, decisionVariables)) ;
+            optimizationResult.comparisonRows = DesignWorkspaceHelper.buildOptimizationComparisonRows( ...
+                objective, optimizationResult.activeDecisionVariables, constraints, baseline, optimum) ;
+            optimizationResult.modelComparisonRows = DesignWorkspaceHelper.buildOptimizationModelComparisonRows( ...
+                RS, baseline.modelResults, optimum.modelResults) ;
+            optimizationResult.constraintStatus = DesignWorkspaceHelper.evaluateOptimizationConstraintStatus(constraints, optimum) ;
+            optimizationResult.summaryText = DesignWorkspaceHelper.buildOptimizationSummary( ...
+                optimizationResult.rtdSource, reactionMode, objective, baseline, optimum, optimizationResult.constraintStatus) ;
         end
 
         function scaleUpResult = compareScaleUp(scaleSpec)
@@ -525,6 +534,68 @@ classdef DesignWorkspaceHelper
                 pilot.metrics.conversion, industrial.metrics.conversion, ...
                 pilot.metrics.selectivity, industrial.metrics.selectivity) ;
             %#ok<NASGU>
+        end
+
+        function scenario = evaluateProcessScenario(spec)
+            rtdObj = DesignWorkspaceHelper.getRequiredRTD(spec) ;
+            reactionMode = char(string(DesignWorkspaceHelper.getStructField(spec, 'reactionMode', 'Segregation'))) ;
+            RS = DesignWorkspaceHelper.getRequiredField(spec, 'RS') ;
+            baseFeed = DesignWorkspaceHelper.getRequiredField(spec, 'baseFeed') ;
+            params = DesignWorkspaceHelper.getRequiredField(spec, 'params') ;
+            decisionDefinitions = DesignWorkspaceHelper.getStructField(spec, 'decisionDefinitions', struct([])) ;
+            basisMode = DesignWorkspaceHelper.getStructField(spec, 'basisMode', 'concentration') ;
+            keyIdx = DesignWorkspaceHelper.getStructField(spec, 'keyComponentIndex', 1) ;
+            desiredIdx = DesignWorkspaceHelper.getStructField(spec, 'desiredProductIndex', []) ;
+            byproductIdx = DesignWorkspaceHelper.getStructField(spec, 'byproductIndex', []) ;
+            computeFullModelSet = logical(DesignWorkspaceHelper.getStructField(spec, 'computeFullModelSet', false)) ;
+
+            feedState = DesignWorkspaceHelper.reconstructOptimizationFeed(baseFeed, params, decisionDefinitions, basisMode) ;
+            [activeModelKey, activeModelLabel] = DesignWorkspaceHelper.resolveOptimizationModelKey(reactionMode) ;
+            if computeFullModelSet
+                reactiveResult = DesignWorkspaceHelper.solveReactivePerformance(struct( ...
+                    'rtd', rtdObj, ...
+                    'RS', RS, ...
+                    'C0', feedState.concentration, ...
+                    'keyComponentIndex', keyIdx, ...
+                    'desiredProductIndex', desiredIdx, ...
+                    'byproductIndex', byproductIdx)) ;
+                modelResults = DesignWorkspaceHelper.packOptimizationModelResults(feedState.concentration, reactiveResult) ;
+                activeModel = modelResults.(activeModelKey) ;
+                modeInfo = struct('directFirstOrder', false, 'kFirstOrder', NaN) ;
+            else
+                [C_out, modeInfo] = DesignWorkspaceHelper.solveFixedRTDPass( ...
+                    rtdObj, reactionMode, RS, feedState.concentration, keyIdx) ;
+                metrics = DesignWorkspaceHelper.computeScenarioMetrics( ...
+                    feedState.concentration, C_out, keyIdx, desiredIdx, byproductIdx) ;
+                activeModel = struct( ...
+                    'label', activeModelLabel, ...
+                    'C_in', feedState.concentration, ...
+                    'C_out', C_out, ...
+                    'metrics', metrics) ;
+                modelResults = struct() ;
+            end
+
+            scenario = struct() ;
+            scenario.reactionMode = reactionMode ;
+            scenario.params = params ;
+            scenario.Qv = feedState.Qv ;
+            scenario.molarFlow = feedState.molarFlow ;
+            scenario.C_in = feedState.concentration ;
+            scenario.C_out = activeModel.C_out ;
+            scenario.rtd = rtdObj ;
+            scenario.modeInfo = modeInfo ;
+            scenario.metrics = activeModel.metrics ;
+            scenario.feedState = feedState ;
+            scenario.modelResults = modelResults ;
+            scenario.activeModel = activeModel ;
+            scenario.activeModelKey = activeModelKey ;
+            scenario.activeModelLabel = activeModelLabel ;
+            scenario.keyComponentIndex = keyIdx ;
+            scenario.desiredProductIndex = desiredIdx ;
+            scenario.byproductIndex = byproductIdx ;
+            scenario.componentLabels = DesignWorkspaceHelper.componentLabels(RS, numel(feedState.concentration)) ;
+            scenario.objectiveValue = DesignWorkspaceHelper.objectiveMetricValue( ...
+                DesignWorkspaceHelper.getStructField(spec, 'objective', 'Max conversion'), scenario) ;
         end
 
         function scenario = evaluateHydroScenario(spec)
@@ -643,10 +714,11 @@ classdef DesignWorkspaceHelper
 
             switch char(string(boundary))
                 case 'open-open'
+                    tauSpace = tau / (1 + 2 * Bo) ;
                     if isempty(tspan)
-                        rtdObj = RTD.dispersion_open(Bo, tau) ;
+                        rtdObj = RTD.dispersion_open(Bo, tauSpace) ;
                     else
-                        rtdObj = RTD.dispersion_open(Bo, tau, tspan) ;
+                        rtdObj = RTD.dispersion_open(Bo, tauSpace, tspan) ;
                     end
                 otherwise
                     if isempty(tspan)
@@ -693,17 +765,332 @@ classdef DesignWorkspaceHelper
         function metrics = computeScenarioMetrics(Cin, Cout, keyIdx, desiredIdx, ~)
             metrics = struct('conversion', NaN, 'selectivity', NaN, 'yield', NaN) ;
 
-            CinKey = max(Cin(keyIdx), 1e-12) ;
-            metrics.conversion = max(min((CinKey - Cout(keyIdx)) / CinKey, 1), 0) ;
+            metrics.conversion = DesignWorkspaceHelper.computeConversionValue(Cin, Cout, keyIdx) ;
+            metrics.selectivity = DesignWorkspaceHelper.computeSelectivityValue(Cin, Cout, keyIdx, desiredIdx) ;
+            metrics.yield = DesignWorkspaceHelper.computeYieldValue(Cin, Cout, keyIdx, desiredIdx) ;
+        end
 
-            if ~isempty(desiredIdx) && desiredIdx >= 1 && desiredIdx <= numel(Cout)
-                desiredC = max(Cout(desiredIdx), 0) ;
-                reacted = max(CinKey - Cout(keyIdx), 0) ;
-                if reacted > 0
-                    metrics.selectivity = desiredC / reacted ;
-                end
-                metrics.yield = desiredC / CinKey ;
+        function value = computeConversionValue(Cin, Cout, speciesIdx)
+            if isempty(speciesIdx) || speciesIdx < 1 || speciesIdx > numel(Cout) || speciesIdx > numel(Cin)
+                value = NaN ;
+                return
             end
+            CinSpecies = Cin(speciesIdx) ;
+            if ~isfinite(CinSpecies) || CinSpecies <= 0
+                value = NaN ;
+                return
+            end
+            value = (CinSpecies - Cout(speciesIdx)) / CinSpecies ;
+        end
+
+        function value = computeSelectivityValue(Cin, Cout, keyIdx, desiredIdx)
+            value = NaN ;
+            if isempty(desiredIdx) || desiredIdx < 1 || desiredIdx > numel(Cout)
+                return
+            end
+            reacted = max(Cin(keyIdx) - Cout(keyIdx), 0) ;
+            if reacted <= 0
+                return
+            end
+            value = max(Cout(desiredIdx), 0) / reacted ;
+        end
+
+        function value = computeYieldValue(Cin, Cout, keyIdx, desiredIdx)
+            value = NaN ;
+            if isempty(desiredIdx) || desiredIdx < 1 || desiredIdx > numel(Cout)
+                return
+            end
+            CinKey = max(Cin(keyIdx), 1e-12) ;
+            value = max(Cout(desiredIdx), 0) / CinKey ;
+        end
+
+        function value = computeOutletConcentrationValue(Cout, speciesIdx)
+            value = NaN ;
+            if isempty(speciesIdx) || speciesIdx < 1 || speciesIdx > numel(Cout)
+                return
+            end
+            value = Cout(speciesIdx) ;
+        end
+
+        function modelResults = packOptimizationModelResults(Cin, reactiveResult)
+            modelResults = struct() ;
+            modelResults.cstr = struct( ...
+                'label', 'Ideal CSTR', ...
+                'C_in', Cin, ...
+                'C_out', reactiveResult.cstr.C_out, ...
+                'metrics', reactiveResult.metrics.cstr) ;
+            modelResults.segregation = struct( ...
+                'label', 'Segregation', ...
+                'C_in', Cin, ...
+                'C_out', reactiveResult.segregation.C_exit, ...
+                'metrics', reactiveResult.metrics.segregation) ;
+            modelResults.maxMixedness = struct( ...
+                'label', 'Max Mixedness', ...
+                'C_in', Cin, ...
+                'C_out', reactiveResult.maxMixedness.C_exit, ...
+                'metrics', reactiveResult.metrics.maxMixedness) ;
+            modelResults.pfr = struct( ...
+                'label', 'Ideal PFR', ...
+                'C_in', Cin, ...
+                'C_out', reactiveResult.pfr.C_out, ...
+                'metrics', reactiveResult.metrics.pfr) ;
+        end
+
+        function [modelKey, modelLabel] = resolveOptimizationModelKey(reactionMode)
+            switch char(string(reactionMode))
+                case 'Max Mixedness'
+                    modelKey = 'maxMixedness' ;
+                    modelLabel = 'Max Mixedness' ;
+                otherwise
+                    modelKey = 'segregation' ;
+                    modelLabel = 'Segregation' ;
+            end
+        end
+
+        function rows = buildOptimizationComparisonRows(objective, activeDecisionVariables, constraints, baseline, optimum)
+            rows = struct('label', {}, 'valueType', {}, 'baseValue', {}, 'optimumValue', {}) ;
+            row = DesignWorkspaceHelper.buildOptimizationObjectiveRow(objective, baseline, optimum) ;
+            rows(end + 1) = row ; %#ok<AGROW>
+
+            baselineParams = baseline.params ;
+            optimumParams = optimum.params ;
+            for i = 1:numel(activeDecisionVariables)
+                def = activeDecisionVariables(i) ;
+                variableName = char(string(def.variable)) ;
+                displayLabel = char(string(DesignWorkspaceHelper.getStructField(def, 'displayName', variableName))) ;
+                rows(end + 1) = struct( ... %#ok<AGROW>
+                    'label', displayLabel, ...
+                    'valueType', DesignWorkspaceHelper.optimizationValueTypeFromGroup(def.group), ...
+                    'baseValue', baselineParams.(variableName), ...
+                    'optimumValue', optimumParams.(variableName)) ;
+            end
+
+            for i = 1:numel(constraints)
+                rowDef = constraints(i) ;
+                if ~isfield(rowDef, 'use') || ~rowDef.use
+                    continue
+                end
+                rows(end + 1) = struct( ... %#ok<AGROW>
+                    'label', ['Constraint: ' DesignWorkspaceHelper.constraintDisplayLabel(rowDef)], ...
+                    'valueType', DesignWorkspaceHelper.constraintValueType(rowDef.metric), ...
+                    'baseValue', DesignWorkspaceHelper.constraintMetricValue(rowDef.metric, rowDef.speciesIndex, baseline), ...
+                    'optimumValue', DesignWorkspaceHelper.constraintMetricValue(rowDef.metric, rowDef.speciesIndex, optimum)) ;
+            end
+        end
+
+        function row = buildOptimizationObjectiveRow(objective, baseline, optimum)
+            componentLabels = DesignWorkspaceHelper.getStructField(baseline, 'componentLabels', {}) ;
+            switch char(string(objective))
+                case 'Max conversion'
+                    label = sprintf('Objective: Conversion of %s', ...
+                        DesignWorkspaceHelper.componentLabelFromList(componentLabels, baseline.keyComponentIndex)) ;
+                    valueType = 'dimensionless' ;
+                    baseValue = DesignWorkspaceHelper.computeConversionValue( ...
+                        baseline.C_in, baseline.C_out, baseline.keyComponentIndex) ;
+                    optimumValue = DesignWorkspaceHelper.computeConversionValue( ...
+                        optimum.C_in, optimum.C_out, optimum.keyComponentIndex) ;
+                case 'Max selectivity'
+                    label = sprintf('Objective: Selectivity to %s', ...
+                        DesignWorkspaceHelper.componentLabelFromList(componentLabels, baseline.desiredProductIndex)) ;
+                    valueType = 'dimensionless' ;
+                    baseValue = DesignWorkspaceHelper.computeSelectivityValue( ...
+                        baseline.C_in, baseline.C_out, baseline.keyComponentIndex, baseline.desiredProductIndex) ;
+                    optimumValue = DesignWorkspaceHelper.computeSelectivityValue( ...
+                        optimum.C_in, optimum.C_out, optimum.keyComponentIndex, optimum.desiredProductIndex) ;
+                case 'Max yield'
+                    label = sprintf('Objective: Yield to %s', ...
+                        DesignWorkspaceHelper.componentLabelFromList(componentLabels, baseline.desiredProductIndex)) ;
+                    valueType = 'dimensionless' ;
+                    baseValue = DesignWorkspaceHelper.computeYieldValue( ...
+                        baseline.C_in, baseline.C_out, baseline.keyComponentIndex, baseline.desiredProductIndex) ;
+                    optimumValue = DesignWorkspaceHelper.computeYieldValue( ...
+                        optimum.C_in, optimum.C_out, optimum.keyComponentIndex, optimum.desiredProductIndex) ;
+                case 'Max outlet concentration'
+                    label = sprintf('Objective: C_out of %s', ...
+                        DesignWorkspaceHelper.componentLabelFromList(componentLabels, baseline.desiredProductIndex)) ;
+                    valueType = 'concentration' ;
+                    baseValue = DesignWorkspaceHelper.computeOutletConcentrationValue( ...
+                        baseline.C_out, baseline.desiredProductIndex) ;
+                    optimumValue = DesignWorkspaceHelper.computeOutletConcentrationValue( ...
+                        optimum.C_out, optimum.desiredProductIndex) ;
+                case 'Min outlet concentration'
+                    label = sprintf('Objective: C_out of %s', ...
+                        DesignWorkspaceHelper.componentLabelFromList(componentLabels, baseline.byproductIndex)) ;
+                    valueType = 'concentration' ;
+                    baseValue = DesignWorkspaceHelper.computeOutletConcentrationValue( ...
+                        baseline.C_out, baseline.byproductIndex) ;
+                    optimumValue = DesignWorkspaceHelper.computeOutletConcentrationValue( ...
+                        optimum.C_out, optimum.byproductIndex) ;
+                otherwise
+                    label = 'Objective' ;
+                    valueType = 'dimensionless' ;
+                    baseValue = NaN ;
+                    optimumValue = NaN ;
+            end
+            row = struct('label', label, 'valueType', valueType, ...
+                'baseValue', baseValue, 'optimumValue', optimumValue) ;
+        end
+
+        function rows = buildOptimizationModelComparisonRows(RS, baselineModels, optimumModels)
+            nComp = numel(baselineModels.cstr.C_in) ;
+            rows = struct('label', {}, 'valueType', {}, ...
+                'cstrBase', {}, 'cstrOptimum', {}, ...
+                'segBase', {}, 'segOptimum', {}, ...
+                'mmBase', {}, 'mmOptimum', {}, ...
+                'pfrBase', {}, 'pfrOptimum', {}) ;
+            for i = 1:nComp
+                compLabel = DesignWorkspaceHelper.componentLabel(RS, i) ;
+                rows(end + 1) = DesignWorkspaceHelper.buildOptimizationModelRow( ... %#ok<AGROW>
+                    sprintf('%s - C_in', compLabel), 'concentration', ...
+                    baselineModels.cstr.C_in(i), optimumModels.cstr.C_in(i), ...
+                    baselineModels.segregation.C_in(i), optimumModels.segregation.C_in(i), ...
+                    baselineModels.maxMixedness.C_in(i), optimumModels.maxMixedness.C_in(i), ...
+                    baselineModels.pfr.C_in(i), optimumModels.pfr.C_in(i)) ;
+                rows(end + 1) = DesignWorkspaceHelper.buildOptimizationModelRow( ... %#ok<AGROW>
+                    sprintf('%s - X', compLabel), 'dimensionless', ...
+                    DesignWorkspaceHelper.computeConversionValue(baselineModels.cstr.C_in, baselineModels.cstr.C_out, i), ...
+                    DesignWorkspaceHelper.computeConversionValue(optimumModels.cstr.C_in, optimumModels.cstr.C_out, i), ...
+                    DesignWorkspaceHelper.computeConversionValue(baselineModels.segregation.C_in, baselineModels.segregation.C_out, i), ...
+                    DesignWorkspaceHelper.computeConversionValue(optimumModels.segregation.C_in, optimumModels.segregation.C_out, i), ...
+                    DesignWorkspaceHelper.computeConversionValue(baselineModels.maxMixedness.C_in, baselineModels.maxMixedness.C_out, i), ...
+                    DesignWorkspaceHelper.computeConversionValue(optimumModels.maxMixedness.C_in, optimumModels.maxMixedness.C_out, i), ...
+                    DesignWorkspaceHelper.computeConversionValue(baselineModels.pfr.C_in, baselineModels.pfr.C_out, i), ...
+                    DesignWorkspaceHelper.computeConversionValue(optimumModels.pfr.C_in, optimumModels.pfr.C_out, i)) ;
+                rows(end + 1) = DesignWorkspaceHelper.buildOptimizationModelRow( ... %#ok<AGROW>
+                    sprintf('%s - C_out', compLabel), 'concentration', ...
+                    baselineModels.cstr.C_out(i), optimumModels.cstr.C_out(i), ...
+                    baselineModels.segregation.C_out(i), optimumModels.segregation.C_out(i), ...
+                    baselineModels.maxMixedness.C_out(i), optimumModels.maxMixedness.C_out(i), ...
+                    baselineModels.pfr.C_out(i), optimumModels.pfr.C_out(i)) ;
+            end
+        end
+
+        function row = buildOptimizationModelRow(label, valueType, cstrBase, cstrOptimum, segBase, segOptimum, mmBase, mmOptimum, pfrBase, pfrOptimum)
+            row = struct( ...
+                'label', label, ...
+                'valueType', valueType, ...
+                'cstrBase', cstrBase, ...
+                'cstrOptimum', cstrOptimum, ...
+                'segBase', segBase, ...
+                'segOptimum', segOptimum, ...
+                'mmBase', mmBase, ...
+                'mmOptimum', mmOptimum, ...
+                'pfrBase', pfrBase, ...
+                'pfrOptimum', pfrOptimum) ;
+        end
+
+        function status = evaluateOptimizationConstraintStatus(constraints, scenario)
+            status = struct('used', 0, 'satisfied', 0) ;
+            for i = 1:numel(constraints)
+                row = constraints(i) ;
+                if ~isfield(row, 'use') || ~row.use
+                    continue
+                end
+                status.used = status.used + 1 ;
+                value = DesignWorkspaceHelper.constraintMetricValue(row.metric, row.speciesIndex, scenario) ;
+                if DesignWorkspaceHelper.constraintSatisfied(row.type, value, row.value)
+                    status.satisfied = status.satisfied + 1 ;
+                end
+            end
+        end
+
+        function txt = buildOptimizationSummary(rtdSource, reactionMode, objective, baseline, optimum, constraintStatus)
+            targetBase = DesignWorkspaceHelper.objectiveMetricValue(objective, baseline) ;
+            targetOptimum = DesignWorkspaceHelper.objectiveMetricValue(objective, optimum) ;
+            if startsWith(char(string(objective)), 'Max ')
+                targetBase = -targetBase ;
+                targetOptimum = -targetOptimum ;
+            end
+            txt = sprintf([ ...
+                'Fixed RTD source: %s. Reaction mode: %s. Objective: %s. ' ...
+                'Objective value improved from %.6g to %.6g. Active constraints satisfied: %d/%d.'], ...
+                rtdSource, reactionMode, objective, targetBase, targetOptimum, ...
+                constraintStatus.satisfied, constraintStatus.used) ;
+        end
+
+        function label = constraintDisplayLabel(rowDef)
+            metric = char(string(rowDef.metric)) ;
+            speciesLabel = char(string(DesignWorkspaceHelper.getStructField(rowDef, 'speciesLabel', ''))) ;
+            if isempty(speciesLabel)
+                speciesLabel = DesignWorkspaceHelper.componentLabel([], rowDef.speciesIndex) ;
+            end
+            switch metric
+                case 'Conversion'
+                    label = sprintf('Conversion of %s', speciesLabel) ;
+                case 'Selectivity'
+                    label = sprintf('Selectivity to %s', speciesLabel) ;
+                case 'Yield'
+                    label = sprintf('Yield to %s', speciesLabel) ;
+                otherwise
+                    label = sprintf('C_out of %s', speciesLabel) ;
+            end
+        end
+
+        function valueType = constraintValueType(metric)
+            switch char(string(metric))
+                case {'Outlet concentration', 'C_out'}
+                    valueType = 'concentration' ;
+                otherwise
+                    valueType = 'dimensionless' ;
+            end
+        end
+
+        function valueType = optimizationValueTypeFromGroup(group)
+            switch char(string(group))
+                case 'concentration'
+                    valueType = 'concentration' ;
+                otherwise
+                    valueType = 'dimensionless' ;
+            end
+        end
+
+        function suffix = componentLetterSuffix(idx)
+            alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' ;
+            suffix = '' ;
+            idx = round(double(idx)) ;
+            if ~isfinite(idx) || idx < 1
+                idx = 1 ;
+            end
+            while idx > 0
+                remIdx = mod(idx - 1, numel(alphabet)) + 1 ;
+                suffix = [alphabet(remIdx) suffix] ; %#ok<AGROW>
+                idx = floor((idx - 1) / numel(alphabet)) ;
+            end
+        end
+
+        function labels = componentLabels(RS, nComp)
+            labels = cell(1, nComp) ;
+            for i = 1:nComp
+                labels{i} = DesignWorkspaceHelper.componentLabel(RS, i) ;
+            end
+        end
+
+        function label = componentLabelFromList(labels, idx)
+            if isempty(labels) || idx < 1 || idx > numel(labels)
+                label = DesignWorkspaceHelper.componentLabel([], idx) ;
+                return
+            end
+            label = labels{idx} ;
+        end
+
+        function scenarioSlim = slimOptimizationScenario(scenario)
+            scenarioSlim = struct() ;
+            scenarioSlim.reactionMode = DesignWorkspaceHelper.getStructField(scenario, 'reactionMode', 'Segregation') ;
+            scenarioSlim.params = DesignWorkspaceHelper.getStructField(scenario, 'params', struct()) ;
+            scenarioSlim.Qv = DesignWorkspaceHelper.getStructField(scenario, 'Qv', NaN) ;
+            scenarioSlim.molarFlow = DesignWorkspaceHelper.getStructField(scenario, 'molarFlow', []) ;
+            scenarioSlim.C_in = DesignWorkspaceHelper.getStructField(scenario, 'C_in', []) ;
+            scenarioSlim.C_out = DesignWorkspaceHelper.getStructField(scenario, 'C_out', []) ;
+            scenarioSlim.metrics = DesignWorkspaceHelper.getStructField(scenario, 'metrics', struct()) ;
+            scenarioSlim.modelResults = DesignWorkspaceHelper.getStructField(scenario, 'modelResults', struct()) ;
+            scenarioSlim.activeModel = DesignWorkspaceHelper.getStructField(scenario, 'activeModel', struct()) ;
+            scenarioSlim.activeModelKey = DesignWorkspaceHelper.getStructField(scenario, 'activeModelKey', '') ;
+            scenarioSlim.activeModelLabel = DesignWorkspaceHelper.getStructField(scenario, 'activeModelLabel', '') ;
+            scenarioSlim.keyComponentIndex = DesignWorkspaceHelper.getStructField(scenario, 'keyComponentIndex', 1) ;
+            scenarioSlim.desiredProductIndex = DesignWorkspaceHelper.getStructField(scenario, 'desiredProductIndex', []) ;
+            scenarioSlim.byproductIndex = DesignWorkspaceHelper.getStructField(scenario, 'byproductIndex', []) ;
+            scenarioSlim.componentLabels = DesignWorkspaceHelper.getStructField(scenario, 'componentLabels', {}) ;
+            scenarioSlim.objectiveValue = DesignWorkspaceHelper.getStructField(scenario, 'objectiveValue', NaN) ;
         end
 
         function tableData = buildOutletTable(RS, C0, Cseg, Cmm, Ccstr, Cpfr)
@@ -796,18 +1183,41 @@ classdef DesignWorkspaceHelper
             end
         end
 
-        function [x0, lb, ub, names, fixedParams] = unpackDecisionVariables(decisionVariables)
+        function [x0, lb, ub, names, fixedParams, definitions] = unpackDecisionVariables(decisionVariables, baseFeed)
             x0 = [] ; lb = [] ; ub = [] ; names = {} ; fixedParams = struct() ;
+            definitions = decisionVariables ;
             for i = 1:numel(decisionVariables)
                 row = decisionVariables(i) ;
                 name = char(string(row.variable)) ;
+                initialValue = DesignWorkspaceHelper.getStructField(row, 'initialValue', NaN) ;
+                if ~(isscalar(initialValue) && isfinite(initialValue))
+                    initialValue = DesignWorkspaceHelper.getStructField(row, 'defaultValue', NaN) ;
+                end
+                if ~(isscalar(initialValue) && isfinite(initialValue)) && nargin >= 2 && isstruct(baseFeed)
+                    group = char(string(DesignWorkspaceHelper.getStructField(row, 'group', ''))) ;
+                    speciesIdx = DesignWorkspaceHelper.getStructField(row, 'speciesIndex', NaN) ;
+                    if strcmp(group, 'concentration') && isfinite(speciesIdx) ...
+                            && speciesIdx >= 1 && speciesIdx <= numel(baseFeed.concentration)
+                        initialValue = baseFeed.concentration(speciesIdx) ;
+                    end
+                end
+                if ~(isscalar(initialValue) && isfinite(initialValue))
+                    error('Decision variable "%s" is missing a valid base value.', name) ;
+                end
+                lowerBound = DesignWorkspaceHelper.getStructField(row, 'lowerBound', ...
+                    DesignWorkspaceHelper.getStructField(row, 'lower', NaN)) ;
+                upperBound = DesignWorkspaceHelper.getStructField(row, 'upperBound', ...
+                    DesignWorkspaceHelper.getStructField(row, 'upper', NaN)) ;
+                if ~(isscalar(lowerBound) && isfinite(lowerBound) && isscalar(upperBound) && isfinite(upperBound))
+                    error('Decision variable "%s" requires finite lower/upper bounds.', name) ;
+                end
                 if isfield(row, 'use') && row.use
-                    x0(end+1) = row.initialValue ; %#ok<AGROW>
-                    lb(end+1) = row.lowerBound ; %#ok<AGROW>
-                    ub(end+1) = row.upperBound ; %#ok<AGROW>
+                    x0(end+1) = initialValue ; %#ok<AGROW>
+                    lb(end+1) = lowerBound ; %#ok<AGROW>
+                    ub(end+1) = upperBound ; %#ok<AGROW>
                     names{end+1} = name ; %#ok<AGROW>
                 else
-                    fixedParams.(name) = row.initialValue ;
+                    fixedParams.(name) = initialValue ;
                 end
             end
         end
@@ -817,72 +1227,66 @@ classdef DesignWorkspaceHelper
             for i = 1:numel(names)
                 params.(names{i}) = x(i) ;
             end
-            if ~isfield(params, 'tau')
-                params.tau = 1 ;
-            end
-            if ~isfield(params, 'N')
-                params.N = 2 ;
-            end
-            if ~isfield(params, 'Bo')
-                params.Bo = 0.05 ;
-            end
-            if ~isfield(params, 'bypass')
-                params.bypass = 0 ;
-            end
-            if ~isfield(params, 'activeFraction')
-                params.activeFraction = 1 ;
-            end
-            if ~isfield(params, 'recycleRatio')
-                params.recycleRatio = 0 ;
-            end
         end
 
-        function f = optimizationPenaltyObjective(x, lb, ub, names, fixedParams, constraints, objective, optSpec, RS, C0)
+        function f = optimizationPenaltyObjective(x, lb, ub, names, fixedParams, definitions, basisMode, constraints, objective, optSpec, RS, rtdObj, baseFeed)
             penalty = 1e5 * sum(max(lb - x, 0).^2 + max(x - ub, 0).^2) ;
             xClamped = min(max(x, lb), ub) ;
             params = DesignWorkspaceHelper.combineParams(names, xClamped, fixedParams) ;
+            try
+                scenario = DesignWorkspaceHelper.evaluateProcessScenario(struct( ...
+                    'rtd', rtdObj, ...
+                    'reactionMode', DesignWorkspaceHelper.getStructField(optSpec, 'reactionMode', 'Segregation'), ...
+                    'objective', objective, ...
+                    'computeFullModelSet', false, ...
+                    'RS', RS, ...
+                    'baseFeed', baseFeed, ...
+                    'keyComponentIndex', DesignWorkspaceHelper.getStructField(optSpec, 'keyComponentIndex', 1), ...
+                    'desiredProductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'desiredProductIndex', []), ...
+                    'byproductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'byproductIndex', []), ...
+                    'params', params, ...
+                    'decisionDefinitions', definitions, ...
+                    'basisMode', basisMode)) ;
 
-            scenario = DesignWorkspaceHelper.evaluateHydroScenario(struct( ...
-                'family', DesignWorkspaceHelper.getStructField(optSpec, 'family', 'Tanks-in-Series'), ...
-                'boundaryType', DesignWorkspaceHelper.getStructField(optSpec, 'boundaryType', 'closed-closed'), ...
-                'reactionMode', DesignWorkspaceHelper.getStructField(optSpec, 'reactionMode', 'Segregation'), ...
-                'RS', RS, ...
-                'C0', C0, ...
-                'keyComponentIndex', DesignWorkspaceHelper.getStructField(optSpec, 'keyComponentIndex', 1), ...
-                'desiredProductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'desiredProductIndex', []), ...
-                'byproductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'byproductIndex', []), ...
-                'params', params)) ;
-
-            metricValue = DesignWorkspaceHelper.objectiveMetricValue(objective, scenario, params) ;
-            penalty = penalty + DesignWorkspaceHelper.constraintPenalty(constraints, scenario, params) ;
-            f = metricValue + penalty ;
-        end
-
-        function value = objectiveMetricValue(objective, scenario, params)
-            switch char(string(objective))
-                case 'Max conversion'
-                    value = -scenario.metrics.conversion ;
-                case 'Max selectivity'
-                    value = -DesignWorkspaceHelper.safeMetric(scenario.metrics.selectivity) ;
-                case 'Max yield'
-                    value = -DesignWorkspaceHelper.safeMetric(scenario.metrics.yield) ;
-                case 'Min residence time'
-                    value = DesignWorkspaceHelper.getStructField(params, 'tau', Inf) ;
-                case 'Min recycle ratio'
-                    value = DesignWorkspaceHelper.getStructField(params, 'recycleRatio', Inf) ;
-                otherwise
-                    value = DesignWorkspaceHelper.getStructField(params, 'tau', Inf) ;
+                metricValue = DesignWorkspaceHelper.objectiveMetricValue(objective, scenario) ;
+                penalty = penalty + DesignWorkspaceHelper.constraintPenalty(constraints, scenario) ;
+                f = metricValue + penalty ;
+            catch
+                f = 1e9 + penalty ;
             end
         end
 
-        function penalty = constraintPenalty(constraints, scenario, params)
+        function value = objectiveMetricValue(objective, scenario)
+            switch char(string(objective))
+                case 'Max conversion'
+                    value = -DesignWorkspaceHelper.computeConversionValue( ...
+                        scenario.C_in, scenario.C_out, scenario.keyComponentIndex) ;
+                case 'Max selectivity'
+                    value = -DesignWorkspaceHelper.safeMetric(DesignWorkspaceHelper.computeSelectivityValue( ...
+                        scenario.C_in, scenario.C_out, scenario.keyComponentIndex, scenario.desiredProductIndex)) ;
+                case 'Max yield'
+                    value = -DesignWorkspaceHelper.safeMetric(DesignWorkspaceHelper.computeYieldValue( ...
+                        scenario.C_in, scenario.C_out, scenario.keyComponentIndex, scenario.desiredProductIndex)) ;
+                case 'Max outlet concentration'
+                    value = -DesignWorkspaceHelper.computeOutletConcentrationValue( ...
+                        scenario.C_out, scenario.desiredProductIndex) ;
+                case 'Min outlet concentration'
+                    value = DesignWorkspaceHelper.computeOutletConcentrationValue( ...
+                        scenario.C_out, scenario.byproductIndex) ;
+                otherwise
+                    value = -DesignWorkspaceHelper.computeConversionValue( ...
+                        scenario.C_in, scenario.C_out, scenario.keyComponentIndex) ;
+            end
+        end
+
+        function penalty = constraintPenalty(constraints, scenario)
             penalty = 0 ;
             for i = 1:numel(constraints)
                 row = constraints(i) ;
                 if ~isfield(row, 'use') || ~row.use
                     continue
                 end
-                value = DesignWorkspaceHelper.constraintMetricValue(row.metric, row.speciesIndex, scenario, params) ;
+                value = DesignWorkspaceHelper.constraintMetricValue(row.metric, row.speciesIndex, scenario) ;
                 target = row.value ;
                 switch char(string(row.type))
                     case 'Lower bound'
@@ -897,13 +1301,12 @@ classdef DesignWorkspaceHelper
 
         function tableData = evaluateConstraints(constraints, scenario)
             rows = {} ;
-            params = scenario.params ;
             for i = 1:numel(constraints)
                 row = constraints(i) ;
                 if ~isfield(row, 'use') || ~row.use
                     continue
                 end
-                value = DesignWorkspaceHelper.constraintMetricValue(row.metric, row.speciesIndex, scenario, params) ;
+                value = DesignWorkspaceHelper.constraintMetricValue(row.metric, row.speciesIndex, scenario) ;
                 satisfied = DesignWorkspaceHelper.constraintSatisfied(row.type, value, row.value) ;
                 rows(end+1, :) = {char(string(row.metric)), DesignWorkspaceHelper.formatNumber(value), ... %#ok<AGROW>
                     DesignWorkspaceHelper.formatNumber(row.value), DesignWorkspaceHelper.flagText(satisfied)} ;
@@ -925,27 +1328,26 @@ classdef DesignWorkspaceHelper
             end
         end
 
-        function value = constraintMetricValue(metric, speciesIndex, scenario, params)
+        function value = constraintMetricValue(metric, speciesIndex, scenario)
             switch char(string(metric))
                 case 'Conversion'
-                    value = scenario.metrics.conversion ;
+                    value = DesignWorkspaceHelper.computeConversionValue( ...
+                        scenario.C_in, scenario.C_out, speciesIndex) ;
                 case 'Selectivity'
-                    value = DesignWorkspaceHelper.safeMetric(scenario.metrics.selectivity) ;
+                    value = DesignWorkspaceHelper.safeMetric(DesignWorkspaceHelper.computeSelectivityValue( ...
+                        scenario.C_in, scenario.C_out, scenario.keyComponentIndex, speciesIndex)) ;
                 case 'Yield'
-                    value = DesignWorkspaceHelper.safeMetric(scenario.metrics.yield) ;
-                case 'Residence Time'
-                    value = DesignWorkspaceHelper.getStructField(params, 'tau', NaN) ;
-                case 'Recycle Ratio'
-                    value = DesignWorkspaceHelper.getStructField(params, 'recycleRatio', 0) ;
-                case 'C_out'
-                    idx = max(1, min(numel(scenario.C_out), speciesIndex)) ;
-                    value = scenario.C_out(idx) ;
+                    value = DesignWorkspaceHelper.safeMetric(DesignWorkspaceHelper.computeYieldValue( ...
+                        scenario.C_in, scenario.C_out, scenario.keyComponentIndex, speciesIndex)) ;
+                case {'C_out', 'Outlet concentration'}
+                    value = DesignWorkspaceHelper.computeOutletConcentrationValue( ...
+                        scenario.C_out, speciesIndex) ;
                 otherwise
                     value = NaN ;
             end
         end
 
-        function tableData = computeSensitivity(names, optimumParams, optSpec, RS, C0, objective)
+        function tableData = computeSensitivity(names, optimumParams, optSpec, RS, rtdObj, baseFeed, objective, definitions, basisMode)
             tableData = cell(numel(names), 3) ;
             for i = 1:numel(names)
                 pMinus = optimumParams ;
@@ -954,29 +1356,31 @@ classdef DesignWorkspaceHelper
                 pMinus.(names{i}) = max(1e-8, optimumParams.(names{i}) * 0.9) ;
                 pPlus.(names{i}) = optimumParams.(names{i}) * 1.1 ;
 
-                scMinus = DesignWorkspaceHelper.evaluateHydroScenario(struct( ...
-                    'family', DesignWorkspaceHelper.getStructField(optSpec, 'family', 'Tanks-in-Series'), ...
-                    'boundaryType', DesignWorkspaceHelper.getStructField(optSpec, 'boundaryType', 'closed-closed'), ...
+                scMinus = DesignWorkspaceHelper.evaluateProcessScenario(struct( ...
+                    'rtd', rtdObj, ...
                     'reactionMode', DesignWorkspaceHelper.getStructField(optSpec, 'reactionMode', 'Segregation'), ...
                     'RS', RS, ...
-                    'C0', C0, ...
+                    'baseFeed', baseFeed, ...
                     'keyComponentIndex', DesignWorkspaceHelper.getStructField(optSpec, 'keyComponentIndex', 1), ...
                     'desiredProductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'desiredProductIndex', []), ...
                     'byproductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'byproductIndex', []), ...
-                    'params', pMinus)) ;
-                scPlus = DesignWorkspaceHelper.evaluateHydroScenario(struct( ...
-                    'family', DesignWorkspaceHelper.getStructField(optSpec, 'family', 'Tanks-in-Series'), ...
-                    'boundaryType', DesignWorkspaceHelper.getStructField(optSpec, 'boundaryType', 'closed-closed'), ...
+                    'params', pMinus, ...
+                    'decisionDefinitions', definitions, ...
+                    'basisMode', basisMode)) ;
+                scPlus = DesignWorkspaceHelper.evaluateProcessScenario(struct( ...
+                    'rtd', rtdObj, ...
                     'reactionMode', DesignWorkspaceHelper.getStructField(optSpec, 'reactionMode', 'Segregation'), ...
                     'RS', RS, ...
-                    'C0', C0, ...
+                    'baseFeed', baseFeed, ...
                     'keyComponentIndex', DesignWorkspaceHelper.getStructField(optSpec, 'keyComponentIndex', 1), ...
                     'desiredProductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'desiredProductIndex', []), ...
                     'byproductIndex', DesignWorkspaceHelper.getStructField(optSpec, 'byproductIndex', []), ...
-                    'params', pPlus)) ;
+                    'params', pPlus, ...
+                    'decisionDefinitions', definitions, ...
+                    'basisMode', basisMode)) ;
 
-                objMinus = DesignWorkspaceHelper.objectiveMetricValue(objective, scMinus, pMinus) ;
-                objPlus = DesignWorkspaceHelper.objectiveMetricValue(objective, scPlus, pPlus) ;
+                objMinus = DesignWorkspaceHelper.objectiveMetricValue(objective, scMinus) ;
+                objPlus = DesignWorkspaceHelper.objectiveMetricValue(objective, scPlus) ;
                 slope = (objPlus - objMinus) / (0.2 * baseValue) ;
                 tableData{i, 1} = names{i} ;
                 tableData{i, 2} = DesignWorkspaceHelper.formatNumber(baseValue) ;
@@ -984,14 +1388,85 @@ classdef DesignWorkspaceHelper
             end
         end
 
+        function basisMode = resolveOptimizationBasis(~)
+            basisMode = 'concentration' ;
+        end
+
+        function feedState = extractOptimizationFeedState(feedStream)
+            if ~isa(feedStream, 'Stream')
+                error('Optimization requires a valid Stream object.') ;
+            end
+            Qv = feedStream.volumetricFlow ;
+            molarFlow = DesignWorkspaceHelper.ensureRowVector(feedStream.molarFlow) ;
+            concentration = DesignWorkspaceHelper.ensureRowVector(feedStream.concentration) ;
+            if isempty(Qv) || ~isscalar(Qv) || ~isfinite(Qv) || Qv <= 0
+                error('Feed Stream must define a positive volumetric flow for process optimization.') ;
+            end
+            if isempty(molarFlow) || isempty(concentration)
+                error('Feed Stream must define molar flow and concentration consistently.') ;
+            end
+            if numel(molarFlow) ~= numel(concentration)
+                error('Feed Stream molar flow and concentration sizes are inconsistent.') ;
+            end
+            if any(~isfinite(molarFlow)) || any(~isfinite(concentration))
+                error('Feed Stream contains non-finite molar-flow or concentration values.') ;
+            end
+            feedState = struct() ;
+            feedState.stream = feedStream ;
+            feedState.Qv = double(Qv) ;
+            feedState.molarFlow = double(molarFlow(:)).' ;
+            feedState.concentration = double(concentration(:)).' ;
+        end
+
+        function feedState = reconstructOptimizationFeed(baseFeed, params, decisionDefinitions, ~)
+            streamCopy = baseFeed.stream ;
+            concentration = baseFeed.concentration ;
+            for i = 1:numel(decisionDefinitions)
+                row = decisionDefinitions(i) ;
+                if ~strcmp(char(string(DesignWorkspaceHelper.getStructField(row, 'group', ''))), 'concentration')
+                    continue
+                end
+                idx = DesignWorkspaceHelper.getStructField(row, 'speciesIndex', NaN) ;
+                if ~isfinite(idx) || idx < 1 || idx > numel(baseFeed.concentration)
+                    continue
+                end
+                concentration(idx) = DesignWorkspaceHelper.getStructField(params, row.variable, baseFeed.concentration(idx)) ;
+            end
+            if any(~isfinite(concentration)) || any(concentration < 0)
+                error('All inlet concentrations must be finite and non-negative.') ;
+            end
+            streamCopy.molarFlow = [] ;
+            streamCopy.concentration = concentration ;
+            feedState = struct() ;
+            feedState.stream = streamCopy ;
+            feedState.Qv = double(streamCopy.volumetricFlow) ;
+            feedState.molarFlow = DesignWorkspaceHelper.ensureRowVector(streamCopy.molarFlow) ;
+            feedState.concentration = DesignWorkspaceHelper.ensureRowVector(streamCopy.concentration) ;
+        end
+
         function xOpt = penalizedFminsearch(objFun, x0, lb, ub)
             x0 = DesignWorkspaceHelper.ensureRowVector(x0) ;
             lb = DesignWorkspaceHelper.ensureRowVector(lb) ;
             ub = DesignWorkspaceHelper.ensureRowVector(ub) ;
-            options = optimset('Display', 'off', 'MaxIter', 200, 'MaxFunEvals', 800) ;
+            maxIter = max(80, 30 * numel(x0)) ;
+            maxFun = max(160, 60 * numel(x0)) ;
+            maxTimeSeconds = 20 ;
+            startTime = tic ;
+            options = optimset( ...
+                'Display', 'off', ...
+                'MaxIter', maxIter, ...
+                'MaxFunEvals', maxFun, ...
+                'TolX', 1e-4, ...
+                'TolFun', 1e-5, ...
+                'OutputFcn', @(x, optimValues, state) ...
+                    DesignWorkspaceHelper.stopOptimizationSearch(startTime, maxTimeSeconds, x, optimValues, state)) ;
             wrapped = @(x) objFun(min(max(x, lb), ub)) + 1e4 * sum(max(lb - x, 0).^2 + max(x - ub, 0).^2) ;
             xOpt = fminsearch(wrapped, x0, options) ;
             xOpt = min(max(xOpt, lb), ub) ;
+        end
+
+        function stop = stopOptimizationSearch(startTime, maxTimeSeconds, ~, ~, ~)
+            stop = toc(startTime) >= maxTimeSeconds ;
         end
 
         function value = safeMetric(value)
@@ -1001,7 +1476,7 @@ classdef DesignWorkspaceHelper
         end
 
         function label = componentLabel(RS, idx)
-            label = sprintf('C%d', idx) ;
+            label = ['C' DesignWorkspaceHelper.componentLetterSuffix(idx)] ;
             try
                 if ~isempty(RS.componentNames) && numel(RS.componentNames) >= idx
                     label = char(string(RS.componentNames{idx})) ;
@@ -1017,6 +1492,22 @@ classdef DesignWorkspaceHelper
             end
             if isempty(rtdObj) || ~isa(rtdObj, 'RTD')
                 error('A valid RTD object is required.') ;
+            end
+        end
+
+        function [C_out, modeInfo] = solveFixedRTDPass(rtdObj, reactionMode, RS, C0, keyIdx)
+            modeInfo = struct('directFirstOrder', false, 'kFirstOrder', NaN) ;
+            switch char(string(reactionMode))
+                case 'Max Mixedness'
+                    mm = MaxMixednessModel(rtdObj) ;
+                    mm.keyComponentIndex = keyIdx ;
+                    mm = mm.compute_isothermal(RS, C0) ;
+                    C_out = mm.C_exit ;
+                otherwise
+                    seg = SegregationModel(rtdObj) ;
+                    seg.keyComponentIndex = keyIdx ;
+                    seg = seg.compute_isothermal(RS, C0) ;
+                    C_out = seg.C_exit ;
             end
         end
 
