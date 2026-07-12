@@ -2228,27 +2228,24 @@ classdef NonIdealReactorApp < handle
             mmColor = baseColors(3, :) ;
             pfrColor = baseColors(4, :) ;
             tol = 1e-12 ;
+            leaderColor = [0.45 0.45 0.45] ;
 
             xCandidates = [] ;
-            notes = strings(0, 1) ;
+            noteText = "" ;
 
             denomSeg = X_seg_cstr - X_pfr ;
             if isfinite(denomSeg) && abs(denomSeg) > tol
                 xCandidates(end + 1) = (X_seg - X_pfr) / denomSeg ; %#ok<AGROW>
-            else
-                notes(end + 1, 1) = "Seg normalization unavailable"; %#ok<AGROW>
             end
 
             denomMM = X_cstr - X_pfr ;
             if isfinite(denomMM) && abs(denomMM) > tol
                 xCandidates(end + 1) = (X_mm - X_pfr) / denomMM ; %#ok<AGROW>
-            else
-                notes(end + 1, 1) = "MM normalization unavailable"; %#ok<AGROW>
             end
 
             if isempty(xCandidates)
                 xRTD = 0.5 ;
-                notes(end + 1, 1) = "RTD horizontal position is indeterminate from these conversions"; %#ok<AGROW>
+                noteText = "RTD horizontal position is indeterminate from these conversions; using x = 0.5" ;
             else
                 xRTD = mean(xCandidates) ;
             end
@@ -2282,25 +2279,58 @@ classdef NonIdealReactorApp < handle
             plot(ax, xRTD, 0, 'o', 'MarkerSize', 8, ...
                 'MarkerFaceColor', segColor, 'MarkerEdgeColor', segColor, 'LineWidth', 1.2) ;
 
-            app.annotatePredictionMixingPoint(ax, 0, 0, 'Ideal PFR', X_pfr, -0.045, 0.02, 'right', 'bottom') ;
-            app.annotatePredictionMixingPoint(ax, 1, 0, 'Segregated CSTR RTD', X_seg_cstr, 0.03, 0.05, 'left', 'bottom') ;
-            app.annotatePredictionMixingPoint(ax, 1, 1, 'Ideal CSTR', X_cstr, 0.03, 0.02, 'left', 'bottom') ;
-            app.annotatePredictionMixingPoint(ax, xRTD, 0, 'Segregation', X_seg, 0.00, 0.04, 'center', 'bottom') ;
-            app.annotatePredictionMixingPoint(ax, xRTD, xRTD, 'Maximum Mixedness', X_mm, -0.035, 0.03, 'right', 'bottom') ;
+            pfrTextX = -0.055 ; pfrTextY = 0.02 ; pfrAlign = 'right' ; pfrVAlign = 'bottom' ; pfrLeader = false ;
+            segTextX = xRTD ; segTextY = 0.045 ; segAlign = 'center' ; segVAlign = 'bottom' ; segLeader = false ;
+            mmTextX = xRTD - 0.035 ; mmTextY = xRTD + 0.03 ; mmAlign = 'right' ; mmVAlign = 'bottom' ; mmLeader = false ;
+            segCstrTextX = 1.03 ; segCstrTextY = 0.05 ; segCstrAlign = 'left' ; segCstrVAlign = 'bottom' ; segCstrLeader = false ;
+            idealCstrTextX = 1.03 ; idealCstrTextY = 1.015 ; idealCstrAlign = 'left' ; idealCstrVAlign = 'bottom' ; idealCstrLeader = false ;
+
+            if xRTD <= 0.12
+                pfrTextX = -0.115 ; pfrTextY = 0.055 ; pfrLeader = true ;
+                segTextX = -0.115 ; segTextY = 0.005 ; segAlign = 'right' ; segVAlign = 'bottom' ; segLeader = true ;
+            end
+
+            if xRTD <= 0.18
+                mmTextX = 0.14 ; mmTextY = max(0.14, xRTD + 0.08) ; mmAlign = 'left' ; mmVAlign = 'bottom' ; mmLeader = true ;
+            end
+
+            if (1 - xRTD) <= 0.08
+                segTextX = 1.045 ; segTextY = 0.085 ; segAlign = 'left' ; segVAlign = 'bottom' ; segLeader = true ;
+                segCstrTextX = 1.045 ; segCstrTextY = 0.018 ; segCstrAlign = 'left' ; segCstrVAlign = 'bottom' ; segCstrLeader = true ;
+            end
+
+            if (1 - xRTD) <= 0.10 || ...
+                    (abs(mmTextX - idealCstrTextX) <= 0.10 && abs(mmTextY - idealCstrTextY) <= 0.10)
+                mmTextX = 1.045 ; mmTextY = 0.965 ; mmAlign = 'left' ; mmVAlign = 'bottom' ; mmLeader = true ;
+                idealCstrTextX = 1.045 ; idealCstrTextY = 1.055 ; idealCstrAlign = 'left' ; idealCstrVAlign = 'bottom' ; idealCstrLeader = true ;
+            end
+
+            app.annotatePredictionMixingPoint(ax, 0, 0, 'Ideal PFR', X_pfr, ...
+                pfrTextX, pfrTextY, pfrAlign, pfrVAlign, pfrLeader, leaderColor) ;
+            app.annotatePredictionMixingPoint(ax, 1, 0, 'Segregated CSTR RTD', X_seg_cstr, ...
+                segCstrTextX, segCstrTextY, segCstrAlign, segCstrVAlign, segCstrLeader, leaderColor) ;
+            app.annotatePredictionMixingPoint(ax, 1, 1, 'Ideal CSTR', X_cstr, ...
+                idealCstrTextX, idealCstrTextY, idealCstrAlign, idealCstrVAlign, idealCstrLeader, leaderColor) ;
+            app.annotatePredictionMixingPoint(ax, xRTD, 0, 'Segregation', X_seg, ...
+                segTextX, segTextY, segAlign, segVAlign, segLeader, leaderColor) ;
+            app.annotatePredictionMixingPoint(ax, xRTD, xRTD, 'Maximum Mixedness', X_mm, ...
+                mmTextX, mmTextY, mmAlign, mmVAlign, mmLeader, leaderColor) ;
 
             deltaXMicro = abs(X_mm - X_seg) ;
-            text(ax, min(xRTD + 0.05, 0.80), max(xRTD * 0.44, 0.09), ...
-                sprintf('Micromixing effect\nDeltaX = %.4f', deltaXMicro), ...
+            microTextX = min(max(xRTD + 0.06, 0.22), 0.74) ;
+            microTextY = min(max(0.11, xRTD * 0.42), 0.34) ;
+            if xRTD <= 0.18
+                microTextX = 0.22 ;
+                microTextY = 0.10 ;
+            elseif (1 - xRTD) <= 0.10
+                microTextX = 0.72 ;
+                microTextY = 0.32 ;
+            end
+            text(ax, microTextX, microTextY, ...
+                sprintf('Micromixing effect\n\\DeltaX = %.4f', deltaXMicro), ...
                 'FontSize', 9, 'Color', [0.2 0.2 0.2], ...
                 'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle', ...
-                'BackgroundColor', [1 1 1]) ;
-
-            if abs(X_mm - X_seg) <= tol
-                notes(end + 1, 1) = "Micromixing has no effect on conversion for this kinetics"; %#ok<AGROW>
-            end
-            if nSelected > 1
-                notes(end + 1, 1) = "Using first selected reactant only"; %#ok<AGROW>
-            end
+                'Interpreter', 'tex') ;
 
             titleText = sprintf('Active reactant: %s', reactantLabel) ;
             if nSelected > 1
@@ -2309,16 +2339,16 @@ classdef NonIdealReactorApp < handle
             title(ax, titleText) ;
             xlabel(ax, 'Macromixing / RTD effect') ;
             ylabel(ax, 'Degree of Micromixing') ;
-            xlim(ax, [-0.15 1.16]) ;
-            ylim(ax, [-0.12 1.11]) ;
+            xlim(ax, [-0.18 1.19]) ;
+            ylim(ax, [-0.12 1.13]) ;
             ax.XTick = [] ;
             ax.YTick = [] ;
             ax.Box = 'off' ;
             grid(ax, 'off') ;
             ax.DataAspectRatio = [1 1 1] ;
 
-            if ~isempty(notes)
-                text(ax, 0.02, 1.08, strjoin(cellstr(notes), ' | '), ...
+            if strlength(noteText) > 0
+                text(ax, 0.02, 1.08, noteText, ...
                     'FontSize', 8.5, 'Color', [0.30 0.30 0.30], ...
                     'HorizontalAlignment', 'left', 'VerticalAlignment', 'top') ;
             end
@@ -2326,8 +2356,11 @@ classdef NonIdealReactorApp < handle
             hold(ax, 'off') ;
         end
 
-        function annotatePredictionMixingPoint(~, ax, x, y, modelLabel, conversionValue, dx, dy, hAlign, vAlign)
-            text(ax, x + dx, y + dy, sprintf('%s\nX = %.4f', modelLabel, conversionValue), ...
+        function annotatePredictionMixingPoint(~, ax, x, y, modelLabel, conversionValue, textX, textY, hAlign, vAlign, showLeader, leaderColor)
+            if showLeader
+                plot(ax, [x textX], [y textY], ':', 'Color', leaderColor, 'LineWidth', 0.9) ;
+            end
+            text(ax, textX, textY, sprintf('%s\nX = %.4f', modelLabel, conversionValue), ...
                 'FontSize', 9, 'HorizontalAlignment', hAlign, 'VerticalAlignment', vAlign) ;
         end
 
@@ -4693,9 +4726,7 @@ classdef NonIdealReactorApp < handle
                 'Title', 'Macromixing / Micromixing Map') ;
             app.Pred_MixingEffectPanel.Layout.Row = 2 ;
             app.Pred_MixingEffectPanel.Layout.Column = 2 ;
-            app.Pred_MixingEffectPanel.Tooltip = ...
-                ['Normalized triangular map of macromixing and micromixing effects on conversion for the active functional reactant. ' ...
-                'Point positions are normalized for visualization; labels always show physical conversion values.'] ;
+            app.Pred_MixingEffectPanel.Tooltip = '' ;
             mixGrid = uigridlayout(app.Pred_MixingEffectPanel, [1 1], ...
                 'Padding', [6 6 6 6], ...
                 'RowSpacing', 6) ;
