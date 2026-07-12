@@ -77,6 +77,8 @@ classdef NonIdealReactorApp < handle
         RTD_EthetaSigmaCenterHandle = []
         RTD_EthetaSigmaLowerHandle = []
         RTD_EthetaSigmaUpperHandle = []
+        RTD_EtSigmaLabelHandles = gobjects(0)
+        RTD_EthetaSigmaLabelHandles = gobjects(0)
         RTD_QvLabel
         RTD_QvField
         RTD_ResultTau
@@ -4221,11 +4223,13 @@ classdef NonIdealReactorApp < handle
                 end
             end
             plot(app.RTD_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
+            app.RTD_expandMomentAxesY(app.RTD_AxesEt, Et_display) ;
             title(app.RTD_AxesEt, 'E(t)') ;
             xlabel(app.RTD_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.RTD_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
-            [app.RTD_EtSigmaCenterHandle, app.RTD_EtSigmaLowerHandle, app.RTD_EtSigmaUpperHandle] = ...
-                app.RTD_drawMomentGuideLines(app.RTD_AxesEt, tau_display, t_lower, t_upper, sigma_display, [0.00 0.20 0.75], tol) ;
+            [app.RTD_EtSigmaCenterHandle, app.RTD_EtSigmaLowerHandle, app.RTD_EtSigmaUpperHandle, app.RTD_EtSigmaLabelHandles] = ...
+                app.RTD_drawMomentGuideLines(app.RTD_AxesEt, t_display, Et_display, tau_display, t_lower, t_upper, sigma_display, [0.00 0.20 0.75], tol, ...
+                {'\tau', '\tau-\sigma', '\tau+\sigma'}) ;
             hold(app.RTD_AxesEt, 'off') ;
 
             % F(t) plot
@@ -4255,9 +4259,11 @@ classdef NonIdealReactorApp < handle
                 end
                 plot(app.RTD_AxesEtheta, app.rtd.theta, app.rtd.Etheta, ...
                      'Color', [0 0.6 0], 'LineWidth', 1.5) ;
+                app.RTD_expandMomentAxesY(app.RTD_AxesEtheta, app.rtd.Etheta) ;
                 if ~isempty(app.rtd.tau) && isfinite(app.rtd.tau) && app.rtd.tau > 0
-                    [app.RTD_EthetaSigmaCenterHandle, app.RTD_EthetaSigmaLowerHandle, app.RTD_EthetaSigmaUpperHandle] = ...
-                        app.RTD_drawMomentGuideLines(app.RTD_AxesEtheta, 1, theta_lower, theta_upper, sigma_theta, [0.00 0.45 0.00], tol) ;
+                    [app.RTD_EthetaSigmaCenterHandle, app.RTD_EthetaSigmaLowerHandle, app.RTD_EthetaSigmaUpperHandle, app.RTD_EthetaSigmaLabelHandles] = ...
+                        app.RTD_drawMomentGuideLines(app.RTD_AxesEtheta, app.rtd.theta, app.rtd.Etheta, 1, theta_lower, theta_upper, sigma_theta, [0.00 0.45 0.00], tol, ...
+                        {'1', '1-\sigma_\theta', '1+\sigma_\theta'}) ;
                 end
             end
             title(app.RTD_AxesEtheta, 'E(\Theta)') ;
@@ -4370,7 +4376,9 @@ classdef NonIdealReactorApp < handle
                 app.RTD_EthetaSigmaBandHandle, ...
                 app.RTD_EthetaSigmaCenterHandle, ...
                 app.RTD_EthetaSigmaLowerHandle, ...
-                app.RTD_EthetaSigmaUpperHandle} ;
+                app.RTD_EthetaSigmaUpperHandle, ...
+                app.RTD_EtSigmaLabelHandles, ...
+                app.RTD_EthetaSigmaLabelHandles} ;
 
             for k = 1:numel(overlayHandles)
                 h = overlayHandles{k} ;
@@ -4387,6 +4395,8 @@ classdef NonIdealReactorApp < handle
             app.RTD_EthetaSigmaCenterHandle = [] ;
             app.RTD_EthetaSigmaLowerHandle = [] ;
             app.RTD_EthetaSigmaUpperHandle = [] ;
+            app.RTD_EtSigmaLabelHandles = gobjects(0) ;
+            app.RTD_EthetaSigmaLabelHandles = gobjects(0) ;
         end
 
         function [xPatch, yPatch] = RTD_buildMomentBandPatch(~, xData, yData, xLower, xUpper)
@@ -4422,30 +4432,91 @@ classdef NonIdealReactorApp < handle
             yPatch = [zeros(size(ySegment)), fliplr(ySegment)] ;
         end
 
-        function [centerHandle, lowerHandle, upperHandle] = RTD_drawMomentGuideLines(~, ax, centerValue, lowerValue, upperValue, sigmaValue, lineColor, tol)
+        function RTD_expandMomentAxesY(~, ax, yData)
+            if isempty(ax) || ~isvalid(ax) || isempty(yData)
+                return
+            end
+
+            yData = yData(isfinite(yData)) ;
+            if isempty(yData)
+                return
+            end
+
+            yMax = max(yData) ;
+            if ~isfinite(yMax)
+                return
+            end
+            if yMax <= 0
+                ylim(ax, [0 1]) ;
+            else
+                ylim(ax, [0 yMax * 1.12]) ;
+            end
+        end
+
+        function [centerHandle, lowerHandle, upperHandle, labelHandles] = RTD_drawMomentGuideLines(~, ax, xData, yData, centerValue, lowerValue, upperValue, sigmaValue, lineColor, tol, labels)
             centerHandle = [] ;
             lowerHandle = [] ;
             upperHandle = [] ;
+            labelHandles = gobjects(0) ;
 
-            if isempty(ax) || ~isvalid(ax) || ~isfinite(centerValue)
+            if isempty(ax) || ~isvalid(ax) || ~isfinite(centerValue) || isempty(xData) || isempty(yData)
+                return
+            end
+
+            xData = xData(:)' ;
+            yData = yData(:)' ;
+            validMask = isfinite(xData) & isfinite(yData) ;
+            xData = xData(validMask) ;
+            yData = yData(validMask) ;
+            if numel(xData) < 2
                 return
             end
 
             yLimits = ylim(ax) ;
-            centerHandle = plot(ax, [centerValue centerValue], yLimits, '-', ...
+            yRange = max(yLimits(2) - yLimits(1), 1e-12) ;
+            labelOffset = 0.02 * yRange ;
+            [centerY, centerDrawn] = localCurveIntersection(centerValue) ;
+            if centerDrawn
+                centerHandle = plot(ax, [centerValue centerValue], [0 centerY], '-', ...
                 'Color', lineColor, 'LineWidth', 1.6, 'HandleVisibility', 'off') ;
+                labelHandles(end + 1) = text(ax, centerValue, min(centerY + labelOffset, yLimits(2) - 0.01 * yRange), labels{1}, ...
+                    'Color', lineColor, 'FontSize', 9, 'HorizontalAlignment', 'center', ...
+                    'VerticalAlignment', 'bottom', 'Interpreter', 'tex', 'Clipping', 'on') ; %#ok<AGROW>
+            end
 
             if isempty(sigmaValue) || ~isfinite(sigmaValue) || sigmaValue <= tol
                 return
             end
 
             if isfinite(lowerValue) && abs(lowerValue - centerValue) > tol
-                lowerHandle = plot(ax, [lowerValue lowerValue], yLimits, '--', ...
-                    'Color', lineColor, 'LineWidth', 1.0, 'HandleVisibility', 'off') ;
+                [lowerY, lowerDrawn] = localCurveIntersection(lowerValue) ;
+                if lowerDrawn
+                    lowerHandle = plot(ax, [lowerValue lowerValue], [0 lowerY], '--', ...
+                        'Color', lineColor, 'LineWidth', 1.0, 'HandleVisibility', 'off') ;
+                    labelHandles(end + 1) = text(ax, lowerValue, min(lowerY + labelOffset, yLimits(2) - 0.01 * yRange), labels{2}, ...
+                        'Color', lineColor, 'FontSize', 9, 'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', 'bottom', 'Interpreter', 'tex', 'Clipping', 'on') ; %#ok<AGROW>
+                end
             end
             if isfinite(upperValue) && abs(upperValue - centerValue) > tol
-                upperHandle = plot(ax, [upperValue upperValue], yLimits, '--', ...
-                    'Color', lineColor, 'LineWidth', 1.0, 'HandleVisibility', 'off') ;
+                [upperY, upperDrawn] = localCurveIntersection(upperValue) ;
+                if upperDrawn
+                    upperHandle = plot(ax, [upperValue upperValue], [0 upperY], '--', ...
+                        'Color', lineColor, 'LineWidth', 1.0, 'HandleVisibility', 'off') ;
+                    labelHandles(end + 1) = text(ax, upperValue, min(upperY + labelOffset, yLimits(2) - 0.01 * yRange), labels{3}, ...
+                        'Color', lineColor, 'FontSize', 9, 'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', 'bottom', 'Interpreter', 'tex', 'Clipping', 'on') ; %#ok<AGROW>
+                end
+            end
+
+            function [yValue, isDrawable] = localCurveIntersection(xValue)
+                yValue = NaN ;
+                isDrawable = false ;
+                if ~isfinite(xValue) || xValue < xData(1) || xValue > xData(end)
+                    return
+                end
+                yValue = interp1(xData, yData, xValue, 'linear') ;
+                isDrawable = isfinite(yValue) && yValue >= 0 ;
             end
         end
 
