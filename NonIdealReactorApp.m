@@ -7515,6 +7515,7 @@ classdef NonIdealReactorApp < handle
         end
 
         function DW_refreshReactiveContext(app)
+            app.DW_syncReactiveVariableNameDefaults() ;
             RS = app.getStructField(app.DesignState.reactionSpec, 'rs', []) ;
             hasRS = ~isempty(RS) && isa(RS, 'ReactionSys') ;
             app.DesignUI.Reactive.KeyComponentDropdown.Enable = app.ternary(hasRS, 'on', 'off') ;
@@ -7528,6 +7529,27 @@ classdef NonIdealReactorApp < handle
             app.DesignUI.Reactive.KeyComponentDropdown.Enable = app.ternary(nComp >= 1, 'on', 'off') ;
             app.DesignUI.Reactive.DesiredProductDropdown.Enable = app.ternary(nComp >= 2, 'on', 'off') ;
             app.DesignUI.Reactive.ByproductDropdown.Enable = app.ternary(nComp >= 3, 'on', 'off') ;
+        end
+
+        function DW_syncReactiveVariableNameDefaults(app)
+            rsLoaded = ~isempty(app.getStructField(app.DesignState.reactionSpec, 'rs', [])) ;
+            feedLoaded = ~isempty(app.getStructField(app.DesignState.reactionSpec, 'feedStream', [])) ;
+
+            if ~rsLoaded && ~isempty(app.RTD_RSNameField) && isvalid(app.RTD_RSNameField)
+                rtdRSName = strtrim(char(string(app.RTD_RSNameField.Value))) ;
+                currentRSName = strtrim(char(string(app.DesignUI.Reactive.RSNameField.Value))) ;
+                if ~isempty(rtdRSName) && (isempty(currentRSName) || strcmp(currentRSName, 'RS'))
+                    app.DesignUI.Reactive.RSNameField.Value = rtdRSName ;
+                end
+            end
+
+            if ~feedLoaded && ~isempty(app.RTD_StreamNameField) && isvalid(app.RTD_StreamNameField)
+                rtdStreamName = strtrim(char(string(app.RTD_StreamNameField.Value))) ;
+                currentStreamName = strtrim(char(string(app.DesignUI.Reactive.StreamNameField.Value))) ;
+                if ~isempty(rtdStreamName) && (isempty(currentStreamName) || strcmp(currentStreamName, 'Feed'))
+                    app.DesignUI.Reactive.StreamNameField.Value = rtdStreamName ;
+                end
+            end
         end
 
         function txt = DW_getReactiveMetricFormulaText(app) %#ok<MANU>
