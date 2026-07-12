@@ -2261,13 +2261,13 @@ classdef NonIdealReactorApp < handle
             plot(ax, [1 1], [0 1], '-', 'Color', [0.80 0.00 0.00], 'LineWidth', 2.5) ;
             plot(ax, [xRTD xRTD], [0 xRTD], '--', 'Color', [0.25 0.25 0.25], 'LineWidth', 1.2) ;
 
-            text(ax, 0.56, 0.05, 'Complete Segregation', ...
+            text(ax, 0.50, -0.055, 'Complete Segregation', ...
                 'Color', [0.00 0.60 0.30], 'FontSize', 10, 'HorizontalAlignment', 'center', ...
-                'VerticalAlignment', 'bottom') ;
-            text(ax, 0.50, 0.56, 'Maximum Mixedness', ...
-                'Color', mmColor, 'FontSize', 10, 'Rotation', 32, ...
+                'VerticalAlignment', 'top') ;
+            text(ax, 0.44, 0.58, 'Maximum Mixedness', ...
+                'Color', mmColor, 'FontSize', 10, 'Rotation', 43, ...
                 'HorizontalAlignment', 'center') ;
-            text(ax, 1.015, 0.83, 'RTD of a CSTR', ...
+            text(ax, 1.025, 0.84, 'RTD of a CSTR', ...
                 'Color', [0.80 0.00 0.00], 'FontSize', 10, ...
                 'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle') ;
 
@@ -2282,14 +2282,14 @@ classdef NonIdealReactorApp < handle
             plot(ax, xRTD, 0, 'o', 'MarkerSize', 8, ...
                 'MarkerFaceColor', segColor, 'MarkerEdgeColor', segColor, 'LineWidth', 1.2) ;
 
-            app.annotatePredictionMixingPoint(ax, 0, 0, 'Ideal PFR', X_pfr, 0.03, -0.01) ;
-            app.annotatePredictionMixingPoint(ax, 1, 0, 'Segregated CSTR RTD', X_seg_cstr, -0.24, 0.06) ;
-            app.annotatePredictionMixingPoint(ax, 1, 1, 'Ideal CSTR', X_cstr, -0.11, 0.02) ;
-            app.annotatePredictionMixingPoint(ax, xRTD, 0, 'Segregation', X_seg, 0.03, 0.02) ;
-            app.annotatePredictionMixingPoint(ax, xRTD, xRTD, 'Maximum Mixedness', X_mm, 0.03, 0.02) ;
+            app.annotatePredictionMixingPoint(ax, 0, 0, 'Ideal PFR', X_pfr, -0.045, 0.02, 'right', 'bottom') ;
+            app.annotatePredictionMixingPoint(ax, 1, 0, 'Segregated CSTR RTD', X_seg_cstr, 0.03, 0.05, 'left', 'bottom') ;
+            app.annotatePredictionMixingPoint(ax, 1, 1, 'Ideal CSTR', X_cstr, 0.03, 0.02, 'left', 'bottom') ;
+            app.annotatePredictionMixingPoint(ax, xRTD, 0, 'Segregation', X_seg, 0.00, 0.04, 'center', 'bottom') ;
+            app.annotatePredictionMixingPoint(ax, xRTD, xRTD, 'Maximum Mixedness', X_mm, -0.035, 0.03, 'right', 'bottom') ;
 
             deltaXMicro = abs(X_mm - X_seg) ;
-            text(ax, min(xRTD + 0.04, 0.78), max(xRTD * 0.45, 0.08), ...
+            text(ax, min(xRTD + 0.05, 0.80), max(xRTD * 0.44, 0.09), ...
                 sprintf('Micromixing effect\nDeltaX = %.4f', deltaXMicro), ...
                 'FontSize', 9, 'Color', [0.2 0.2 0.2], ...
                 'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle', ...
@@ -2309,8 +2309,8 @@ classdef NonIdealReactorApp < handle
             title(ax, titleText) ;
             xlabel(ax, 'Macromixing / RTD effect') ;
             ylabel(ax, 'Degree of Micromixing') ;
-            xlim(ax, [-0.05 1.14]) ;
-            ylim(ax, [-0.08 1.12]) ;
+            xlim(ax, [-0.15 1.16]) ;
+            ylim(ax, [-0.12 1.11]) ;
             ax.XTick = [] ;
             ax.YTick = [] ;
             ax.Box = 'off' ;
@@ -2326,9 +2326,9 @@ classdef NonIdealReactorApp < handle
             hold(ax, 'off') ;
         end
 
-        function annotatePredictionMixingPoint(~, ax, x, y, modelLabel, conversionValue, dx, dy)
+        function annotatePredictionMixingPoint(~, ax, x, y, modelLabel, conversionValue, dx, dy, hAlign, vAlign)
             text(ax, x + dx, y + dy, sprintf('%s\nX = %.4f', modelLabel, conversionValue), ...
-                'FontSize', 9, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'bottom') ;
+                'FontSize', 9, 'HorizontalAlignment', hAlign, 'VerticalAlignment', vAlign) ;
         end
 
         function X = computeSpeciesConversion(~, C0, C_exit, indices)
