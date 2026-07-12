@@ -115,7 +115,7 @@ classdef NonIdealReactorApp < handle
         Pred_C_exitTable        % UITable: outlet concentrations per component
         Pred_MixingEffectPanel
         Pred_MixingEffectLabel
-        Pred_MixingEffectTable
+        Pred_MixingEffectAxes
         Pred_AxesXbatch
         Pred_AxesIntegrand
         Pred_SharedLegend
@@ -2166,58 +2166,169 @@ classdef NonIdealReactorApp < handle
         end
 
         function updatePredictionMixingEffectPanel(app, reactantInfo, selectedIdx, ...
-                X_seg_all, X_mm_all, X_cstr_all, X_pfr_all)
+                X_seg_all, X_mm_all, X_cstr_all, X_pfr_all, X_seg_cstr_all)
             if isempty(app.Pred_MixingEffectPanel) || ~isvalid(app.Pred_MixingEffectPanel)
                 return
             end
 
-            app.Pred_MixingEffectPanel.Title = 'Non-Ideal Mixing Effect (%)' ;
+            app.Pred_MixingEffectPanel.Title = 'Macromixing / Micromixing Map' ;
 
             if isempty(reactantInfo.reactantIndices)
-                app.Pred_MixingEffectTable.Visible = 'off' ;
+                app.Pred_MixingEffectAxes.Visible = 'off' ;
                 app.Pred_MixingEffectLabel.Visible = 'on' ;
                 app.Pred_MixingEffectLabel.Text = 'No functional reactants with C_0 > 0' ;
                 return
             end
 
             if isempty(selectedIdx)
-                app.Pred_MixingEffectTable.Visible = 'off' ;
+                app.Pred_MixingEffectAxes.Visible = 'off' ;
                 app.Pred_MixingEffectLabel.Visible = 'on' ;
                 app.Pred_MixingEffectLabel.Text = 'No functional reactants selected' ;
                 return
             end
 
-            reactantPlotPos = arrayfun(@(idx) find(reactantInfo.reactantIndices == idx, 1), selectedIdx) ;
-            reactantLabels = reactantInfo.componentLabels(selectedIdx) ;
-            segVsCstr = app.computePredictionModelComparison( ...
-                X_seg_all(reactantPlotPos), X_cstr_all(reactantPlotPos)) ;
-            segVsPfr = app.computePredictionModelComparison( ...
-                X_seg_all(reactantPlotPos), X_pfr_all(reactantPlotPos)) ;
-            mmVsCstr = app.computePredictionModelComparison( ...
-                X_mm_all(reactantPlotPos), X_cstr_all(reactantPlotPos)) ;
-            mmVsPfr = app.computePredictionModelComparison( ...
-                X_mm_all(reactantPlotPos), X_pfr_all(reactantPlotPos)) ;
-
-            tableData = cell(numel(selectedIdx), 5) ;
-            for i = 1:numel(selectedIdx)
-                tableData{i, 1} = reactantLabels{i} ;
-                tableData{i, 2} = app.formatPredictionMixingComparison(segVsCstr(i)) ;
-                tableData{i, 3} = app.formatPredictionMixingComparison(segVsPfr(i)) ;
-                tableData{i, 4} = app.formatPredictionMixingComparison(mmVsCstr(i)) ;
-                tableData{i, 5} = app.formatPredictionMixingComparison(mmVsPfr(i)) ;
+            activeReactantIdx = selectedIdx(1) ;
+            reactantPlotPos = find(reactantInfo.reactantIndices == activeReactantIdx, 1) ;
+            if isempty(reactantPlotPos)
+                app.Pred_MixingEffectAxes.Visible = 'off' ;
+                app.Pred_MixingEffectLabel.Visible = 'on' ;
+                app.Pred_MixingEffectLabel.Text = 'Selected reactant is no longer available' ;
+                return
             end
 
             app.Pred_MixingEffectLabel.Visible = 'off' ;
-            app.Pred_MixingEffectTable.Visible = 'on' ;
-            app.Pred_MixingEffectTable.Data = tableData ;
+            app.Pred_MixingEffectAxes.Visible = 'on' ;
+            app.drawPredictionMixingEffectMap( ...
+                app.Pred_MixingEffectAxes, ...
+                reactantInfo.componentLabels{activeReactantIdx}, ...
+                numel(selectedIdx), ...
+                X_pfr_all(reactantPlotPos), ...
+                X_seg_all(reactantPlotPos), ...
+                X_mm_all(reactantPlotPos), ...
+                X_seg_cstr_all(reactantPlotPos), ...
+                X_cstr_all(reactantPlotPos)) ;
         end
 
-        function textValue = formatPredictionMixingComparison(~, numericValue)
-            if ~isfinite(numericValue)
-                textValue = '--' ;
-            else
-                textValue = sprintf('%+.2f', numericValue) ;
+        function X_seg_cstr_all = computePredictionSegregatedCSTRConversions(app, RS, C0, reactantIndices)
+            X_seg_cstr_all = nan(1, numel(reactantIndices)) ;
+            if isempty(reactantIndices) || isempty(app.rtd) || ~isfinite(app.rtd.tau) || app.rtd.tau <= 0
+                return
             end
+            segCstrModel = SegregationModel(RTD.ideal_cstr(app.rtd.tau)) ;
+            segCstrModel = segCstrModel.compute_isothermal(RS, C0) ;
+            X_seg_cstr_all = app.computeSpeciesConversion(C0, segCstrModel.C_exit, reactantIndices) ;
+        end
+
+        function drawPredictionMixingEffectMap(app, ax, reactantLabel, nSelected, X_pfr, X_seg, X_mm, X_seg_cstr, X_cstr)
+            cla(ax) ;
+            hold(ax, 'on') ;
+            [~, baseColors] = app.getPredictionModelLegendSpec() ;
+            cstrColor = baseColors(1, :) ;
+            segColor = baseColors(2, :) ;
+            mmColor = baseColors(3, :) ;
+            pfrColor = baseColors(4, :) ;
+            tol = 1e-12 ;
+
+            xCandidates = [] ;
+            notes = strings(0, 1) ;
+
+            denomSeg = X_seg_cstr - X_pfr ;
+            if isfinite(denomSeg) && abs(denomSeg) > tol
+                xCandidates(end + 1) = (X_seg - X_pfr) / denomSeg ; %#ok<AGROW>
+            else
+                notes(end + 1, 1) = "Seg normalization unavailable"; %#ok<AGROW>
+            end
+
+            denomMM = X_cstr - X_pfr ;
+            if isfinite(denomMM) && abs(denomMM) > tol
+                xCandidates(end + 1) = (X_mm - X_pfr) / denomMM ; %#ok<AGROW>
+            else
+                notes(end + 1, 1) = "MM normalization unavailable"; %#ok<AGROW>
+            end
+
+            if isempty(xCandidates)
+                xRTD = 0.5 ;
+                notes(end + 1, 1) = "RTD horizontal position is indeterminate from these conversions"; %#ok<AGROW>
+            else
+                xRTD = mean(xCandidates) ;
+            end
+            xRTD = min(max(xRTD, 0), 1) ;
+
+            patch(ax, [0 1 1], [0 0 1], [0.72 0.80 0.90], ...
+                'FaceAlpha', 0.35, 'EdgeColor', 'none') ;
+            plot(ax, [0 1], [0 0], '-', 'Color', [0.00 0.70 0.35], 'LineWidth', 2.5) ;
+            plot(ax, [0 1], [0 1], '-', 'Color', mmColor, 'LineWidth', 2.5) ;
+            plot(ax, [1 1], [0 1], '-', 'Color', [0.80 0.00 0.00], 'LineWidth', 2.5) ;
+            plot(ax, [xRTD xRTD], [0 xRTD], '--', 'Color', [0.25 0.25 0.25], 'LineWidth', 1.2) ;
+
+            text(ax, 0.56, 0.05, 'Complete Segregation', ...
+                'Color', [0.00 0.60 0.30], 'FontSize', 10, 'HorizontalAlignment', 'center', ...
+                'VerticalAlignment', 'bottom') ;
+            text(ax, 0.50, 0.56, 'Maximum Mixedness', ...
+                'Color', mmColor, 'FontSize', 10, 'Rotation', 32, ...
+                'HorizontalAlignment', 'center') ;
+            text(ax, 1.015, 0.83, 'RTD of a CSTR', ...
+                'Color', [0.80 0.00 0.00], 'FontSize', 10, ...
+                'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle') ;
+
+            plot(ax, 0, 0, 'o', 'MarkerSize', 8, ...
+                'MarkerFaceColor', pfrColor, 'MarkerEdgeColor', pfrColor, 'LineWidth', 1.2) ;
+            plot(ax, 1, 0, 'd', 'MarkerSize', 9, ...
+                'MarkerFaceColor', cstrColor, 'MarkerEdgeColor', segColor, 'LineWidth', 1.6) ;
+            plot(ax, 1, 1, 'o', 'MarkerSize', 9, ...
+                'MarkerFaceColor', cstrColor, 'MarkerEdgeColor', cstrColor, 'LineWidth', 1.2) ;
+            plot(ax, xRTD, xRTD, 's', 'MarkerSize', 10, ...
+                'MarkerFaceColor', 'none', 'MarkerEdgeColor', mmColor, 'LineWidth', 1.8) ;
+            plot(ax, xRTD, 0, 'o', 'MarkerSize', 8, ...
+                'MarkerFaceColor', segColor, 'MarkerEdgeColor', segColor, 'LineWidth', 1.2) ;
+
+            app.annotatePredictionMixingPoint(ax, 0, 0, 'Ideal PFR', X_pfr, 0.03, -0.01) ;
+            app.annotatePredictionMixingPoint(ax, 1, 0, 'Segregated CSTR RTD', X_seg_cstr, -0.24, 0.06) ;
+            app.annotatePredictionMixingPoint(ax, 1, 1, 'Ideal CSTR', X_cstr, -0.11, 0.02) ;
+            app.annotatePredictionMixingPoint(ax, xRTD, 0, 'Segregation', X_seg, 0.03, 0.02) ;
+            app.annotatePredictionMixingPoint(ax, xRTD, xRTD, 'Maximum Mixedness', X_mm, 0.03, 0.02) ;
+
+            deltaXMicro = abs(X_mm - X_seg) ;
+            text(ax, min(xRTD + 0.04, 0.78), max(xRTD * 0.45, 0.08), ...
+                sprintf('Micromixing effect\nDeltaX = %.4f', deltaXMicro), ...
+                'FontSize', 9, 'Color', [0.2 0.2 0.2], ...
+                'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle', ...
+                'BackgroundColor', [1 1 1]) ;
+
+            if abs(X_mm - X_seg) <= tol
+                notes(end + 1, 1) = "Micromixing has no effect on conversion for this kinetics"; %#ok<AGROW>
+            end
+            if nSelected > 1
+                notes(end + 1, 1) = "Using first selected reactant only"; %#ok<AGROW>
+            end
+
+            titleText = sprintf('Active reactant: %s', reactantLabel) ;
+            if nSelected > 1
+                titleText = sprintf('Active reactant: %s (first selected)', reactantLabel) ;
+            end
+            title(ax, titleText) ;
+            xlabel(ax, 'Macromixing / RTD effect') ;
+            ylabel(ax, 'Degree of Micromixing') ;
+            xlim(ax, [-0.05 1.14]) ;
+            ylim(ax, [-0.08 1.12]) ;
+            ax.XTick = [] ;
+            ax.YTick = [] ;
+            ax.Box = 'off' ;
+            grid(ax, 'off') ;
+            ax.DataAspectRatio = [1 1 1] ;
+
+            if ~isempty(notes)
+                text(ax, 0.02, 1.08, strjoin(cellstr(notes), ' | '), ...
+                    'FontSize', 8.5, 'Color', [0.30 0.30 0.30], ...
+                    'HorizontalAlignment', 'left', 'VerticalAlignment', 'top') ;
+            end
+
+            hold(ax, 'off') ;
+        end
+
+        function annotatePredictionMixingPoint(~, ax, x, y, modelLabel, conversionValue, dx, dy)
+            text(ax, x + dx, y + dy, sprintf('%s\nX = %.4f', modelLabel, conversionValue), ...
+                'FontSize', 9, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'bottom') ;
         end
 
         function X = computeSpeciesConversion(~, C0, C_exit, indices)
@@ -4529,7 +4640,7 @@ classdef NonIdealReactorApp < handle
             rightPanel = uipanel(mainGrid, 'Title', 'Model Results') ;
             rightGrid = uigridlayout(rightPanel, [2 2]) ;
             rightGrid.RowHeight = {'1x', '1x'} ;
-            rightGrid.ColumnWidth = {'1.02x', '0.70x'} ;
+            rightGrid.ColumnWidth = {'1.00x', '0.73x'} ;
             rightGrid.Padding = [0 0 0 0] ;
             rightGrid.RowSpacing = 6 ;
             rightGrid.ColumnSpacing = 6 ;
@@ -4579,33 +4690,26 @@ classdef NonIdealReactorApp < handle
                 'C_in denotes feed concentration and C_out denotes outlet concentration at the reactor exit.'] ;
 
             app.Pred_MixingEffectPanel = uipanel(rightGrid, ...
-                'Title', 'Non-Ideal Mixing Effect (%)') ;
+                'Title', 'Macromixing / Micromixing Map') ;
             app.Pred_MixingEffectPanel.Layout.Row = 2 ;
             app.Pred_MixingEffectPanel.Layout.Column = 2 ;
             app.Pred_MixingEffectPanel.Tooltip = ...
-                ['Relative conversion comparison between model pairs for the selected functional reactants. ' ...
-                'Positive values mean the first model has higher conversion than the reference model.'] ;
+                ['Normalized triangular map of macromixing and micromixing effects on conversion for the active functional reactant. ' ...
+                'Point positions are normalized for visualization; labels always show physical conversion values.'] ;
             mixGrid = uigridlayout(app.Pred_MixingEffectPanel, [1 1], ...
                 'Padding', [6 6 6 6], ...
                 'RowSpacing', 6) ;
             app.Pred_MixingEffectLabel = uilabel(mixGrid, ...
-                'Text', 'Compute a case to populate this comparison.', ...
+                'Text', 'Compute a case to populate this macromixing/micromixing map.', ...
                 'WordWrap', 'on') ;
             app.Pred_MixingEffectLabel.HorizontalAlignment = 'center' ;
             app.Pred_MixingEffectLabel.VerticalAlignment = 'top' ;
             app.Pred_MixingEffectLabel.Layout.Row = 1 ;
             app.Pred_MixingEffectLabel.Layout.Column = 1 ;
-            app.Pred_MixingEffectTable = uitable(mixGrid, ...
-                'ColumnName', {'Reactant', 'Seg. vs CSTR', 'Seg. vs PFR', 'MM vs CSTR', 'MM vs PFR'}, ...
-                'ColumnEditable', false(1, 5), ...
-                'ColumnWidth', {92, 102, 96, 102, 96}, ...
-                'RowName', {}, ...
+            app.Pred_MixingEffectAxes = uiaxes(mixGrid, ...
                 'Visible', 'off') ;
-            app.Pred_MixingEffectTable.Layout.Row = 1 ;
-            app.Pred_MixingEffectTable.Layout.Column = 1 ;
-            app.Pred_MixingEffectTable.Tooltip = ...
-                ['Percentage conversion comparison for each selected functional reactant. ' ...
-                'Positive values mean the first model has higher conversion than the model shown after "vs".'] ;
+            app.Pred_MixingEffectAxes.Layout.Row = 1 ;
+            app.Pred_MixingEffectAxes.Layout.Column = 1 ;
         end
 
         %% ============== STREAM LOADING HELPER + CALLBACKS ==============
@@ -4907,6 +5011,8 @@ classdef NonIdealReactorApp < handle
             X_mm_all   = app.computeSpeciesConversion(C0, app.mm_model.C_exit,  reactantInfo.reactantIndices) ;
             X_cstr_all = app.computeSpeciesConversion(C0, C_out_cstr_ref,       reactantInfo.reactantIndices) ;
             X_pfr_all  = app.computeSpeciesConversion(C0, C_out_pfr_ref,        reactantInfo.reactantIndices) ;
+            X_seg_cstr_all = app.computePredictionSegregatedCSTRConversions( ...
+                RS, C0, reactantInfo.reactantIndices) ;
 
             % Update exit summary panel header
             app.updateConcentrationHeader(app.Pred_C_exitLabel, concDD) ;
@@ -4973,7 +5079,7 @@ classdef NonIdealReactorApp < handle
                 reactantInfo.reactantIndices, X_seg_all, X_mm_all, X_cstr_all, X_pfr_all, ...
                 selectedIdx, concDD) ;
             app.updatePredictionMixingEffectPanel( ...
-                reactantInfo, selectedIdx, X_seg_all, X_mm_all, X_cstr_all, X_pfr_all) ;
+                reactantInfo, selectedIdx, X_seg_all, X_mm_all, X_cstr_all, X_pfr_all, X_seg_cstr_all) ;
         end
 
         %% ============== TAB 3: TANKS-IN-SERIES ==============
