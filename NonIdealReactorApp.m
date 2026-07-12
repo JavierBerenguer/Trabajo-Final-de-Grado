@@ -164,6 +164,11 @@ classdef NonIdealReactorApp < handle
         TIS_C_exitLabel
         TIS_C_exitTable         % UITable: outlet concentrations per component
         TIS_AxesEt
+        TIS_EtSigmaBandHandle = []
+        TIS_EtSigmaCenterHandle = []
+        TIS_EtSigmaLowerHandle = []
+        TIS_EtSigmaUpperHandle = []
+        TIS_EtSigmaLabelHandles = gobjects(0)
         TIS_AxesXvsN
         TIS_AxesComparison
 
@@ -196,6 +201,11 @@ classdef NonIdealReactorApp < handle
         Disp_ComputeButton
         Disp_RefreshButton
         Disp_AxesEt
+        Disp_EtSigmaBandHandle = []
+        Disp_EtSigmaCenterHandle = []
+        Disp_EtSigmaLowerHandle = []
+        Disp_EtSigmaUpperHandle = []
+        Disp_EtSigmaLabelHandles = gobjects(0)
         Disp_AxesXvsBo
         Disp_AxesComparison
 
@@ -4405,6 +4415,113 @@ classdef NonIdealReactorApp < handle
             app.RTD_EthetaSigmaLabelHandles = gobjects(0) ;
         end
 
+        function clearGraphicsHandleSet(~, overlayHandles)
+            for k = 1:numel(overlayHandles)
+                h = overlayHandles{k} ;
+                if ~isempty(h)
+                    validHandles = h(isgraphics(h)) ;
+                    if ~isempty(validHandles)
+                        delete(validHandles) ;
+                    end
+                end
+            end
+        end
+
+        function TIS_clearMomentOverlay(app)
+            app.clearGraphicsHandleSet({ ...
+                app.TIS_EtSigmaBandHandle, ...
+                app.TIS_EtSigmaCenterHandle, ...
+                app.TIS_EtSigmaLowerHandle, ...
+                app.TIS_EtSigmaUpperHandle, ...
+                app.TIS_EtSigmaLabelHandles}) ;
+            app.TIS_EtSigmaBandHandle = [] ;
+            app.TIS_EtSigmaCenterHandle = [] ;
+            app.TIS_EtSigmaLowerHandle = [] ;
+            app.TIS_EtSigmaUpperHandle = [] ;
+            app.TIS_EtSigmaLabelHandles = gobjects(0) ;
+        end
+
+        function Disp_clearMomentOverlay(app)
+            app.clearGraphicsHandleSet({ ...
+                app.Disp_EtSigmaBandHandle, ...
+                app.Disp_EtSigmaCenterHandle, ...
+                app.Disp_EtSigmaLowerHandle, ...
+                app.Disp_EtSigmaUpperHandle, ...
+                app.Disp_EtSigmaLabelHandles}) ;
+            app.Disp_EtSigmaBandHandle = [] ;
+            app.Disp_EtSigmaCenterHandle = [] ;
+            app.Disp_EtSigmaLowerHandle = [] ;
+            app.Disp_EtSigmaUpperHandle = [] ;
+            app.Disp_EtSigmaLabelHandles = gobjects(0) ;
+        end
+
+        function [centerValue, sigmaValue] = RTD_resolveMomentCenterSigmaFromEt(app, rtdObj, xData, yData, timeDD)
+            centerValue = NaN ;
+            sigmaValue = NaN ;
+
+            if ~isempty(rtdObj) && isa(rtdObj, 'RTD') && ...
+                    ~isempty(rtdObj.tau) && isfinite(rtdObj.tau) && ...
+                    ~isempty(rtdObj.sigma2) && isfinite(rtdObj.sigma2)
+                centerValue = app.convertOutputFromTime('time', rtdObj.tau, timeDD) ;
+                sigmaValue = app.convertOutputFromTime('time', sqrt(max(rtdObj.sigma2, 0)), timeDD) ;
+                return
+            end
+
+            if isempty(xData) || isempty(yData)
+                return
+            end
+
+            xData = xData(:)' ;
+            yData = yData(:)' ;
+            validMask = isfinite(xData) & isfinite(yData) ;
+            xData = xData(validMask) ;
+            yData = yData(validMask) ;
+            if numel(xData) < 2
+                return
+            end
+
+            area = trapz(xData, yData) ;
+            if ~(isfinite(area) && area > 0)
+                return
+            end
+
+            yNorm = yData / area ;
+            centerValue = trapz(xData, xData .* yNorm) ;
+            sigma2Value = trapz(xData, (xData - centerValue).^2 .* yNorm) ;
+            if isfinite(sigma2Value)
+                sigmaValue = sqrt(max(sigma2Value, 0)) ;
+            end
+        end
+
+        function [bandHandle, centerValue, lowerValue, upperValue, sigmaValue] = RTD_drawEtMomentOverlay(app, ax, rtdObj, xData, yData, timeDD, bandColor)
+            bandHandle = [] ;
+            centerValue = NaN ;
+            lowerValue = NaN ;
+            upperValue = NaN ;
+            sigmaValue = NaN ;
+
+            if isempty(ax) || ~isvalid(ax) || isempty(xData) || isempty(yData)
+                return
+            end
+
+            tol = 1e-12 ;
+            [centerValue, sigmaValue] = app.RTD_resolveMomentCenterSigmaFromEt(rtdObj, xData, yData, timeDD) ;
+            if ~(isfinite(centerValue) && centerValue >= 0)
+                return
+            end
+
+            lowerValue = max(0, centerValue - max(sigmaValue, 0)) ;
+            upperValue = centerValue + max(sigmaValue, 0) ;
+
+            if isfinite(sigmaValue) && sigmaValue > tol
+                [xPatch, yPatch] = app.RTD_buildMomentBandPatch(xData, yData, lowerValue, upperValue) ;
+                if ~isempty(xPatch)
+                    bandHandle = patch(ax, xPatch, yPatch, bandColor, ...
+                        'FaceAlpha', 0.15, 'EdgeColor', 'none', 'HandleVisibility', 'off') ;
+                end
+            end
+        end
+
         function [xPatch, yPatch] = RTD_buildMomentBandPatch(~, xData, yData, xLower, xUpper)
             xPatch = [] ;
             yPatch = [] ;
@@ -5755,16 +5872,25 @@ classdef NonIdealReactorApp < handle
                                  C_out_tis, C_out_cstr, C_out_pfr)
 
             % ---- Plot 1: E(t) for current N ----
+            app.TIS_clearMomentOverlay() ;
             cla(app.TIS_AxesEt) ;
             rtd_tis = RTD.tanks_in_series(N_val, tau_val) ;
             timeDD = app.DisplayControls.TIS.time ;
             concDD = app.DisplayControls.TIS.concentration ;
             t_display = app.convertOutputVectorFromTime('time', rtd_tis.t, timeDD) ;
             Et_display = app.convertOutputVectorFromTime('timeInverse', rtd_tis.Et, timeDD) ;
+            hold(app.TIS_AxesEt, 'on') ;
+            [app.TIS_EtSigmaBandHandle, tauOverlay, lowerOverlay, upperOverlay, sigmaOverlay] = ...
+                app.RTD_drawEtMomentOverlay(app.TIS_AxesEt, rtd_tis, t_display, Et_display, timeDD, [0.64 0.80 1.00]) ;
             plot(app.TIS_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
+            app.RTD_expandMomentAxesY(app.TIS_AxesEt, Et_display) ;
+            [app.TIS_EtSigmaCenterHandle, app.TIS_EtSigmaLowerHandle, app.TIS_EtSigmaUpperHandle, app.TIS_EtSigmaLabelHandles] = ...
+                app.RTD_drawMomentGuideLines(app.TIS_AxesEt, t_display, Et_display, tauOverlay, lowerOverlay, upperOverlay, sigmaOverlay, [0.00 0.20 0.75], 1e-12, ...
+                {'\tau', '\tau-\sigma', '\tau+\sigma'}) ;
             title(app.TIS_AxesEt, sprintf('E(t) - TIS  N=%.1f', N_val)) ;
             xlabel(app.TIS_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
             ylabel(app.TIS_AxesEt, app.axisLabelWithUnitName('E(t)', app.timeInverseUnitName(timeDD))) ;
+            hold(app.TIS_AxesEt, 'off') ;
 
             app.updateConcentrationHeader(app.TIS_C_exitLabel, concDD) ;
             app.TIS_C_exitPanel.Title = sprintf('Exit Summary - Concentration [%s]', ...
@@ -6391,13 +6517,21 @@ classdef NonIdealReactorApp < handle
                                   C_out_disp, C_out_cstr, C_out_pfr, bcType)
 
             % ---- Plot 1: E(t) ----
+            app.Disp_clearMomentOverlay() ;
             cla(app.Disp_AxesEt) ;
             rtd_obj = app.disp_reactor.generate_RTD(tau_val) ;
             timeDD = app.DisplayControls.Dispersion.time ;
             concDD = app.DisplayControls.Dispersion.concentration ;
             t_display = app.convertOutputVectorFromTime('time', rtd_obj.t, timeDD) ;
             Et_display = app.convertOutputVectorFromTime('timeInverse', rtd_obj.Et, timeDD) ;
+            hold(app.Disp_AxesEt, 'on') ;
+            [app.Disp_EtSigmaBandHandle, tauOverlay, lowerOverlay, upperOverlay, sigmaOverlay] = ...
+                app.RTD_drawEtMomentOverlay(app.Disp_AxesEt, rtd_obj, t_display, Et_display, timeDD, [0.64 0.80 1.00]) ;
             plot(app.Disp_AxesEt, t_display, Et_display, 'b-', 'LineWidth', 1.5) ;
+            app.RTD_expandMomentAxesY(app.Disp_AxesEt, Et_display) ;
+            [app.Disp_EtSigmaCenterHandle, app.Disp_EtSigmaLowerHandle, app.Disp_EtSigmaUpperHandle, app.Disp_EtSigmaLabelHandles] = ...
+                app.RTD_drawMomentGuideLines(app.Disp_AxesEt, t_display, Et_display, tauOverlay, lowerOverlay, upperOverlay, sigmaOverlay, [0.00 0.20 0.75], 1e-12, ...
+                {'\tau', '\tau-\sigma', '\tau+\sigma'}) ;
             title(app.Disp_AxesEt, sprintf('E(t) - %s, Bo=%.4g', ...
                   bcType, Bo_val)) ;
             xlabel(app.Disp_AxesEt, app.axisLabelWithUnit('t', timeDD)) ;
@@ -6416,6 +6550,7 @@ classdef NonIdealReactorApp < handle
                 'VerticalAlignment', 'top', 'FontSize', 9, ...
                 'Interpreter', 'tex', ...
                 'BackgroundColor', [1 1 1 0.8], 'EdgeColor', [0.7 0.7 0.7]) ;
+            hold(app.Disp_AxesEt, 'off') ;
 
             app.Disp_C_exitPanel.Title = sprintf('Exit Summary - Concentration [%s]', ...
                 app.concentrationUnitName(concDD)) ;
