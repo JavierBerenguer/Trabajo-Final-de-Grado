@@ -47,7 +47,7 @@ This work is rooted in the original `ReactorApp` created by **Isabela Fons** at 
 
 - [Journal article](https://www.sciencedirect.com/science/article/pii/S1749772826000096?ref=pdf_download&fr=RR-2&rr=a1a6adaa1fb8c112)
 - [University of Alicante repository (TFG)](https://hdl.handle.net/10045/107785)
-- MathWorks File Exchange project  [![View ReactorApp-toolbox on File Exchange](https://es.mathworks.com/matlabcentral/fileexchange/76917-reactorapp-toolbox?s_tid=prof_contriblnk)
+- MathWorks File Exchange project  [![View Trabajo-Final-de-Grado on File Exchange](https://es.mathworks.com/matlabcentral/fileexchange/76917-reactorapp-toolbox?s_tid=prof_contriblnk)
 
 ## Current NonIdealReactorApp Author
 
