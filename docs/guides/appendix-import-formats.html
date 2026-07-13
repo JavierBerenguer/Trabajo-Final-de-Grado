@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - Import Formats</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - Import Formats</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>How to Prepare Experimental RTD Data for Import</h1>
+          <p>Use this appendix before importing pulse or step data from Excel, CSV, TSV, MAT files, or the MATLAB workspace. The goal is not only to make the importer accept the file, but to make the reconstructed RTD physically meaningful once it reaches Tab 1.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#needs">What the importer needs</a></li>
+            <li><a href="#layout">File structure and layout</a></li>
+            <li><a href="#types">Pulse vs step</a></li>
+            <li><a href="#workspace">Workspace import</a></li>
+            <li><a href="#checks">Checks and errors</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="needs">
+      <h2>What the Importer Really Needs</h2>
+      <table>
+        <tr>
+          <th>Item</th>
+          <th>Why it matters</th>
+        </tr>
+        <tr><td>One monotonic time column</td><td>The RTD reconstruction assumes the signal is ordered in time.</td></tr>
+        <tr><td>One response column</td><td>This is the tracer concentration or measured signal used to reconstruct the curve.</td></tr>
+        <tr><td>Consistent units</td><td>The selected unit in the app must match the scale used in the file.</td></tr>
+        <tr><td>The correct experiment type</td><td>Pulse and step workflows do not interpret the same signal in the same way.</td></tr>
+      </table>
+      <div class="callout info">
+        <strong>Important:</strong> the app can only interpret what you give it. A file that is syntactically valid but semantically wrong, for example a cumulative signal imported as if it were a pulse, can still produce a misleading RTD.
+      </div>
+    </section>
+    <section class="section" id="layout">
+      <h2>Expected Minimal Structure</h2>
+      <table>
+        <tr>
+          <th>Column</th>
+          <th>Meaning</th>
+        </tr>
+        <tr><td>Column 1</td><td>Time values</td></tr>
+        <tr><td>Column 2</td><td>Measured signal or concentration response</td></tr>
+      </table>
+      <p>For spreadsheet files, keep headers in row 1 and start numeric data in row 2.</p>
+    </section>
+    <section class="section">
+      <h2>Recommended Spreadsheet Layout</h2>
+      <pre><code>time,response
+0,0
+1,0.12
+2,0.31
+3,0.47</code></pre>
+      <p>If you are importing from Excel, avoid merged cells, notes above the header row, and decorative columns between time and response.</p>
+      <div class="grid-2">
+        <div>
+          <h3>Acceptable</h3>
+          <ul>
+            <li>Headers in the first row</li>
+            <li>Numeric data starting immediately below</li>
+            <li>Two clean columns for time and response</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Risky</h3>
+          <ul>
+            <li>Units embedded inside numeric cells</li>
+            <li>Comment rows before the header</li>
+            <li>Hidden helper columns used for plotting</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="types">
+      <h2>Pulse vs Step Reminder</h2>
+      <ul>
+        <li><strong>Pulse data</strong> represent a tracer pulse response and should preserve the intended signal shape.</li>
+        <li><strong>Step data</strong> represent a cumulative response and require a meaningful <code>C0</code> when the workflow asks for it.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>Experiment type</th>
+          <th>Typical visual behavior</th>
+          <th>What the app expects</th>
+        </tr>
+        <tr><td>Pulse</td><td>A peak that rises and decays</td><td>Signal suitable for RTD reconstruction from a pulse response</td></tr>
+        <tr><td>Step</td><td>A cumulative rise toward a plateau</td><td>Signal interpreted together with the selected baseline/concentration logic</td></tr>
+      </table>
+    </section>
+    <section class="section" id="workspace">
+      <h2>Importing from the MATLAB Workspace</h2>
+      <p>If you import from the workspace instead of from a file, the same logical structure still applies: the variable must resolve to clean numeric arrays with matching lengths.</p>
+      <ul>
+        <li>Keep time and response vectors the same length.</li>
+        <li>Avoid cell arrays or mixed text/numeric containers unless you know the route supports them.</li>
+        <li>Make sure the workspace variable you type in the app actually exists in the current MATLAB base workspace.</li>
+      </ul>
+      <pre><code>t = [0; 1; 2; 3; 4];
+c = [0; 0.12; 0.31; 0.47; 0.18];</code></pre>
+    </section>
+    <section class="section" id="checks">
+      <h2>Pre-Import Checklist</h2>
+      <ol>
+        <li>Confirm whether the experiment is pulse or step.</li>
+        <li>Confirm the time unit used in the raw file.</li>
+        <li>Remove notes, empty separator rows, and decorative columns.</li>
+        <li>Check that time increases monotonically.</li>
+        <li>Check that the response column is really the tracer signal you want to use.</li>
+        <li>Only then choose the matching import route in Tab 1.</li>
+      </ol>
+    </section>
+    <section class="section">
+      <h2>After-Import Sanity Checks</h2>
+      <p>Do not stop at "the file loaded successfully". Once the data is inside the app, inspect the generated plots and moments.</p>
+      <ul>
+        <li>If the signal shape looks inverted or cumulative when you expected a peak, revisit the pulse/step choice.</li>
+        <li>If <code>&tau;</code> is on the wrong scale, revisit the selected time unit.</li>
+        <li>If the RTD looks truncated, check whether the original dataset covers enough of the tail.</li>
+        <li>If later tabs behave oddly, verify the imported RTD before suspecting the chemistry.</li>
+      </ul>
+    </section>
+    <section class="section">
+      <h2>Common Import Errors</h2>
+      <ul>
+        <li>Time is in minutes but the selected unit remains seconds.</li>
+        <li>The second column is not the measured signal but a different derived value.</li>
+        <li>The file contains extra blank columns or extra metadata rows before the numeric data.</li>
+        <li>The signal has been pre-normalized in a way that no longer matches the selected workflow.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-1-rtd-analysis.html">Back to Tab 1 guide</a>
+        <a class="button alt" href="appendix-rtd-interpretation.html">Next: RTD interpretation</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

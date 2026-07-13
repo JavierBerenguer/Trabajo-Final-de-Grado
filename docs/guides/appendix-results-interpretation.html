@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - Results Interpretation</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - Results Interpretation</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>How to Read Comparison Plots and Summary Tables</h1>
+          <p>This appendix is for the moment after the solver has already run and the question becomes: what is this difference telling me, and how much trust should I place in it? The app often shows several models side by side; the key is to read them as structured comparisons, not as isolated numbers.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#logic">Comparison logic</a></li>
+            <li><a href="#metrics">Metric differences</a></li>
+            <li><a href="#prediction">Prediction Models</a></li>
+            <li><a href="#reactive">Reactive Performance</a></li>
+            <li><a href="#optimization">Optimization</a></li>
+            <li><a href="#importance">When differences matter</a></li>
+            <li><a href="#mistakes">Common mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="logic">
+      <h2>Start with the Comparison Logic</h2>
+      <table>
+        <tr>
+          <th>Question</th>
+          <th>Where it appears</th>
+        </tr>
+        <tr><td>How does the real RTD compare with ideal reactor limits?</td><td>Prediction Models and Reactive Performance</td></tr>
+        <tr><td>How sensitive is the answer to micromixing assumptions?</td><td>Prediction Models and Reactive Performance</td></tr>
+        <tr><td>How much does a manipulated input improve the target?</td><td>Optimization</td></tr>
+        <tr><td>How do all species move, not only the chosen objective species?</td><td>Exit Summary, concentration tables, and wide comparison tables</td></tr>
+      </table>
+    </section>
+    <section class="section" id="metrics">
+      <h2>Conversion, Selectivity, Yield, and Concentration Are Not the Same Story</h2>
+      <ul>
+        <li><strong>Conversion</strong> is meaningful for functional reactants.</li>
+        <li><strong>Selectivity</strong> and <strong>yield</strong> depend on both a chosen product and the reactant basis behind the metric.</li>
+        <li><strong>Outlet concentration</strong> remains meaningful for products and byproducts even when conversion does not.</li>
+      </ul>
+      <div class="callout info">
+        <strong>Practical reading tip:</strong> when a product species is central to your decision, focus more on outlet concentration and on the selected selectivity/yield definitions than on forcing a conversion interpretation that is not physically appropriate.
+      </div>
+    </section>
+    <section class="section" id="prediction">
+      <h2>Reading Prediction Models</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab2_prediction_computed.png" alt="Prediction Models tab with computed comparisons">
+        <figcaption>Prediction Models compares the real RTD through Segregation and Maximum Mixedness, then anchors that comparison against Ideal CSTR and Ideal PFR.</figcaption>
+      </figure>
+      <ul>
+        <li>If Segregation and Maximum Mixedness are close, micromixing sensitivity is weak for the chosen kinetics.</li>
+        <li>If both differ strongly from Ideal PFR or Ideal CSTR, the RTD itself is still important even if micromixing is not.</li>
+        <li>The exit summary helps avoid tunnel vision by keeping all species visible at once.</li>
+      </ul>
+    </section>
+    <section class="section" id="reactive">
+      <h2>Reading Tab 5 Reactive Performance</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab5_reactive_computed.png" alt="Reactive Performance subtab with computed metrics">
+        <figcaption>Reactive Performance is useful when you want the same four-model comparison inside the design workspace, especially if you need to compare the original RTD against a fitted RTD.</figcaption>
+      </figure>
+      <ul>
+        <li>Compare the ranking of the four models before focusing on any single value.</li>
+        <li>Use the concentration table to confirm whether the chosen metric hides an important change in another species.</li>
+        <li>If the fitted RTD changes the engineering story, revisit Diagnosis &amp; Fit instead of treating the fit as automatically better.</li>
+      </ul>
+    </section>
+    <section class="section" id="optimization">
+      <h2>Reading Optimization Results</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab5_optimization_computed.png" alt="Optimization subtab with base versus optimum tables">
+        <figcaption>The optimization view should be read in two layers: what the optimizer changed, and how that change propagates through the four reactor viewpoints.</figcaption>
+      </figure>
+      <table>
+        <tr>
+          <th>Result block</th>
+          <th>How to read it</th>
+        </tr>
+        <tr><td>Base vs Optimum</td><td>Shows the target, active decision variables, and active constraints before and after the search.</td></tr>
+        <tr><td>Wide four-model table</td><td>Checks whether the improved scenario still looks sensible across Ideal CSTR, Segregation, Maximum Mixedness, and Ideal PFR.</td></tr>
+      </table>
+      <div class="callout warn">
+        <strong>Do not stop at the objective row:</strong> a mathematically improved objective may still come with undesirable shifts in other species or with limited robustness across reactor interpretations.
+      </div>
+    </section>
+    <section class="section" id="importance">
+      <h2>When Is a Difference Actually Important?</h2>
+      <ol>
+        <li>Check absolute engineering scale, not only percentage change.</li>
+        <li>Check whether the difference is larger than the uncertainty you already accept in RTD reconstruction or kinetics.</li>
+        <li>Check whether the sign of the difference changes the design decision.</li>
+        <li>Check whether multiple tables and plots tell the same story.</li>
+      </ol>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Common Interpretation Mistakes</h2>
+      <table>
+        <tr>
+          <th>Mistake</th>
+          <th>Better reading</th>
+        </tr>
+        <tr><td>Treating all four models as equally realistic predictions</td><td>Read them as bounds, references, or alternative interpretations of the same hydrodynamic problem.</td></tr>
+        <tr><td>Using product conversion where outlet concentration is the real design variable</td><td>Switch to the metric that matches the decision you actually need to make.</td></tr>
+        <tr><td>Declaring an optimization successful from one improved scalar objective</td><td>Check the constraints and the full species table as well.</td></tr>
+        <tr><td>Reading tiny numeric gaps as deep physical differences</td><td>First ask whether the difference is large enough to matter in engineering practice.</td></tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="tab-2-prediction-models.html">Back to Prediction Models</a>
+        <a class="button alt" href="tab-5-reactive-performance.html">Back to Reactive Performance</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

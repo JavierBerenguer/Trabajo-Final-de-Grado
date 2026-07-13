@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - Glossary and Symbols</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - Glossary and Symbols</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Glossary and Symbols Used Across the App</h1>
+          <p>This appendix collects the notation and recurring model names that appear across tabs, tables, and plots. It is meant as a fast orientation page when the same symbol keeps reappearing in different contexts.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#moments">RTD and moments</a></li>
+            <li><a href="#equivalent">Equivalent-model parameters</a></li>
+            <li><a href="#reactive">Reactive labels</a></li>
+            <li><a href="#species">Species and metrics</a></li>
+            <li><a href="#objects">Object names</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="moments">
+      <h2>RTD and Moment Symbols</h2>
+      <table>
+        <tr>
+          <th>Symbol or label</th>
+          <th>Meaning in the app</th>
+        </tr>
+        <tr><td><code>E(t)</code></td><td>Residence time distribution in dimensional time.</td></tr>
+        <tr><td><code>F(t)</code></td><td>Cumulative residence time distribution.</td></tr>
+        <tr><td><code>E(theta)</code></td><td>Residence time distribution in normalized time.</td></tr>
+        <tr><td><code>tau</code></td><td>Mean residence time.</td></tr>
+        <tr><td><code>sigma^2</code></td><td>Variance in dimensional time.</td></tr>
+        <tr><td><code>sigma_theta^2</code></td><td>Normalized variance.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="equivalent">
+      <h2>Equivalent-Model Parameters</h2>
+      <table>
+        <tr>
+          <th>Symbol or label</th>
+          <th>Interpretation</th>
+        </tr>
+        <tr><td><code>N</code></td><td>Equivalent number of equal CSTRs in the Tanks-in-Series route.</td></tr>
+        <tr><td><code>Pe</code></td><td>Peclet number used in the Dispersion Model UI.</td></tr>
+        <tr><td><code>Bo</code></td><td>Internal reciprocal dispersion number, typically <code>1/Pe</code>.</td></tr>
+        <tr><td>Closed-closed</td><td>Dispersion-model boundary condition with the general reactive route currently available.</td></tr>
+        <tr><td>Open-open</td><td>Dispersion-model boundary condition restricted to the exact supported kinetics check.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="reactive">
+      <h2>Reactive Comparison Labels</h2>
+      <table>
+        <tr>
+          <th>Label</th>
+          <th>How to read it</th>
+        </tr>
+        <tr><td>Segregation</td><td>Reactive limit based on the RTD with no ideal micromixing between fluid elements of different ages.</td></tr>
+        <tr><td>Maximum Mixedness</td><td>The opposite micromixing limit relative to Segregation for the same RTD.</td></tr>
+        <tr><td>Ideal CSTR</td><td>Perfectly mixed ideal reactor reference.</td></tr>
+        <tr><td>Ideal PFR</td><td>Plug-flow ideal reactor reference.</td></tr>
+        <tr><td>Segregated CSTR RTD</td><td>Segregation applied to the theoretical RTD of an ideal CSTR for the map in Prediction Models.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="species">
+      <h2>Species and Metric Labels</h2>
+      <table>
+        <tr>
+          <th>Label</th>
+          <th>Meaning</th>
+        </tr>
+        <tr><td><code>C_in</code></td><td>Inlet concentration of a species.</td></tr>
+        <tr><td><code>C_out</code></td><td>Outlet concentration of a species.</td></tr>
+        <tr><td><code>X</code></td><td>Conversion, meaningful for functional reactants.</td></tr>
+        <tr><td>Selectivity</td><td>Product-oriented metric defined relative to the chosen reactant basis in the current route.</td></tr>
+        <tr><td>Yield</td><td>Combined measure of reactant consumption and desired-product formation.</td></tr>
+      </table>
+      <p>When explicit component names are unavailable, the app now falls back to names such as <code>CA</code>, <code>CB</code>, <code>CC</code>, and so on.</p>
+    </section>
+    <section class="section" id="objects">
+      <h2>Object Names</h2>
+      <table>
+        <tr>
+          <th>Name</th>
+          <th>Role</th>
+        </tr>
+        <tr><td><code>RTD</code></td><td>Hydrodynamic object storing the residence time distribution and moments.</td></tr>
+        <tr><td><code>ReactionSys</code></td><td>Chemistry object storing stoichiometry and kinetics.</td></tr>
+        <tr><td><code>Stream</code></td><td>Inlet-state object storing composition and flow-related quantities.</td></tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="appendix-rtd-interpretation.html">Back to RTD interpretation</a>
+        <a class="button alt" href="appendix-units-and-objects.html">See units and objects</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

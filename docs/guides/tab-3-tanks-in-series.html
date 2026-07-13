@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 3 - Tanks-in-Series</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Tab 3 - Tanks-in-Series</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Equivalent Model</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Tab 3 - Tanks-in-Series</h1>
+          <p>This tab replaces the full RTD by a cascade of equal CSTRs in series. It is useful when you want a compact equivalent model that still reflects RTD spread through the parameter <code>N</code>.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#before">What you need first</a></li>
+            <li><a href="#ideas">Main ideas</a></li>
+            <li><a href="#controls">Main controls</a></li>
+            <li><a href="#results">What the tab shows</a></li>
+            <li><a href="#mistakes">Typical mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="before">
+      <h2>What You Need Before Using It</h2>
+      <ul>
+        <li>An RTD, either imported from Tab 1 or defined directly for this route.</li>
+        <li>A <code>ReactionSys</code> and a <code>Stream</code> if you want reactive results.</li>
+      </ul>
+      <div class="callout success">
+        <strong>Best use case:</strong> choose this tab when you want a more interpretable surrogate than a full experimental RTD, especially if you need to communicate the hydrodynamics as "equivalent mixing severity" rather than as a full curve.
+      </div>
+    </section>
+    <section class="section" id="ideas">
+      <h2>Main Ideas</h2>
+      <ul>
+        <li><strong>Low <code>N</code></strong> means broader residence-time spread and stronger backmixing.</li>
+        <li><strong>High <code>N</code></strong> approaches plug-flow behavior.</li>
+        <li>The tab can infer <code>N</code> from the RTD variance or use a manual value.</li>
+      </ul>
+      <div class="callout info">
+        <strong>Engineering meaning:</strong> this tab is often easier to communicate than a full experimental RTD because a single cascade size gives a familiar surrogate for the degree of mixing, even though it is still an approximation.
+      </div>
+    </section>
+    <section class="section" id="controls">
+      <h2>Main Controls and What They Mean</h2>
+      <table>
+        <tr>
+          <th>Control or mode</th>
+          <th>How to read it</th>
+        </tr>
+        <tr><td>Manual / From Calculated Data</td><td>Decides whether the tab is fed directly from previously computed RTD data or configured locally.</td></tr>
+        <tr><td><code>N</code> mode</td><td>Lets you infer <code>N</code> from RTD spread or impose a manual cascade size.</td></tr>
+        <tr><td>ReactionSys and Stream loading</td><td>Provide the chemistry and inlet state needed for reactive tables and sweep plots.</td></tr>
+        <tr><td>Display selectors</td><td>Control which species or metric is emphasized in the sweep views without changing the underlying solution set.</td></tr>
+      </table>
+      <p>In practice, the most important modeling decision here is whether the inferred <code>N</code> is physically meaningful enough for your case or whether the full RTD route from <a href="tab-2-prediction-models.html">Prediction Models</a> is still the more honest representation.</p>
+      <p>For a broader comparison against Dispersion Model and the direct RTD route, see the <a href="appendix-model-selection.html">Model Selection guide</a>.</p>
+    </section>
+    <section class="section" id="results">
+      <h2>What the Tab Shows</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab3_tis_computed.png" alt="Computed Tanks in Series tab with outlet concentration versus N, conversion versus N, and E(t) plot">
+        <figcaption>Representative computed view of the Tanks-in-Series route. The sweep plots show how outlet concentration and conversion vary with <code>N</code>, while the lower-right panel shows the equivalent <code>E(t)</code> with the same moment overlay style used in Tab 1.</figcaption>
+      </figure>
+      <ul>
+        <li>An <code>E(t)</code> view for the equivalent cascade.</li>
+        <li>Reactive comparisons against ideal references.</li>
+        <li>A summary table for inlet and outlet concentrations and conversions.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>Panel</th>
+          <th>Use it for</th>
+        </tr>
+        <tr><td>Outlet Concentration vs N</td><td>Checking how sensitive each selected species is to the degree of backmixing represented by <code>N</code>.</td></tr>
+        <tr><td>Conversion vs N</td><td>Seeing where the current fitted or imported <code>N</code> sits relative to the CSTR and PFR limits.</td></tr>
+        <tr><td>E(t) - TIS Model</td><td>Visualizing the equivalent RTD shape associated with the current <code>N</code>.</td></tr>
+      </table>
+      <p>For help deciding whether a visible difference is large enough to matter, use the <a href="appendix-results-interpretation.html">Results Interpretation appendix</a>.</p>
+    </section>
+    <section class="section">
+      <h2>Typical Workflow</h2>
+      <ol>
+        <li>Bring in the RTD and chemistry.</li>
+        <li>Choose whether <code>N</code> is inferred from the RTD or set manually.</li>
+        <li>Press <strong>Compute</strong>.</li>
+        <li>Use the sweep curves to judge whether the equivalent model behaves closer to the CSTR or PFR limit.</li>
+      </ol>
+      <div class="grid-2">
+        <div>
+          <h3>When the tab is especially useful</h3>
+          <ul>
+            <li>When a one-parameter hydrodynamic surrogate is enough.</li>
+            <li>When you want to explain non-ideality through progressive backmixing.</li>
+            <li>When the audience already understands cascades of stirred tanks.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>When Tab 2 may still be better</h3>
+          <ul>
+            <li>When the exact RTD shape itself matters.</li>
+            <li>When you do not want to compress the RTD into a single surrogate parameter.</li>
+            <li>When the fit quality of an equivalent cascade is not convincing.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Typical Mistakes</h2>
+      <ul>
+        <li>Reading the equivalent <code>N</code> as a literal number of physical tanks instead of an RTD-based surrogate.</li>
+        <li>Forgetting that a restored session may need a fresh <strong>Compute</strong> to repopulate the graphs.</li>
+        <li>Comparing the tab directly with Tab 2 without remembering that TIS is an equivalent-model route, not the original full RTD route.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-4-dispersion-model.html">Next: Dispersion Model</a>
+        <a class="button alt" href="appendix-results-interpretation.html">See results appendix</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

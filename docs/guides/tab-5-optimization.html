@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 5 - Optimization</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+        <a href="tab-5-design-optimization.html">Tab 5 overview</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <a href="tab-5-design-optimization.html">Tab 5</a> / <span>Optimization</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Process Optimization with Fixed RTD</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Optimization</h1>
+          <p>The current Optimization subtab keeps the selected RTD fixed and optimizes <strong>inlet concentrations</strong> only. It does not re-fit or mutate the hydrodynamics during the search.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#what">What you can optimize</a></li>
+            <li><a href="#workflow">Typical workflow</a></li>
+            <li><a href="#results">How to read results</a></li>
+            <li><a href="#mistakes">Typical mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="what">
+      <h2>What You Can Optimize</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab5_optimization_computed.png" alt="Optimization subtab with computed base versus optimum results">
+        <figcaption>Representative optimization result with a fixed RTD, one active inlet concentration variable, and the resulting <strong>Base vs Optimum</strong> comparison.</figcaption>
+      </figure>
+      <ul>
+        <li>Objective choices include conversion, selectivity, yield, and outlet-concentration targets.</li>
+        <li>The active decision variables are the inlet concentration rows <code>C_i,in</code>.</li>
+        <li>Input units are inherited from the loaded <code>Feed Stream</code>.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>Control</th>
+          <th>Role in the current implementation</th>
+        </tr>
+        <tr><td>RTD source</td><td>Chooses whether Optimization uses the original RTD from Tab 1 or the fitted RTD from Diagnosis &amp; Fit.</td></tr>
+        <tr><td>Reaction mode</td><td>Selects whether candidates are evaluated with Segregation or Maximum Mixedness during the search.</td></tr>
+        <tr><td>Objective</td><td>Defines which reactive metric is being improved.</td></tr>
+        <tr><td>Decision table</td><td>Defines which inlet concentrations can move and what bounds they must respect.</td></tr>
+        <tr><td>Constraint table</td><td>Adds lower or upper bounds on conversion, selectivity, yield, or outlet concentration.</td></tr>
+      </table>
+      <div class="callout info">
+        <strong>Scope reminder:</strong> this is process-side optimization under a fixed hydrodynamic description. If the RTD itself is questionable, fix that upstream first rather than asking Optimization to compensate for it.
+      </div>
+    </section>
+    <section class="section" id="workflow">
+      <h2>Typical Workflow</h2>
+      <ol>
+        <li>Load <code>ReactionSys</code> and <code>Feed Stream</code> first in <a href="tab-5-reactive-performance.html">Reactive Performance</a>.</li>
+        <li>Choose the fixed RTD source and the reaction mode.</li>
+        <li>Select the objective and the relevant contextual species selectors.</li>
+        <li>Activate one or more <code>C_i,in</code> rows and set realistic bounds.</li>
+        <li>Add optional constraints if the optimum must satisfy process requirements, not only improve the objective.</li>
+        <li>Run the optimization and compare the base and optimum cases before trusting the result.</li>
+      </ol>
+      <p>If you want a refresher on how the chemistry and inlet state should be defined before optimization, see the <a href="appendix-reaction-and-stream-setup.html">ReactionSys and Stream Setup appendix</a>.</p>
+    </section>
+    <section class="section" id="results">
+      <h2>How to Read the Results</h2>
+      <ul>
+        <li>The first table compares <strong>Base</strong> versus <strong>Optimum</strong> for the objective, active variables, and active constraints.</li>
+        <li>The wide comparison table shows how the inlet change affects all four reactor models.</li>
+        <li>Product-species conversions are intentionally not shown where conversion is not meaningful.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>Question</th>
+          <th>Where to look</th>
+        </tr>
+        <tr><td>What did the optimizer actually change?</td><td>The Base vs Optimum table, especially the active decision-variable rows.</td></tr>
+        <tr><td>Did the main target really improve?</td><td>The objective row in the Base vs Optimum table.</td></tr>
+        <tr><td>Does the result remain attractive across reactor viewpoints?</td><td>The wide four-model table.</td></tr>
+        <tr><td>Did constraints stay meaningful in engineering terms?</td><td>The active constraint rows plus the full model table.</td></tr>
+      </table>
+      <div class="callout info">
+        <strong>Read both tables together:</strong> the first table says what the optimizer changed and why it looks attractive, while the wide model table says whether that change remains attractive across the four reactor viewpoints.
+      </div>
+      <div class="callout warn">
+        <strong>Important interpretation note:</strong> the current route is designed as a practical screening tool. Treat the numerical optimum as a decision-support result that still depends on RTD quality, chemistry quality, and sensible bounds.
+      </div>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Typical Mistakes</h2>
+      <ul>
+        <li>Using bounds that are mathematically valid but physically meaningless.</li>
+        <li>Optimizing before checking in Reactive Performance whether the selected RTD source and chemistry already behave sensibly.</li>
+        <li>Reading the optimum as "the answer" instead of as a candidate scenario that still needs engineering judgment.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-5-reactive-performance.html">Back to Reactive Performance</a>
+        <a class="button alt" href="appendix-results-interpretation.html">See results appendix</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

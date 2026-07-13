@@ -6474,6 +6474,15 @@ classdef NonIdealReactorApp < handle
 
                 % Create DispersionReactor
                 app.disp_reactor = DispersionReactor(Bo_val, bcType) ;
+                if strcmp(bcType, 'open-open') && ~DispersionReactor.supports_open_open_first_order(RS)
+                    uialert(app.UIFigure, ...
+                        ['Open-open dispersion can only be used with linear first-order kinetics.' newline newline ...
+                         'For this reaction system, please use closed-closed boundary conditions or redefine the kinetics as first-order linear.'], ...
+                        'Open-open Not Available', ...
+                        'Icon', 'warning') ;
+                    app.updateStatus('Ready') ;
+                    return
+                end
 
                 % Compute dispersion conversion via general method
                 [X_disp, C_out_disp] = app.disp_reactor.compute_conversion_general(RS, C0, tau_val) ;

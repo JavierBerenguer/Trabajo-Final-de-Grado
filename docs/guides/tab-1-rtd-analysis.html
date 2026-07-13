@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 1 - RTD Analysis</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+        <a href="appendix-rtd-interpretation.html">RTD Appendix</a>
+      </nav>
+    </div>
+
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Tab 1 - RTD Analysis</span>
+    </div>
+
+    <section class="hero">
+      <span class="kicker">Foundational Tab</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Tab 1 - RTD Analysis</h1>
+          <p>Use this tab to generate or import the residence time distribution of the reactor. It is the hydrodynamic foundation of the app: the RTD created here can be reused by Prediction Models, Tanks-in-Series, Dispersion Model, and Design &amp; Optimization.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#when">When to use it</a></li>
+            <li><a href="#main-fields">Main UI areas</a></li>
+            <li><a href="#sources">RTD sources</a></li>
+            <li><a href="#outputs">What the tab outputs</a></li>
+            <li><a href="#mistakes">Typical mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section" id="when">
+      <h2>When to Use This Tab</h2>
+      <ul>
+        <li>When you need to define the RTD from theory, experimental data, a custom equation, or a manual table.</li>
+        <li>When you need the characteristic moments: <code>&tau;</code>, <code>&sigma;<sup>2</sup></code>, <code>&sigma;<sub>&theta;</sub><sup>2</sup></code>, skewness, estimated <code>N</code>, and effective volume.</li>
+        <li>When you want to prepare the hydrodynamic input that later tabs will consume.</li>
+      </ul>
+      <div class="callout success">
+        <strong>Practical rule:</strong> if you are unsure where to begin, begin here. Most downstream errors come from an RTD that was never generated, was generated with inconsistent units, or does not match the intended reactor.
+      </div>
+    </section>
+
+    <section class="section" id="main-fields">
+      <h2>Main UI Areas</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab1_generated_overview.png" alt="RTD Analysis tab after generating an ideal CSTR RTD">
+        <figcaption>Representative view of Tab 1 after generating a simple analytical RTD. The left panel configures the source and shows moments; the right area shows <code>E(t)</code>, <code>F(t)</code>, and <code>E(&theta;)</code>.</figcaption>
+      </figure>
+      <div class="grid-2">
+        <div>
+          <h3>Left panel: configuration and moments</h3>
+          <ul>
+            <li><strong>RTD Source</strong> selects the route used to build the RTD.</li>
+            <li><strong>Core fields</strong> include residence time, volumetric flow, and model-specific parameters such as <code>N</code> or <code>Bo</code>.</li>
+            <li><strong>Experimental routes</strong> expose fields for workspace variables, files, equation segments, or table rows.</li>
+            <li><strong>Results</strong> display the characteristic moments after generation.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Right area: plots and utilities</h3>
+          <ul>
+            <li><strong>E(t)</strong> shows the RTD in dimensional time.</li>
+            <li><strong>F(t)</strong> shows the cumulative response and supports point queries.</li>
+            <li><strong>E(&theta;)</strong> shows the normalized RTD.</li>
+            <li><strong>Utilities</strong> let you evaluate <code>F(t)</code> and launch <code>ReactionSys</code> / <code>Stream</code> editors from this tab.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sources">
+      <h2>RTD Sources Available in the Current App</h2>
+      <table>
+        <tr>
+          <th>Source</th>
+          <th>Use it when...</th>
+        </tr>
+        <tr><td>Ideal CSTR</td><td>You need the exponential fully mixed reference.</td></tr>
+        <tr><td>Ideal PFR</td><td>You need the plug-flow limit.</td></tr>
+        <tr><td>Tanks-in-Series</td><td>You want an analytical cascade RTD with an explicit <code>N</code>.</td></tr>
+        <tr><td>Dispersion (open) / Dispersion (closed)</td><td>You want an axial-dispersion RTD parameterized by <code>Bo</code>.</td></tr>
+        <tr><td>Laminar Flow</td><td>You want the laminar-flow idealized RTD.</td></tr>
+        <tr><td>Experimental Pulse / Experimental Step</td><td>You have tracer data and want the RTD reconstructed from measurements.</td></tr>
+        <tr><td>C(t) Equation</td><td>You want to define the tracer signal piecewise with MATLAB expressions.</td></tr>
+        <tr><td>Tabular Input</td><td>You want to type the signal manually inside the app.</td></tr>
+      </table>
+      <p>For file-based experimental routes, see the dedicated <a href="appendix-import-formats.html">Import Formats appendix</a>.</p>
+    </section>
+
+    <section class="section">
+      <h2>How to Work Through the Tab</h2>
+      <ol>
+        <li>Select the <strong>RTD Source</strong>.</li>
+        <li>Fill in the fields that become visible for that source.</li>
+        <li>Check the local unit dropdowns before pressing <strong>Generate RTD</strong>.</li>
+        <li>Review the three plots and the moment fields.</li>
+        <li>Only after the RTD is credible, continue to Tabs 2-5.</li>
+      </ol>
+    </section>
+
+    <section class="section" id="outputs">
+      <h2>What This Tab Outputs and Why It Matters</h2>
+      <ul>
+        <li><strong><code>&tau;</code> and effective volume</strong> help connect the RTD to reactor hold-up and flow rate.</li>
+        <li><strong>Variance</strong> measures the spread in residence times and drives equivalent-model parameters such as estimated <code>N</code> or dispersion level.</li>
+        <li><strong>Normalized variance</strong> matters when comparing RTDs independently of absolute time scale.</li>
+        <li><strong>The RTD object itself</strong> is what downstream reactive models actually consume.</li>
+      </ul>
+      <div class="grid-2">
+        <figure class="figure-card">
+          <img src="../assets/rtd_et_sigma_overlay.png" alt="E(t) example with tau and sigma overlays">
+          <figcaption>Example of <code>E(t)</code> with the current app overlay for <code>&tau;</code> and <code>&tau; &plusmn; &sigma;</code>.</figcaption>
+        </figure>
+        <figure class="figure-card">
+          <img src="../assets/rtd_etheta_sigma_overlay.png" alt="E(theta) example with normalized sigma overlays">
+          <figcaption>Example of <code>E(&theta;)</code> with the normalized overlay used by the app.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="mistakes">
+      <h2>Typical Mistakes and What to Check</h2>
+      <table>
+        <tr>
+          <th>Problem</th>
+          <th>What to check</th>
+        </tr>
+        <tr><td>The imported data does not generate a sensible RTD</td><td>Check time units, column order, and whether the signal is pulse-like or step-like.</td></tr>
+        <tr><td>A custom <code>C(t)</code> equation fails</td><td>Use valid MATLAB syntax and element-wise operators such as <code>.*</code> and <code>./</code>.</td></tr>
+        <tr><td>The moments look unrealistic</td><td>Check that flow rate, residence time, and imported data all use consistent scales.</td></tr>
+        <tr><td>Later tabs do not see the RTD</td><td>Confirm the RTD was actually generated in the current session and not just partially configured.</td></tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="appendix-rtd-interpretation.html">Open RTD interpretation appendix</a>
+        <a class="button alt" href="tab-2-prediction-models.html">Next: Prediction Models</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

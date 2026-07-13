@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - ReactionSys and Stream Setup</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - ReactionSys and Stream Setup</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>How to Set Up ReactionSys and Stream So Later Tabs Work Correctly</h1>
+          <p>This appendix focuses on the chemistry and inlet-state objects reused across Prediction Models, Tanks-in-Series, Dispersion Model, and Tab 5. A large fraction of downstream issues come from object definitions that are syntactically valid but conceptually inconsistent.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#rs-first">ReactionSys first principles</a></li>
+            <li><a href="#order">Species order</a></li>
+            <li><a href="#kinetics">Custom kinetics</a></li>
+            <li><a href="#stream">Stream setup</a></li>
+            <li><a href="#workflow">Recommended workflow</a></li>
+            <li><a href="#problems">Typical setup problems</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="rs-first">
+      <h2>ReactionSys First Principles</h2>
+      <table>
+        <tr>
+          <th>Element</th>
+          <th>What to define carefully</th>
+        </tr>
+        <tr><td>Species list</td><td>Use a stable order and keep it consistent with all later indexing.</td></tr>
+        <tr><td>Stoichiometric matrix</td><td>Confirm signs and coefficients match the intended reaction scheme.</td></tr>
+        <tr><td>Kinetics</td><td>Use rate expressions consistent with the same species ordering and units convention.</td></tr>
+        <tr><td>Component names</td><td>Prefer explicit names; otherwise the app falls back to <code>CA</code>, <code>CB</code>, <code>CC</code>, and so on.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="order">
+      <h2>How Species Order Propagates</h2>
+      <p>The app uses species order repeatedly: stoichiometry, inlet concentrations, outlet tables, conversion selectors, and custom kinetics all depend on the same indexing logic.</p>
+      <ul>
+        <li>If species 1 is the reactant in the kinetic law, it must still be species 1 in the stream composition.</li>
+        <li>If you later relabel components manually, verify that the actual order did not change underneath the labels.</li>
+        <li>Conversion is only meaningful for functional reactants, not automatically for every species shown in a table.</li>
+      </ul>
+    </section>
+    <section class="section" id="kinetics">
+      <h2>Writing Custom Kinetics Safely</h2>
+      <ol>
+        <li>Use the expected concentration indexing convention consistently.</li>
+        <li>Keep the rate law physically compatible with the stoichiometric definition.</li>
+        <li>Check units before comparing two models numerically.</li>
+        <li>Remember that some model routes impose extra assumptions, especially Dispersion Model with <code>open-open</code>.</li>
+      </ol>
+      <div class="callout warn">
+        <strong>Common mistake:</strong> a rate expression can look mathematically plausible and still be wrong if it refers to the wrong concentration index or assumes a different stoichiometric sign convention than the one used by the app.
+      </div>
+    </section>
+    <section class="section" id="stream">
+      <h2>Setting Up the Stream</h2>
+      <table>
+        <tr>
+          <th>Part of the stream</th>
+          <th>Why it matters later</th>
+        </tr>
+        <tr><td>Volumetric flow</td><td>Needed to connect residence time, volume, and inlet-state interpretation.</td></tr>
+        <tr><td>Molar flows or inlet concentrations</td><td>Define the composition used to build the reactive inlet vector.</td></tr>
+        <tr><td>Species alignment</td><td>Must match the <code>ReactionSys</code> species ordering.</td></tr>
+        <tr><td>Units</td><td>Determine how values are entered and displayed before internal SI conversion.</td></tr>
+      </table>
+      <p>In the current Tab 5 Optimization workflow, inlet concentrations are the active manipulated variables, and their visible units are inherited from the loaded stream.</p>
+    </section>
+    <section class="section" id="workflow">
+      <h2>Recommended Setup Workflow</h2>
+      <ol>
+        <li>Define the species list and stoichiometry first.</li>
+        <li>Enter or verify the kinetic law second.</li>
+        <li>Load or define the feed stream with the same species order.</li>
+        <li>Check that the names shown in selectors and tables match the intended chemistry.</li>
+        <li>Run a first comparison in Prediction Models before moving to specialized tabs.</li>
+      </ol>
+    </section>
+    <section class="section" id="problems">
+      <h2>Typical Setup Problems</h2>
+      <table>
+        <tr>
+          <th>Problem</th>
+          <th>What to verify</th>
+        </tr>
+        <tr><td>Conversion is missing for the species you expected</td><td>Whether that species is actually a functional reactant for the loaded chemistry and inlet state.</td></tr>
+        <tr><td>Outlet values look physically impossible</td><td>Species ordering, concentration units, and whether the stream matches the reaction definition.</td></tr>
+        <tr><td>Dispersion open-open warns about unsupported kinetics</td><td>Whether the current rate law is truly compatible with the open-open exact route.</td></tr>
+        <tr><td>Optimization bounds feel inconsistent</td><td>Remember that the table shows inherited input units while the solver works internally in SI.</td></tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="appendix-units-and-objects.html">Back to units and objects</a>
+        <a class="button alt" href="tab-2-prediction-models.html">Go to Prediction Models</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

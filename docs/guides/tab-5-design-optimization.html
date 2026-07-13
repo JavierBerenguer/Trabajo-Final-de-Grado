@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 5 - Design &amp; Optimization</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Tab 5 - Design &amp; Optimization</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Integrated Workspace</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Tab 5 - Design &amp; Optimization</h1>
+          <p>This tab groups three design-oriented tools in one workspace: <strong>Diagnosis &amp; Fit</strong>, <strong>Reactive Performance</strong>, and <strong>Optimization</strong>. It is built on top of an RTD that should already exist, not as a replacement for RTD Analysis.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#structure">Workspace structure</a></li>
+            <li><a href="#dependencies">Key dependencies</a></li>
+            <li><a href="#order">Recommended order</a></li>
+            <li><a href="#best-for">Best use cases</a></li>
+            <li><a href="#mistakes">Common mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="structure">
+      <h2>How the Workspace Is Structured</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab5_fit_computed.png" alt="Design and Optimization workspace showing Diagnosis and Fit results">
+        <figcaption>Representative design-workspace view with the <strong>Diagnosis &amp; Fit</strong> subtab populated. The same workspace later feeds the reactive and optimization subtabs.</figcaption>
+      </figure>
+      <table>
+        <tr>
+          <th>Subtab</th>
+          <th>Main purpose</th>
+        </tr>
+        <tr><td><a href="tab-5-diagnosis-fit.html">Diagnosis &amp; Fit</a></td><td>Fit equivalent hydrodynamic families to the Tab 1 RTD and compare candidate families.</td></tr>
+        <tr><td><a href="tab-5-reactive-performance.html">Reactive Performance</a></td><td>Compare four reactor models on the same chemistry and selected RTD source.</td></tr>
+        <tr><td><a href="tab-5-optimization.html">Optimization</a></td><td>Keep the RTD fixed and optimize inlet concentrations against a reactive objective.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="dependencies">
+      <h2>Key Dependency to Remember</h2>
+      <ul>
+        <li><strong>Diagnosis &amp; Fit</strong> depends strongly on the RTD created in Tab 1.</li>
+        <li><strong>Reactive Performance</strong> and <strong>Optimization</strong> share chemistry-oriented state inside the workspace.</li>
+        <li>The current Optimization route changes inlet concentrations, not hydrodynamic parameters.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>What must already exist</th>
+          <th>Why it matters in Tab 5</th>
+        </tr>
+        <tr><td>A meaningful RTD</td><td>It is the whole basis of Diagnosis &amp; Fit and the fixed hydrodynamic context of the other subtabs.</td></tr>
+        <tr><td>A consistent <code>ReactionSys</code></td><td>Required for Reactive Performance and Optimization metrics.</td></tr>
+        <tr><td>A consistent <code>Stream</code></td><td>Required to build inlet concentrations and to inherit Optimization input units.</td></tr>
+      </table>
+      <div class="callout info">
+        <strong>Important mental model:</strong> Tab 5 does not create a new independent world. It organizes design decisions on top of objects and assumptions that should already be credible upstream.
+      </div>
+    </section>
+    <section class="section" id="order">
+      <h2>Recommended Order Inside Tab 5</h2>
+      <ol>
+        <li>Start with <strong>Diagnosis &amp; Fit</strong> only if you want an equivalent RTD family.</li>
+        <li>Move to <strong>Reactive Performance</strong> to check how the selected RTD behaves against the four reference models.</li>
+        <li>Use <strong>Optimization</strong> only after the objective, chemistry, and RTD source already make engineering sense.</li>
+      </ol>
+      <div class="callout success">
+        <strong>Good practice:</strong> treat Tab 5 as a decision workspace built on top of previous tabs, not as a replacement for building RTDs or chemistry from scratch.
+      </div>
+    </section>
+    <section class="section" id="best-for">
+      <h2>What This Tab Is Best For</h2>
+      <ul>
+        <li>Comparing the real RTD against equivalent hydrodynamic families.</li>
+        <li>Keeping chemistry, RTD source, and design reasoning in one place.</li>
+        <li>Running process-side screening studies without touching the original RTD definition.</li>
+      </ul>
+      <div class="grid-2">
+        <div>
+          <h3>Use Tab 5 when...</h3>
+          <ul>
+            <li>You want one design workspace instead of jumping across several tabs.</li>
+            <li>You need to compare original and fitted RTD interpretations under the same chemistry.</li>
+            <li>You want optimization to happen on process inputs rather than on hydrodynamic parameters.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Do not use Tab 5 as a substitute for...</h3>
+          <ul>
+            <li>Building the RTD from scratch.</li>
+            <li>Fixing a questionable chemistry definition.</li>
+            <li>Skipping the first direct full-RTD reading in Prediction Models.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Common Mistakes Across the Workspace</h2>
+      <ul>
+        <li>Trusting a fitted family before checking whether the underlying RTD is already well understood in Tab 1.</li>
+        <li>Moving to Optimization before checking in Reactive Performance whether the chosen RTD source produces sensible trends.</li>
+        <li>Interpreting the best numerical score or the best scalar objective as automatically the best engineering story.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-5-diagnosis-fit.html">Open Diagnosis &amp; Fit</a>
+        <a class="button alt" href="tab-5-reactive-performance.html">Open Reactive Performance</a>
+        <a class="button alt" href="tab-5-optimization.html">Open Optimization</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

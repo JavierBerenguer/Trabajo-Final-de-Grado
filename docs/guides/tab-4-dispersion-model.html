@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 4 - Dispersion Model</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Tab 4 - Dispersion Model</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Axial Dispersion</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Tab 4 - Dispersion Model</h1>
+          <p>This tab interprets the reactor through axial dispersion, usually via <code>Pe</code> or the equivalent internal dispersion number <code>Bo = 1/Pe</code>. It can use different boundary conditions and therefore must be read more carefully than Tabs 2 and 3.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#boundary">Boundary conditions</a></li>
+            <li><a href="#when">When to prefer this tab</a></li>
+            <li><a href="#controls">Main controls</a></li>
+            <li><a href="#results">Result area</a></li>
+            <li><a href="#mistakes">Typical mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="boundary">
+      <h2>Boundary Conditions Matter</h2>
+      <table>
+        <tr>
+          <th>Boundary mode</th>
+          <th>Current role in the app</th>
+        </tr>
+        <tr><td>Closed-closed</td><td>General reactive route available in the current implementation.</td></tr>
+        <tr><td>Open-open</td><td>Allowed only when the kinetics satisfy the current exact-support condition checked by the app.</td></tr>
+      </table>
+      <div class="callout warn">
+        <strong>Important:</strong> the app now warns and stops if the chosen kinetics are not compatible with the exact open-open route. It does not silently switch to an alternative approximation.
+      </div>
+    </section>
+    <section class="section">
+      <h2>Representative Computed View</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab4_disp_computed.png" alt="Computed Dispersion Model tab with outlet concentration versus Peclet, conversion versus Peclet, and E(t) view">
+        <figcaption>Representative closed-closed dispersion calculation. The tab combines Peclet-based sweeps with an <code>E(t)</code> view of the equivalent dispersion RTD.</figcaption>
+      </figure>
+    </section>
+    <section class="section" id="when">
+      <h2>When to Prefer This Tab</h2>
+      <ul>
+        <li>When you want to interpret the RTD with a dispersion parameter rather than with an integer-like cascade size.</li>
+        <li>When Peclet-number language is more natural for the problem you are studying.</li>
+        <li>When you want to compare the RTD and reactive behavior under explicit boundary assumptions.</li>
+      </ul>
+    </section>
+    <section class="section" id="controls">
+      <h2>Main Controls and Practical Meaning</h2>
+      <table>
+        <tr>
+          <th>Control or concept</th>
+          <th>How to interpret it</th>
+        </tr>
+        <tr><td>Manual / From Calculated Data</td><td>Determines whether the dispersion route is driven by imported RTD information or by local parameter entry.</td></tr>
+        <tr><td><code>Pe</code></td><td>The visible user-facing dispersion measure; large values approach plug-flow-like behavior.</td></tr>
+        <tr><td><code>Bo = 1/Pe</code></td><td>The reciprocal internal representation used in the implementation.</td></tr>
+        <tr><td>Boundary selector</td><td>Changes not only the hydrodynamic interpretation but also which reactive route is admissible.</td></tr>
+        <tr><td>Chemistry loading</td><td>Defines whether the tab can compute reactive outlet and conversion sweeps at all.</td></tr>
+      </table>
+      <div class="callout info">
+        <strong>Useful engineering reading:</strong> low <code>Pe</code> means stronger axial spreading and therefore behavior closer to backmixed limits; high <code>Pe</code> means sharper age separation and therefore behavior closer to plug flow.
+      </div>
+      <p>For a direct comparison between Dispersion, Tanks-in-Series, and the full-RTD route, see the <a href="appendix-model-selection.html">Model Selection guide</a>.</p>
+    </section>
+    <section class="section" id="results">
+      <h2>How to Read the Result Area</h2>
+      <table>
+        <tr>
+          <th>Panel</th>
+          <th>What it tells you</th>
+        </tr>
+        <tr><td>Outlet Concentration vs Pe</td><td>How each selected species approaches stronger backmixing or more plug-flow-like behavior as dispersion changes.</td></tr>
+        <tr><td>Conversion vs Pe</td><td>Where the current dispersion state lies relative to the ideal CSTR and ideal PFR references.</td></tr>
+        <tr><td>E(t) - Dispersion</td><td>The RTD shape implied by the current dispersion parameter and boundary condition.</td></tr>
+      </table>
+      <div class="grid-2">
+        <div>
+          <h3>Closed-closed in practice</h3>
+          <p>This is the general reactive route currently available in the implementation and is the safer default when you want the dispersion interpretation without extra kinetic restrictions.</p>
+        </div>
+        <div>
+          <h3>Open-open in practice</h3>
+          <p>Use this only when the boundary assumption is truly relevant and the current kinetics satisfy the exact support condition enforced by the app.</p>
+        </div>
+      </div>
+      <p>If you need a refresher on the RTD side of the interpretation before judging the reactive differences, use the <a href="appendix-rtd-interpretation.html">RTD Interpretation appendix</a>.</p>
+    </section>
+    <section class="section">
+      <h2>Typical Questions to Ask Yourself</h2>
+      <ul>
+        <li>Does my problem call for open-open or closed-closed boundaries?</li>
+        <li>Are the kinetics compatible with the exact route currently implemented for open-open?</li>
+        <li>Am I interpreting a fitted equivalent model, or do I really want the full experimental RTD route from Tab 2?</li>
+      </ul>
+      <div class="callout success">
+        <strong>Good habit:</strong> if the hydrodynamic conclusion changes strongly between TIS and Dispersion, revisit the RTD in Tab 1 and the direct full-RTD reading in Tab 2 before trusting either surrogate too quickly.
+      </div>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Typical Mistakes</h2>
+      <ul>
+        <li>Confusing the visible <code>Pe</code> input with the internal dispersion number <code>Bo = 1/Pe</code>.</li>
+        <li>Using open-open with unsupported kinetics and expecting the app to continue with a hidden approximation.</li>
+        <li>Interpreting a good dispersion fit as proof that the physical reactor really has one unique dispersion mechanism.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-5-design-optimization.html">Next: Design &amp; Optimization</a>
+        <a class="button alt" href="appendix-results-interpretation.html">See results appendix</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

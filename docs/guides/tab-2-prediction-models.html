@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 2 - Prediction Models</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+        <a href="tab-1-rtd-analysis.html">Tab 1</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Tab 2 - Prediction Models</span>
+    </div>
+
+    <section class="hero">
+      <span class="kicker">Reactive Bounds</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Tab 2 - Prediction Models</h1>
+          <p>This tab is the first reactive checkpoint of the app. It combines an RTD with a reaction system and a feed stream, then compares <strong>Segregation</strong>, <strong>Maximum Mixedness</strong>, <strong>Ideal CSTR</strong>, and <strong>Ideal PFR</strong>.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#inputs">Inputs and prerequisites</a></li>
+            <li><a href="#workflow">Typical workflow</a></li>
+            <li><a href="#models">Models compared</a></li>
+            <li><a href="#results">Result area</a></li>
+            <li><a href="#map">Macromixing / Micromixing map</a></li>
+            <li><a href="#mistakes">Typical mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section" id="inputs">
+      <h2>Inputs and Prerequisites</h2>
+      <ul>
+        <li>You need an RTD first.</li>
+        <li>You also need a valid <code>ReactionSys</code> and a valid <code>Stream</code>.</li>
+        <li>The tab supports manual loading or <strong>From Calculated Data</strong>, which reuses the RTD and chemistry already prepared upstream.</li>
+      </ul>
+      <div class="callout info">
+        <strong>Why this tab matters:</strong> it is usually the best place to decide whether the RTD and the chemistry together produce sensible reactor behavior before switching to equivalent models or design tasks.
+      </div>
+    </section>
+
+    <section class="section" id="workflow">
+      <h2>Typical Workflow</h2>
+      <ol>
+        <li>Generate or import the RTD first in <a href="tab-1-rtd-analysis.html">Tab 1</a>.</li>
+        <li>Select whether the tab will operate in <strong>Manual</strong> mode or <strong>From Calculated Data</strong>.</li>
+        <li>Load or inherit a valid <code>ReactionSys</code> and <code>Stream</code>.</li>
+        <li>Press <strong>Compute</strong>.</li>
+        <li>Use the local display selectors to inspect different reactants or species without changing the underlying calculation.</li>
+      </ol>
+      <figure class="figure-card">
+        <img src="../assets/tab2_prediction_computed.png" alt="Prediction Models tab with computed conversion comparison, outlet concentration, and macromixing map">
+        <figcaption>Representative computed view of <strong>Prediction Models</strong>. The upper plots summarize conversion and outlet concentration, the lower-left table keeps all species visible, and the lower-right map condenses the RTD and micromixing interpretation.</figcaption>
+      </figure>
+    </section>
+
+    <section class="section" id="models">
+      <h2>What the Tab Compares</h2>
+      <table>
+        <tr>
+          <th>Model</th>
+          <th>Interpretation</th>
+        </tr>
+        <tr><td>Segregation</td><td>Mixing occurs only at the macroscopic RTD level. Molecules of different ages do not micromix ideally.</td></tr>
+        <tr><td>Maximum Mixedness</td><td>Represents the opposite micromixing limit relative to Segregation for the same RTD.</td></tr>
+        <tr><td>Ideal CSTR</td><td>Perfectly mixed reference reactor.</td></tr>
+        <tr><td>Ideal PFR</td><td>Plug-flow reference reactor.</td></tr>
+      </table>
+      <div class="callout info">
+        <strong>Engineering reading:</strong> this tab is not fitting a new hydrodynamic model. It is asking how the same chemistry behaves when the real RTD is interpreted through different mixing assumptions and ideal reference limits.
+      </div>
+      <p>If you are deciding whether to stay in this full-RTD route or move to an equivalent-model tab, see the <a href="appendix-model-selection.html">Model Selection guide</a>.</p>
+    </section>
+
+    <section class="section" id="results">
+      <h2>How to Read the Result Area</h2>
+      <ul>
+        <li><strong>Conversion, concentration, and reactant selectors</strong> control the plots but the exit summary table keeps all species visible.</li>
+        <li><strong>Functional reactants</strong> are the species for which conversion is meaningful in the current chemistry and inlet state.</li>
+        <li><strong>Product species</strong> are shown mainly through outlet concentration, not through conversion.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>Area</th>
+          <th>What it tells you</th>
+        </tr>
+        <tr><td>Conversion Comparison</td><td>How the same reactant conversion moves between the four model interpretations.</td></tr>
+        <tr><td>Outlet Concentration</td><td>How all selected species leave the reactor under each model.</td></tr>
+        <tr><td>Exit Summary</td><td>A compact species-by-species view of inlet concentration, outlet concentration, species role, and conversions where meaningful.</td></tr>
+        <tr><td>Macromixing / Micromixing Map</td><td>A normalized visual summary of RTD effect and micromixing effect.</td></tr>
+      </table>
+      <p>For a deeper reading of how these summary tables should be interpreted, especially when model differences are small, see the <a href="appendix-results-interpretation.html">Results Interpretation appendix</a>.</p>
+    </section>
+
+    <section class="section" id="map">
+      <h2>Macromixing / Micromixing Map</h2>
+      <p>The lower-right panel is a normalized triangular visual aid. It is not a direct conversion axis. Instead, it places the current RTD between the ideal PFR side and the RTD-of-a-CSTR side, while also showing the micromixing gap between Segregation and Maximum Mixedness for the same RTD.</p>
+      <ul>
+        <li>The horizontal coordinate is a visual normalization of the RTD effect.</li>
+        <li>The vertical separation between the experimental Segregation point and the experimental Maximum Mixedness point is the micromixing effect for that RTD.</li>
+        <li>The two experimental points are vertically aligned because they use the same RTD and differ only in the micromixing assumption.</li>
+      </ul>
+      <div class="callout success">
+        <strong>Interpretation shortcut:</strong> if Segregation and Maximum Mixedness nearly coincide, the micromixing sensitivity is weak for the current kinetics, even if the RTD itself still differs from an ideal reactor.
+      </div>
+    </section>
+
+    <section class="section" id="mistakes">
+      <h2>Typical Mistakes and How to Avoid Them</h2>
+      <table>
+        <tr>
+          <th>Problem</th>
+          <th>What to check</th>
+        </tr>
+        <tr><td>The plots stay empty after loading a session</td><td>Press <strong>Compute</strong>. A restored session may recover state without forcing a new reactive evaluation.</td></tr>
+        <tr><td>The reactant selector is disabled</td><td>There may be no functional reactants for the currently loaded chemistry and inlet state.</td></tr>
+        <tr><td>The tab says it is importing from Tab 1 but still cannot compute</td><td>Confirm that Tab 1 really holds not only an RTD but also the intended <code>ReactionSys</code> and <code>Stream</code>.</td></tr>
+        <tr><td>The map looks crowded near a corner</td><td>This usually means the current RTD behaves very close to an ideal limit or the micromixing gap is very small.</td></tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="tab-3-tanks-in-series.html">Next: Tanks-in-Series</a>
+        <a class="button alt" href="appendix-results-interpretation.html">See results appendix</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

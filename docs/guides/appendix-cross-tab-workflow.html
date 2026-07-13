@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - Cross-Tab Workflow</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - Cross-Tab Workflow</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>How Objects, Computations, and Sessions Move Across Tabs</h1>
+          <p>This appendix explains the practical workflow behavior that is easy to miss when using the app for the first time: which objects are foundational, what later tabs inherit, what later tabs recompute, and why a saved session can restore state without automatically repainting every derived result block.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#objects">Foundational objects</a></li>
+            <li><a href="#handoff">How tabs hand off information</a></li>
+            <li><a href="#compute">When you still need Compute</a></li>
+            <li><a href="#sessions">What restored sessions really restore</a></li>
+            <li><a href="#mistakes">Typical workflow mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="objects">
+      <h2>Foundational Objects</h2>
+      <table>
+        <tr>
+          <th>Object</th>
+          <th>Why it is foundational</th>
+        </tr>
+        <tr><td><code>RTD</code></td><td>Defines the hydrodynamic description used directly or indirectly by Tabs 2-5.</td></tr>
+        <tr><td><code>ReactionSys</code></td><td>Defines stoichiometry and kinetics for all reactive routes.</td></tr>
+        <tr><td><code>Stream</code></td><td>Defines the inlet state later converted into concentrations and reactor-model inputs.</td></tr>
+      </table>
+      <div class="callout info">
+        <strong>Core rule:</strong> later tabs are usually not fixing missing foundations. They assume these objects already exist in a coherent form.
+      </div>
+    </section>
+    <section class="section" id="handoff">
+      <h2>How Tabs Hand Off Information</h2>
+      <table>
+        <tr>
+          <th>From</th>
+          <th>To</th>
+          <th>What is typically handed off</th>
+        </tr>
+        <tr><td>Tab 1</td><td>Tabs 2-5</td><td>The main RTD and its moments, plus optionally already loaded chemistry objects.</td></tr>
+        <tr><td>Tab 2</td><td>Tabs 3 and 4</td><td>Reactive context and sometimes imported chemistry for equivalent-model studies.</td></tr>
+        <tr><td>Tab 5 Diagnosis &amp; Fit</td><td>Tab 5 Reactive Performance / Optimization</td><td>A fitted RTD option that can be selected alongside the original Tab 1 RTD.</td></tr>
+        <tr><td>Tab 5 Reactive Performance</td><td>Tab 5 Optimization</td><td>The chemistry-oriented context and the practical check that the chosen RTD source makes sense before optimization.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="compute">
+      <h2>When You Still Need Compute</h2>
+      <p>Restoring or selecting an object is not always the same as rebuilding every display artifact derived from that object. Some tabs store enough state to repaint more directly; others still need a fresh computation to regenerate their displayed summaries, plots, or comparison tables.</p>
+      <ul>
+        <li>If a view looks configured but still blank, try <strong>Compute</strong> before assuming the session is broken.</li>
+        <li>If a tab offers a "From Calculated Data" route, confirm that the upstream calculation really exists and matches the intended session state.</li>
+        <li>If you changed units or a selector, ask whether that action only re-expresses results or whether it requires a new numerical solve.</li>
+      </ul>
+      <div class="callout success">
+        <strong>Simple practical habit:</strong> think in two layers: state restoration first, result regeneration second.
+      </div>
+    </section>
+    <section class="section" id="sessions">
+      <h2>What Restored Sessions Really Restore</h2>
+      <ul>
+        <li>They restore the saved configuration and the app state that was serialized at save time.</li>
+        <li>They do not guarantee that every computed visual block will be freshly rebuilt unless the current tab logic does that automatically.</li>
+        <li>They are best understood as restoring context, not as magically re-solving every model route on load.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>If you observe...</th>
+          <th>First interpretation</th>
+        </tr>
+        <tr><td>The correct RTD source is visible but a downstream plot is empty</td><td>The view may need a fresh <code>Compute</code>.</td></tr>
+        <tr><td>The right chemistry names appear but tables remain stale</td><td>The objects are present, but the active tab may not have rebuilt its result cache yet.</td></tr>
+        <tr><td>An equivalent-model tab looks inconsistent with Tab 1</td><td>Check whether it is reusing imported data, a local parameter mode, or an older computed context.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Typical Workflow Mistakes</h2>
+      <ul>
+        <li>Expecting every tab to be self-sufficient even when the current design is intentionally upstream-dependent.</li>
+        <li>Confusing "the controls show the right names" with "the current view has already recomputed the derived results".</li>
+        <li>Jumping into Optimization before verifying the RTD and chemistry together in Prediction Models or Reactive Performance.</li>
+        <li>Using "From Calculated Data" without confirming that the upstream source really belongs to the current session state.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="appendix-units-and-objects.html">Back to units and objects</a>
+        <a class="button alt" href="tab-5-design-optimization.html">Go to Tab 5 overview</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

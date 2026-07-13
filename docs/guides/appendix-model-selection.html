@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - Model Selection Guide</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - Model Selection Guide</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>How to Choose Between the Main Model Routes</h1>
+          <p>This appendix is for the question that appears after you already have an RTD and chemistry: should you stay with the direct RTD route, switch to Tanks-in-Series, use Dispersion Model, or move into the Tab 5 workspace? The answer depends less on which tab looks more advanced and more on which engineering question you are trying to answer.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#matrix">Decision matrix</a></li>
+            <li><a href="#use-cases">Typical use cases</a></li>
+            <li><a href="#tradeoffs">Main tradeoffs</a></li>
+            <li><a href="#mistakes">Selection mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="matrix">
+      <h2>Decision Matrix</h2>
+      <table>
+        <tr>
+          <th>Route</th>
+          <th>Best when...</th>
+          <th>Main strength</th>
+          <th>Main limitation</th>
+        </tr>
+        <tr><td><a href="tab-2-prediction-models.html">Prediction Models</a></td><td>You want the first direct reactive reading of the real RTD.</td><td>Keeps the full RTD rather than compressing it into one surrogate parameter.</td><td>It is a comparison route, not a compact equivalent-model language.</td></tr>
+        <tr><td><a href="tab-3-tanks-in-series.html">Tanks-in-Series</a></td><td>You want an interpretable one-parameter equivalent based on <code>N</code>.</td><td>Easy to communicate as progressive backmixing through an equivalent cascade.</td><td>It compresses the RTD into a surrogate that may hide shape details.</td></tr>
+        <tr><td><a href="tab-4-dispersion-model.html">Dispersion Model</a></td><td>You want a Peclet-based hydrodynamic interpretation and explicit boundary-condition reasoning.</td><td>Natural language for axial dispersion problems and boundary-condition sensitivity.</td><td>Needs more care in interpretation and has route-specific restrictions.</td></tr>
+        <tr><td><a href="tab-5-design-optimization.html">Tab 5 workspace</a></td><td>You want fit, consolidated reactive comparison, or process-side optimization.</td><td>Keeps design tasks in one place and lets you compare original vs fitted RTD sources.</td><td>It assumes the upstream RTD and chemistry are already trustworthy.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="use-cases">
+      <h2>Typical Use Cases</h2>
+      <div class="grid-2">
+        <div>
+          <h3>Stay in Prediction Models when...</h3>
+          <ul>
+            <li>You want the least compressed reading of how the real RTD affects reaction outcomes.</li>
+            <li>You need to compare Segregation and Maximum Mixedness directly on the original RTD.</li>
+            <li>You are still validating whether the RTD and chemistry together make sense at all.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Move to TIS when...</h3>
+          <ul>
+            <li>You want a simple equivalent-reactor narrative built around one parameter.</li>
+            <li>You need to discuss non-ideality as a degree of backmixing rather than as a full RTD curve.</li>
+            <li>You are comfortable with a cascade surrogate and do not need every RTD detail preserved explicitly.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3>Move to Dispersion when...</h3>
+          <ul>
+            <li>Your problem is naturally framed in axial-dispersion language.</li>
+            <li>You care about the meaning of boundary assumptions.</li>
+            <li>You want to interpret the RTD through <code>Pe</code> / <code>Bo</code> rather than through an equivalent cascade size.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Move to Tab 5 when...</h3>
+          <ul>
+            <li>You want to fit an equivalent RTD family first and then reuse it in design tasks.</li>
+            <li>You want a four-model comparison inside the same workspace that later hosts Optimization.</li>
+            <li>You want process-side optimization with a fixed RTD rather than hydrodynamic tuning.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="tradeoffs">
+      <h2>Main Tradeoffs to Keep in Mind</h2>
+      <table>
+        <tr>
+          <th>Tradeoff</th>
+          <th>What it means</th>
+        </tr>
+        <tr><td>Full RTD vs surrogate model</td><td>Prediction Models preserves the full RTD logic; TIS and Dispersion compress that logic into an equivalent interpretation.</td></tr>
+        <tr><td>Interpretability vs fidelity to shape</td><td>Equivalent models are often easier to explain, but they may hide useful RTD-shape details.</td></tr>
+        <tr><td>Generality vs assumption load</td><td>Some routes are broader screening tools, while others introduce stronger interpretive assumptions or kinetic restrictions.</td></tr>
+        <tr><td>Hydrodynamic reading vs design decision</td><td>Tabs 2-4 focus on understanding or approximating hydrodynamics; Tab 5 focuses on design-oriented decisions built on top of them.</td></tr>
+      </table>
+      <div class="callout warn">
+        <strong>Most common shortcut to avoid:</strong> choosing the most "advanced-looking" tab is not the same as choosing the most appropriate one. A simpler route is often better if it answers the real question more directly.
+      </div>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Typical Selection Mistakes</h2>
+      <ul>
+        <li>Leaving Prediction Models too early before verifying that the original RTD and chemistry already produce sensible behavior.</li>
+        <li>Using TIS or Dispersion as if they were automatically more rigorous than the direct RTD route.</li>
+        <li>Moving into Optimization when the real uncertainty still sits in RTD interpretation or chemistry definition.</li>
+        <li>Choosing Dispersion Model only because <code>Pe</code> is familiar, without checking whether its boundary assumptions match the problem.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-2-prediction-models.html">Back to Prediction Models</a>
+        <a class="button alt" href="tab-5-design-optimization.html">Go to Tab 5 overview</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

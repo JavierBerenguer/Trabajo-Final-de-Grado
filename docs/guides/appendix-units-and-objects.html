@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - Units and Shared Objects</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - Units and Shared Objects</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Units, RTD, ReactionSys, and Stream</h1>
+          <p>This appendix explains the common objects that move across tabs and the internal SI convention that keeps the numerical core consistent. If later tabs seem to disagree with what you thought you loaded, the issue is often in object state or unit interpretation rather than in the solver itself.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#si">Internal SI convention</a></li>
+            <li><a href="#flow">Object flow</a></li>
+            <li><a href="#rtd">RTD</a></li>
+            <li><a href="#rs">ReactionSys</a></li>
+            <li><a href="#stream">Stream</a></li>
+            <li><a href="#display">Display units</a></li>
+            <li><a href="#mistakes">Cross-tab mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="si">
+      <h2>Internal SI Convention</h2>
+      <ul>
+        <li>Time: <code>s</code></li>
+        <li>Volume: <code>m^3</code></li>
+        <li>Volumetric flow: <code>m^3/s</code></li>
+        <li>Concentration: <code>mol/m^3</code></li>
+      </ul>
+      <p>Unit dropdowns exist to make input and display convenient, but the core models stay in SI internally.</p>
+      <div class="callout info">
+        <strong>Why this matters:</strong> a value that looks small or large in the UI can still be perfectly correct internally if it has been converted to or from SI. Many apparent inconsistencies are really unit-translation misunderstandings.
+      </div>
+    </section>
+    <section class="section" id="flow">
+      <h2>How Shared Objects Flow Across Tabs</h2>
+      <table>
+        <tr>
+          <th>Object</th>
+          <th>Created or loaded first in...</th>
+          <th>Then reused by...</th>
+        </tr>
+        <tr><td><code>RTD</code></td><td>Tab 1</td><td>Tabs 2-5</td></tr>
+        <tr><td><code>ReactionSys</code></td><td>Usually Tab 1 or Tab 2</td><td>Tabs 2-5</td></tr>
+        <tr><td><code>Stream</code></td><td>Usually Tab 1 or Tab 2</td><td>Tabs 2-5</td></tr>
+      </table>
+      <p>The tabs do not all duplicate each other. Some inherit objects directly, some cache results, and some expect an earlier tab to have already built the required state.</p>
+    </section>
+    <section class="section" id="rtd">
+      <h2>RTD</h2>
+      <p>The <code>RTD</code> object stores the residence time distribution, its moments, and metadata associated with its origin or family. It is generated first because later calculations depend on it.</p>
+      <ul>
+        <li>Tab 1 builds it directly.</li>
+        <li>Tab 2 consumes it as the real hydrodynamic input for Segregation and Maximum Mixedness.</li>
+        <li>Tabs 3 and 4 can derive equivalent hydrodynamic models from it.</li>
+        <li>Tab 5 uses either the Tab 1 RTD or a fitted RTD derived inside Diagnosis &amp; Fit.</li>
+      </ul>
+    </section>
+    <section class="section" id="rs">
+      <h2>ReactionSys</h2>
+      <p>The <code>ReactionSys</code> object stores stoichiometry and kinetics. The app assumes that the entered rate expressions are consistent with the stoichiometric matrix.</p>
+      <div class="callout warn">
+        <strong>Important:</strong> when the user writes custom kinetics, the app expects reaction-rate expressions that are consistent with the stoichiometric definition. A visually plausible formula can still be wrong if it is tied to the wrong species-balance convention.
+      </div>
+      <ul>
+        <li>Species order matters because rate expressions and stoichiometric rows are index-based.</li>
+        <li>Selectors across the app now fall back to names such as <code>CA</code>, <code>CB</code>, <code>CC</code> if explicit component names are unavailable.</li>
+        <li>Some routes, such as Dispersion Model with <code>open-open</code>, impose additional kinetic restrictions.</li>
+      </ul>
+    </section>
+    <section class="section" id="stream">
+      <h2>Stream</h2>
+      <p>The <code>Stream</code> object stores the inlet state used by the reactive routes. In the current Tab 5 Optimization workflow, inlet concentrations are the active manipulated variables.</p>
+      <p>Because the app keeps internal SI consistency, changing the display units of a stream does not change the internal values used by the models.</p>
+      <ul>
+        <li>The stream defines the inlet composition and flow state later converted into <code>C0</code> and related model inputs.</li>
+        <li>Optimization inherits its input concentration units from the loaded stream instead of creating a separate unit system.</li>
+        <li>If later tabs display unexpected concentration magnitudes, verify the stream definition before suspecting the reactor model.</li>
+      </ul>
+    </section>
+    <section class="section" id="display">
+      <h2>Where Display Units Change and Where They Do Not</h2>
+      <table>
+        <tr>
+          <th>Layer</th>
+          <th>What changes</th>
+        </tr>
+        <tr><td>Input widgets</td><td>User-facing values are converted from the chosen unit into internal SI.</td></tr>
+        <tr><td>Core solvers</td><td>Values stay in internal SI for consistency.</td></tr>
+        <tr><td>Result tables and plots</td><td>Values are converted back into the currently selected display units.</td></tr>
+      </table>
+      <p>This is why changing a display unit should change presentation, not the underlying physics.</p>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Common Cross-Tab Mistakes</h2>
+      <table>
+        <tr>
+          <th>Symptom</th>
+          <th>Usually check first</th>
+        </tr>
+        <tr><td>A later tab says an object is missing</td><td>Whether it was actually generated or loaded in the current session, not just configured partially.</td></tr>
+        <tr><td>Values look off by a factor of 1000</td><td>Concentration or volume unit interpretation.</td></tr>
+        <tr><td>Species names look generic</td><td>Whether explicit component names were defined; otherwise the fallback naming is expected.</td></tr>
+        <tr><td>Optimization bounds seem strange</td><td>Remember that displayed bounds follow the inherited input unit, while the solver still works in SI.</td></tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="appendix-reaction-and-stream-setup.html">Open setup appendix</a>
+        <a class="button alt" href="appendix-results-interpretation.html">Open results appendix</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

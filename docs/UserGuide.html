@@ -4,377 +4,248 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Non-Ideal Reactor Analysis - User Guide</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f4f1ea;
-      --panel: #fffdf8;
-      --ink: #1f2933;
-      --muted: #52606d;
-      --line: #d9d2c3;
-      --accent: #a33b20;
-      --accent-soft: #f8e6df;
-      --code: #f1efe9;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(180deg, #efe8dc 0%, #f8f5ee 100%);
-      color: var(--ink);
-      line-height: 1.55;
-    }
-
-    .page {
-      max-width: 1040px;
-      margin: 0 auto;
-      padding: 28px 24px 40px;
-    }
-
-    .hero {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 28px 32px;
-      box-shadow: 0 12px 28px rgba(31, 41, 51, 0.08);
-      margin-bottom: 24px;
-    }
-
-    h1, h2, h3 {
-      margin-top: 0;
-      color: #12212f;
-    }
-
-    h1 {
-      font-size: 2rem;
-      margin-bottom: 10px;
-    }
-
-    h2 {
-      font-size: 1.45rem;
-      margin-bottom: 10px;
-      padding-bottom: 8px;
-      border-bottom: 2px solid var(--accent-soft);
-    }
-
-    h3 {
-      font-size: 1.05rem;
-      margin-bottom: 8px;
-    }
-
-    p, li {
-      font-size: 0.97rem;
-    }
-
-    .meta {
-      color: var(--muted);
-    }
-
-    .section {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 24px 28px;
-      box-shadow: 0 12px 28px rgba(31, 41, 51, 0.05);
-      margin-bottom: 18px;
-    }
-
-    code, pre {
-      font-family: Consolas, "Courier New", monospace;
-      background: var(--code);
-      border-radius: 8px;
-    }
-
-    code {
-      padding: 0.1rem 0.3rem;
-    }
-
-    pre {
-      padding: 14px 16px;
-      overflow-x: auto;
-      border: 1px solid var(--line);
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 12px 0 18px;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    th, td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid #e6e0d5;
-      vertical-align: top;
-    }
-
-    th {
-      background: #f7f1e6;
-      color: #22313f;
-    }
-
-    tr:last-child td {
-      border-bottom: none;
-    }
-
-    ul, ol {
-      padding-left: 22px;
-      margin-top: 8px;
-    }
-  </style>
+  <link rel="stylesheet" href="assets/guide.css">
 </head>
 <body>
   <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="UserGuide.html">User Guide Home</a>
+        <a href="TechnicalChapter.html">Complete Manual</a>
+        <a href="guides/tab-1-rtd-analysis.html">Tab 1 Guide</a>
+        <a href="guides/appendix-import-formats.html">Import Appendix</a>
+      </nav>
+    </div>
+
     <section class="hero">
-      <h1>Non-Ideal Reactor Analysis - User Guide</h1>
-      <p class="meta"><strong>Version 2.1 - July 2026</strong><br>Javier Berenguer Sabater | TFG - Chemical Engineering</p>
+      <span class="kicker">Unified Help System</span>
+      <div class="hero-grid">
+        <div>
+          <h1>What each tab does, what depends on what, and where to go next</h1>
+          <p>This guide is the entry point for the app help system. It is written for chemical engineering students and engineers who want to understand <strong>which tab to use</strong>, <strong>which objects must exist first</strong>, and <strong>how the workflow connects from RTD definition to reactor prediction and design</strong>.</p>
+          <p class="meta"><strong>Current app scope:</strong> RTD Analysis, prediction-model routes in Tabs 2-4, and Design &amp; Optimization with three subtabs.</p>
+        </div>
+        <aside class="toc">
+          <h2>Quick Access</h2>
+          <ol>
+            <li><a href="#workflow">Recommended workflow</a></li>
+            <li><a href="#dependencies">Tab dependency map</a></li>
+            <li><a href="#choose-tab">Which tab should I use?</a></li>
+            <li><a href="#detailed-guides">Detailed guides</a></li>
+            <li><a href="#appendices">Appendices</a></li>
+          </ol>
+        </aside>
+      </div>
     </section>
 
-    <section class="section">
-      <h2>Quick Start</h2>
-      <pre><code>% Launch the application
-app = NonIdealReactorApp;</code></pre>
-      <p>The main window includes <strong>5 tabs</strong>, a <strong>File</strong> menu, a <strong>Tools</strong> menu, a <strong>Help</strong> menu, and a status bar at the bottom.</p>
-
-      <h3>Working with Units</h3>
-      <ul>
-        <li>Most numeric inputs include a unit dropdown next to the field.</li>
-        <li>You can type values directly in your preferred units.</li>
-        <li>Several fields also accept simple expressions such as <code>10/60</code> or <code>2*5</code>.</li>
-        <li>Experimental RTD sources and <code>C(t)</code> equations include time-unit selectors.</li>
-        <li>Each main tab includes local <strong>Display units</strong> controls for plots and results.</li>
-        <li>Internal calculations remain in SI, so unit changes only affect input and display layers.</li>
-      </ul>
+    <section class="section" id="workflow">
+      <h2>Minimum Recommended Workflow</h2>
+      <p>If you are new to the app, follow this sequence before exploring specialized options. It mirrors the dependency logic of the current implementation and reduces most "missing object" or "why is this result strange?" situations.</p>
+      <div class="flow">
+        <div class="flow-step">
+          <strong>1. Build or import the RTD in Tab 1</strong>
+          Start in <a href="guides/tab-1-rtd-analysis.html">RTD Analysis</a>. This tab is the hydrodynamic entry point of the whole app. It generates the RTD, computes its moments, and can already hold a <code>ReactionSys</code> and a <code>Stream</code>.
+        </div>
+        <div class="flow-step">
+          <strong>2. Use Tab 2 if you want the direct RTD prediction route</strong>
+          Use <a href="guides/tab-2-prediction-models.html">Prediction Models</a> when you want the first reactive answer with the real RTD: Segregation, Maximum Mixedness, Ideal CSTR, and Ideal PFR.
+        </div>
+        <div class="flow-step">
+          <strong>3. Use Tab 3 or Tab 4 if you want a one-parameter prediction route</strong>
+          Go to <a href="guides/tab-3-tanks-in-series.html">Tanks-in-Series</a> or <a href="guides/tab-4-dispersion-model.html">Dispersion Model</a> when you want a one-parameter reactor interpretation that still depends directly on the RTD built in Tab 1.
+        </div>
+        <div class="flow-step">
+          <strong>4. Move to Tab 5 for fit, consolidated reactive comparison, or optimization</strong>
+          Use <a href="guides/tab-5-design-optimization.html">Design &amp; Optimization</a> after the RTD is already meaningful and the chemistry is loaded.
+        </div>
+      </div>
+      <div class="callout info">
+        <strong>Helpful companion:</strong> if you want a cross-tab explanation of how objects move, how restored sessions behave, and why a later tab may still need a fresh <code>Compute</code>, read the <a href="guides/appendix-cross-tab-workflow.html">Cross-Tab Workflow appendix</a>.
+      </div>
     </section>
 
-    <section class="section">
-      <h2>Tab 1: RTD Analysis</h2>
-      <p><strong>Purpose:</strong> Generate or import a residence time distribution <code>E(t)</code> and calculate its main moments.</p>
+    <section class="section" id="dependencies">
+      <h2>Tab Dependency Map</h2>
+      <div class="dependency-map">
+        <div class="dependency-row">
+          <div class="node core">
+            <strong>Tab 1 - RTD Analysis</strong>
+            <p>Creates the RTD and its moments. This is the foundational hydrodynamic tab.</p>
+          </div>
+          <div class="arrow">-&gt;</div>
+          <div class="node shared">
+            <strong>Shared objects</strong>
+            <p><code>RTD</code>, optional <code>ReactionSys</code>, optional <code>Stream</code>.</p>
+          </div>
+        </div>
+        <div class="dependency-row">
+          <div class="node">
+            <strong>Tabs 2, 3, and 4 - Prediction routes</strong>
+            <p>These are all prediction-model tabs: Tab 2 keeps the direct RTD route, while Tabs 3 and 4 use one-parameter equivalent interpretations.</p>
+          </div>
+          <div class="arrow">-&gt;</div>
+          <div class="node">
+            <strong>Direct dependency</strong>
+            <p>All three depend directly on Tab 1 as their hydrodynamic source and can optionally obtain both the reactive system and input data as well.</p>
+          </div>
+        </div>
+        <div class="dependency-row">
+          <div class="node">
+            <strong>Tab 5 - Design &amp; Optimization</strong>
+            <p>Starts from the RTD of Tab 1 and organizes fit, reactive comparison, and optimization inside one workspace.</p>
+          </div>
+          <div class="arrow">-&gt;</div>
+          <div class="node">
+            <strong>Subtabs</strong>
+            <p>Diagnosis &amp; Fit, Reactive Performance, and Optimization each reuse part of the same internal state.</p>
+          </div>
+        </div>
+      </div>
+      <div class="callout info">
+        <strong>Main practical rule:</strong> if something in a later tab says an RTD, a reaction system, or a feed stream is missing, go back to the nearest upstream tab and confirm that the object has really been created and loaded there.
+      </div>
+      <figure class="figure-card">
+        <img src="assets/tab1_generated_overview.png" alt="Application overview focused on RTD Analysis">
+        <figcaption>Representative app view at the RTD stage. Later tabs reuse this hydrodynamic foundation instead of rebuilding it independently.</figcaption>
+      </figure>
+    </section>
 
-      <h3>Available RTD Sources</h3>
+    <section class="section" id="choose-tab">
+      <h2>Which Tab Should I Use?</h2>
       <table>
-        <tr><th>Source</th><th>Description</th></tr>
-        <tr><td>Ideal CSTR</td><td>Exponential RTD for a perfectly mixed reactor</td></tr>
-        <tr><td>Ideal PFR</td><td>Ideal plug-flow reference</td></tr>
-        <tr><td>Tanks-in-Series</td><td>RTD for <code>N</code> equal tanks in series</td></tr>
-        <tr><td>Dispersion (open)</td><td>Axial-dispersion RTD with open-open boundaries</td></tr>
-        <tr><td>Dispersion (closed)</td><td>Axial-dispersion RTD with closed-closed boundaries</td></tr>
-        <tr><td>Laminar Flow</td><td>Laminar-flow RTD</td></tr>
-        <tr><td>Experimental Pulse</td><td>Build RTD from pulse tracer data</td></tr>
-        <tr><td>Experimental Step</td><td>Build RTD from step tracer data</td></tr>
-        <tr><td>C(t) Equation</td><td>Generate RTD from a custom <code>C(t)</code> expression</td></tr>
-        <tr><td>Tabular Input</td><td>Enter time and signal values manually</td></tr>
-      </table>
-
-      <h3>Basic Workflow</h3>
-      <ol>
-        <li>Choose an <strong>RTD Source</strong>.</li>
-        <li>Fill in the required inputs using the field unit dropdowns when available.</li>
-        <li>Click <strong>Generate RTD</strong>.</li>
-        <li>Review the calculated values: <code>tau_m</code>, <code>sigma^2</code>, <code>sigma^2_theta</code>, <code>s^3</code>, <code>N_est</code>, and <code>V_eff</code>.</li>
-        <li>Use <strong>Display units</strong> to inspect time and volume in other units without changing the stored RTD.</li>
-        <li>Use <strong>Export RTD to Workspace</strong> if you want to reuse the RTD in MATLAB.</li>
-      </ol>
-
-      <h3>RTD Utilities</h3>
-      <p>The lower-right <strong>RTD Utilities</strong> panel includes:</p>
-      <ul>
-        <li><strong>F(t) Query:</strong> evaluate <code>F(t)</code> and <code>1 - F(t)</code> at a chosen elapsed time, with a point and guide lines drawn on the <code>F(t)</code> plot.</li>
-        <li><strong>Reaction System:</strong> create, edit, or load a <code>ReactionSys</code> directly from Tab 1.</li>
-        <li><strong>Feed Stream:</strong> create, edit, or load a <code>Stream</code> directly from Tab 1.</li>
-      </ul>
-      <p>If you later set <strong>Tab 2</strong> to <strong>From Calculated Data</strong>, the RTD, <code>ReactionSys</code>, and <code>Stream</code> loaded here are reused automatically.</p>
-
-      <h3>Importing Experimental Data</h3>
-      <ul>
-        <li><strong>From workspace:</strong> provide the names of the time and signal variables in the corresponding fields.</li>
-        <li><strong>Pulse data:</strong> use <code>t</code> in the selected time unit and keep <code>C(t)</code> in a consistent concentration scale.</li>
-        <li><strong>Step data:</strong> use <code>t</code> in the selected time unit and keep the measured outlet response consistent with <code>C0</code>.</li>
-        <li><strong>From file:</strong> click <strong>Import Experimental Data</strong> and choose an <code>.xlsx</code>, <code>.xls</code>, <code>.csv</code>, or <code>.tsv</code> file.</li>
-        <li>For file imports, the first column must contain time and the second column must contain concentration or response.</li>
-        <li>In Excel files, keep the headers in row 1 and the data starting in row 2.</li>
-        <li><strong>Tabular Input:</strong> use <strong>+ Row</strong> and <strong>- Row</strong> to edit the manual table.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>Tab 2: Prediction Models</h2>
-      <p><strong>Purpose:</strong> Estimate conversion limits using the <strong>Segregation</strong> and <strong>Max Mixedness</strong> models and compare them with ideal <code>CSTR</code> and <code>PFR</code> references.</p>
-
-      <h3>Input Modes</h3>
-      <ul>
-        <li><strong>Manual:</strong> load the <code>ReactionSys</code> and <code>Stream</code> directly in Tab 2.</li>
-        <li><strong>From Calculated Data:</strong> reuse the RTD, <code>ReactionSys</code>, and <code>Stream</code> currently loaded in Tab 1.</li>
-      </ul>
-
-      <h3>Workflow</h3>
-      <ol>
-        <li>Generate an RTD first in <strong>Tab 1</strong>.</li>
-        <li>Choose <strong>Manual</strong> or <strong>From Calculated Data</strong>.</li>
-        <li>Load or create a compatible <code>ReactionSys</code>.</li>
-        <li>Load or create a compatible feed <code>Stream</code>.</li>
-        <li>Click <strong>Compute</strong>.</li>
-        <li>Review the plots, the <code>Exit Summary</code> table, and the <code>Non-Ideal Mixing Effect (%)</code> comparison.</li>
-      </ol>
-
-      <h3>Results</h3>
-      <ul>
-        <li><strong>Conversion Comparison:</strong> bar chart for the selected reactants in the fixed model order <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, <code>Ideal PFR</code>.</li>
-        <li><strong>Outlet Concentration:</strong> bar chart for the selected species in the same fixed model order.</li>
-        <li><strong>Exit Summary:</strong> per-species table with inlet and outlet concentrations, and reactant conversion for the four models.</li>
-        <li><strong>Non-Ideal Mixing Effect (%):</strong> compact percentage comparison between <code>Segregation</code> / <code>Max Mixedness</code> and the ideal references.</li>
-        <li><strong>Shared Legend:</strong> both plots use the same colors and a single legend.</li>
-      </ul>
-
-      <h3>Notes</h3>
-      <ul>
-        <li><code>Reactants</code> and <code>Species</code> are independent multiselection controls.</li>
-        <li>The loaded <code>Stream</code> must match the number of components in the loaded <code>ReactionSys</code>.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>Tab 3: Tanks-in-Series (TIS)</h2>
-      <p><strong>Purpose:</strong> Model non-ideal behavior as <code>N</code> equal CSTRs in series and compare it with ideal <code>CSTR</code> and <code>PFR</code> references.</p>
-
-      <h3>N Method</h3>
-      <ul>
-        <li><strong>Manual:</strong> enter <code>N</code> and <code>tau</code> directly.</li>
-        <li><strong>From Calculated Data:</strong> estimate <code>N</code> from the RTD in Tab 1 and import <code>ReactionSys</code> plus <code>Stream</code> from Tab 2 when they are available.</li>
-      </ul>
-
-      <h3>Workflow</h3>
-      <ol>
-        <li>Choose the <strong>N Method</strong>.</li>
-        <li>Set or import <code>N</code> and <code>tau</code>.</li>
-        <li>Load or create the <code>ReactionSys</code>.</li>
-        <li>Load or create the feed <code>Stream</code>.</li>
-        <li>Click <strong>Compute</strong>.</li>
-        <li>Review <code>Outlet Concentration vs N</code>, <code>Conversion vs N</code>, the <code>Exit Summary</code> table, and the <code>E(t)</code> comparison.</li>
-      </ol>
-
-      <h3>Notes</h3>
-      <ul>
-        <li>If <code>N</code> is not an integer, the app still uses it for RTD estimation and reports the equivalent continuous value.</li>
-        <li>The <code>Exit Summary</code> table reports <code>TIS</code>, <code>CSTR</code>, and <code>PFR</code> outlet concentrations and conversions.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>Tab 4: Dispersion Model</h2>
-      <p><strong>Purpose:</strong> Model non-ideal behavior using axial dispersion and compare it with ideal <code>CSTR</code> and <code>PFR</code> references.</p>
-
-      <h3>Input Modes</h3>
-      <ul>
-        <li><strong>Manual:</strong> enter <code>Pe</code>, the boundary condition, and <code>tau</code> directly. The interface shows <code>Bo = 1/Pe</code> as a derived value.</li>
-        <li><strong>From Calculated Data:</strong> estimate <code>Bo</code> from the RTD in Tab 1 and import <code>ReactionSys</code> plus <code>Stream</code> from Tab 2 when they are available.</li>
-      </ul>
-
-      <h3>Boundary Conditions</h3>
-      <ul>
-        <li><strong>closed-closed:</strong> full reactive axial-dispersion model with Danckwerts conditions.</li>
-        <li><strong>open-open:</strong> RTD route kept for hydrodynamics and linear first-order reactive cases only.</li>
-      </ul>
-
-      <h3>Workflow</h3>
-      <ol>
-        <li>Choose the input mode and boundary condition.</li>
-        <li>Set or import <code>Bo</code> and <code>tau</code>.</li>
-        <li>Load or create the <code>ReactionSys</code>.</li>
-        <li>Load or create the feed <code>Stream</code>.</li>
-        <li>Click <strong>Compute</strong>.</li>
-        <li>Review <code>Outlet Concentration vs Pe</code>, <code>Conversion vs Pe</code>, the <code>Exit Summary</code> table, and the <code>E(t)</code> plot with <code>Bo</code>, <code>Pe</code>, and <code>tau</code>.</li>
-      </ol>
-
-      <h3>Display Units and Results</h3>
-      <ul>
-        <li><strong>E(t) Plot:</strong> uses the local <code>Time base</code> selector only.</li>
-        <li><strong>Outlet Concentration vs Pe:</strong> uses the <code>Concentration</code> selector and a multiselect <code>Species</code> list.</li>
-        <li><strong>Conversion vs Pe:</strong> uses a multiselect <code>Reactants</code> list.</li>
-        <li><strong>Exit Summary:</strong> shows <code>C_in</code>, <code>Disp C_out</code>, <code>CSTR C_out</code>, <code>PFR C_out</code>, <code>X_Disp</code>, <code>X_CSTR</code>, and <code>X_PFR</code>.</li>
-        <li>The lower-left table is not filtered by the species/reactant selectors; those selectors only affect the plots.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>Tab 5: Design &amp; Optimization</h2>
-      <p><strong>Purpose:</strong> Work in a single workspace that starts from an RTD and connects equivalent-model fitting, reactive prediction, optimization, and scale-up.</p>
-
-      <h3>Subareas</h3>
-      <ul>
-        <li><strong>Diagnosis &amp; Fit:</strong> fit <code>Tanks-in-Series</code>, <code>Axial Dispersion</code>, <code>CSTR + Dead Volume</code>, <code>CSTR + Bypass</code>, and <code>CSTR + Dead Volume + Bypass</code> to the RTD from Tab 1.</li>
-        <li><strong>Reactive Performance:</strong> compare <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>, and report conversion, selectivity, yield, and outlet concentrations.</li>
-        <li><strong>Optimization:</strong> keep the selected RTD fixed, clone the loaded <code>Feed Stream</code>, and optimize only inlet process variables while preserving the original chemistry and RTD.</li>
-      </ul>
-
-      <h3>Typical Workflow</h3>
-      <ol>
-        <li>In <strong>Tab 1</strong>, generate or import the RTD.</li>
-        <li>In <strong>Diagnosis &amp; Fit</strong>, choose a family and run the fit if you want an equivalent hydrodynamic model.</li>
-        <li>In <strong>Reactive Performance</strong>, load a <code>ReactionSys</code> and a feed <code>Stream</code> from the workspace, choose the key species, and compute the reference models using either <code>Tab 1 RTD</code> or <code>Fitted RTD</code>.</li>
-        <li>In <strong>Optimization</strong>, choose the fixed RTD source, the reaction mode, the contextual species selectors, and the active inlet concentration variables <code>C_in,i</code>.</li>
-      </ol>
-
-      <h3>Notes</h3>
-      <ul>
-        <li>Tab 5 is <strong>isothermal</strong> and <strong>steady-state</strong> in this version.</li>
-        <li>RTD preprocessing belongs to <strong>Tab 1</strong>, so Tab 5 does not include a separate hydrodynamics editor.</li>
-        <li>Optimization has its own species selectors, but it still reuses the <code>ReactionSys</code> and <code>Feed Stream</code> already loaded in <strong>Reactive Performance</strong>.</li>
-        <li>In the current implementation, optimization only exposes <code>C_in,i</code> because, with fixed RTD, those are the inlet variables that directly affect the reactive result.</li>
-        <li>Input units in <strong>Optimization</strong> are inherited from the loaded <code>Feed Stream</code>; the local unit selector is only used to display concentrations in the results tables.</li>
-        <li>The results area includes a short <code>Base vs Optimum</code> table plus one wide comparison table for <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>.</li>
-        <li>Session save/load preserves the Tab 5 workspace through <code>designWorkspace</code>.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>Unit Converter</h2>
-      <p>Open <strong>Tools &gt; Unit Converter</strong> to convert values manually between common engineering units.</p>
-      <p>This tool is optional during normal use, because most scalar inputs in the app already support direct unit selection.</p>
-    </section>
-
-    <section class="section">
-      <h2>Menu Bar</h2>
-      <ul>
-        <li><strong>File &gt; Guardar:</strong> save the current session into the local <code>saves/</code> folder as a <code>.mat</code> file.</li>
-        <li><strong>File &gt; Cargar:</strong> restore a previously saved session, including <code>RTD</code>, <code>ReactionSys</code>, <code>Stream</code>, input fields, and display selections.</li>
-        <li><strong>File &gt; Restart:</strong> reopen the app in a clean state.</li>
-        <li><strong>File &gt; Exit:</strong> close the application.</li>
-        <li><strong>Tools &gt; Unit Converter:</strong> open the unit converter.</li>
-        <li><strong>Help &gt; User Guide:</strong> open this guide inside the app.</li>
-        <li><strong>Help &gt; Technical Guide:</strong> open the engineering-oriented technical chapter.</li>
-        <li><strong>Help &gt; About:</strong> show version and author information.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>Troubleshooting</h2>
-      <table>
-        <tr><th>Problem</th><th>What to check</th></tr>
-        <tr><td>Tabs 2-5 say something is not loaded</td><td>Confirm the required RTD, <code>ReactionSys</code>, or <code>Stream</code> is available in the source tab or workspace.</td></tr>
-        <tr><td>A model cannot compute</td><td>Check that all required inputs are filled in and that the component counts match.</td></tr>
-        <tr><td>Imported data does not work</td><td>Check column order, headers, and unit consistency.</td></tr>
-        <tr><td>A <code>C(t)</code> equation fails</td><td>Use valid MATLAB syntax and element-wise operators such as <code>.*</code>.</td></tr>
-        <tr><td><code>From Calculated Data</code> does not populate chemistry</td><td>Make sure Tab 1 or Tab 2 already holds a valid <code>ReactionSys</code> and <code>Stream</code>.</td></tr>
+        <tr>
+          <th>If your goal is...</th>
+          <th>Go to...</th>
+          <th>Why</th>
+        </tr>
+        <tr>
+          <td>Generate an RTD, import experimental data, or inspect moments</td>
+          <td><a href="guides/tab-1-rtd-analysis.html">Tab 1 - RTD Analysis</a></td>
+          <td>It is the only tab that builds the RTD itself.</td>
+        </tr>
+        <tr>
+          <td>Estimate real-reactor conversion bounds with the measured RTD</td>
+          <td><a href="guides/tab-2-prediction-models.html">Tab 2 - Prediction Models</a></td>
+          <td>It compares Segregation and Maximum Mixedness directly against ideal references.</td>
+        </tr>
+        <tr>
+          <td>Approximate the reactor as N CSTRs in series</td>
+          <td><a href="guides/tab-3-tanks-in-series.html">Tab 3 - Tanks-in-Series</a></td>
+          <td>It turns the RTD into an equivalent cascade model.</td>
+        </tr>
+        <tr>
+          <td>Study an axial-dispersion interpretation</td>
+          <td><a href="guides/tab-4-dispersion-model.html">Tab 4 - Dispersion Model</a></td>
+          <td>It expresses hydrodynamics through <code>Pe</code> / <code>Bo</code> and boundary conditions.</td>
+        </tr>
+        <tr>
+          <td>Fit equivalent families, compare several reactor models together, or optimize inlet conditions</td>
+          <td><a href="guides/tab-5-design-optimization.html">Tab 5 - Design &amp; Optimization</a></td>
+          <td>It is the integrated workspace for design-oriented analysis.</td>
+        </tr>
       </table>
     </section>
 
+    <section class="section" id="detailed-guides">
+      <h2>Detailed Guides</h2>
+      <div class="card-grid">
+        <article class="card">
+          <h3>Tab 1 - RTD Analysis</h3>
+          <p>RTD sources, import routes, equations, moments, overlays, and common pitfalls.</p>
+          <a class="button" href="guides/tab-1-rtd-analysis.html">Open Tab 1 guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 2 - Prediction Models</h3>
+          <p>Segregation, Maximum Mixedness, ideal references, reactant selectors, and result interpretation.</p>
+          <a class="button" href="guides/tab-2-prediction-models.html">Open Tab 2 guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 3 - Tanks-in-Series</h3>
+          <p>Equivalent cascade logic, how N is obtained, and how to interpret the summary outputs.</p>
+          <a class="button" href="guides/tab-3-tanks-in-series.html">Open Tab 3 guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 4 - Dispersion Model</h3>
+          <p>Boundary conditions, Peclet number meaning, supported kinetics, and solver limitations.</p>
+          <a class="button" href="guides/tab-4-dispersion-model.html">Open Tab 4 guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 5 - Design &amp; Optimization</h3>
+          <p>Workspace logic, fit/reactive/optimization subtabs, and how state is shared.</p>
+          <a class="button" href="guides/tab-5-design-optimization.html">Open Tab 5 guide</a>
+        </article>
+        <article class="card">
+          <h3>Complete Manual Hub</h3>
+          <p>Go directly to the linked manual if you want assumptions, troubleshooting, or cross-tab theory first.</p>
+          <a class="button alt" href="TechnicalChapter.html">Open complete manual</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="appendices">
+      <h2>Appendices You Will Use Often</h2>
+      <p>These cross-cutting pages are designed to answer the recurring questions that appear across several tabs: how to prepare data, how to define chemistry and streams consistently, how units are handled internally, and how to read comparison outputs without over-interpreting them.</p>
+      <div class="card-grid">
+        <article class="card">
+          <h3>RTD Interpretation</h3>
+          <p>Understand what the plotted RTD, moments, and overlays really mean in engineering terms.</p>
+          <a class="button" href="guides/appendix-rtd-interpretation.html">Open RTD appendix</a>
+        </article>
+        <article class="card">
+          <h3>Import Formats</h3>
+          <p>See how Excel, CSV, and workspace data should be organized before importing experimental RTD data.</p>
+          <a class="button" href="guides/appendix-import-formats.html">Open import appendix</a>
+        </article>
+        <article class="card">
+          <h3>Units and Shared Objects</h3>
+          <p>Review the internal SI convention and the roles of <code>RTD</code>, <code>ReactionSys</code>, and <code>Stream</code>.</p>
+          <a class="button" href="guides/appendix-units-and-objects.html">Open units appendix</a>
+        </article>
+        <article class="card">
+          <h3>ReactionSys and Stream Setup</h3>
+          <p>See how to define species order, stoichiometry, kinetics, inlet composition, and inherited units in a way that later tabs can reuse safely.</p>
+          <a class="button" href="guides/appendix-reaction-and-stream-setup.html">Open setup appendix</a>
+        </article>
+        <article class="card">
+          <h3>Results Interpretation</h3>
+          <p>Learn how to read comparison plots and summary tables in Prediction Models and Tab 5 without confusing numerical differences with engineering relevance.</p>
+          <a class="button" href="guides/appendix-results-interpretation.html">Open results appendix</a>
+        </article>
+        <article class="card">
+          <h3>Cross-Tab Workflow</h3>
+          <p>Understand how RTD, ReactionSys, Stream, recomputation, and restored sessions behave as you move from one tab to another.</p>
+          <a class="button" href="guides/appendix-cross-tab-workflow.html">Open workflow appendix</a>
+        </article>
+        <article class="card">
+          <h3>Glossary and Symbols</h3>
+          <p>Review the recurring notation used across the app, including <code>tau</code>, <code>sigma^2</code>, <code>N</code>, <code>Pe</code>, <code>Bo</code>, and core mixing-model names.</p>
+          <a class="button" href="guides/appendix-glossary-symbols.html">Open glossary</a>
+        </article>
+        <article class="card">
+          <h3>Model Selection Guide</h3>
+          <p>Use a side-by-side decision matrix to choose between direct RTD bounds, Tanks-in-Series, Dispersion, or the Tab 5 workspace depending on your engineering question.</p>
+          <a class="button" href="guides/appendix-model-selection.html">Open model guide</a>
+        </article>
+        <article class="card">
+          <h3>FAQ and Troubleshooting</h3>
+          <p>Use a practical symptom-based guide when a session loads oddly, a tab stays blank, or a result looks numerically fine but physically suspicious.</p>
+          <a class="button" href="guides/appendix-faq-troubleshooting.html">Open FAQ</a>
+        </article>
+      </div>
+    </section>
+
     <section class="section">
-      <h2>Practical Tips</h2>
+      <h2>Before You Leave This Page</h2>
       <ul>
-        <li>Keep tracer signals and <code>C0</code> in the same concentration scale when using pulse/step RTD inputs.</li>
-        <li>Use Tab 1 as the main handoff point when you want to reuse RTD, <code>ReactionSys</code>, and <code>Stream</code> in Prediction.</li>
-        <li>Use Tab 2 as the handoff point for chemistry when you want Tabs 3 and 4 to import the same <code>ReactionSys</code> and <code>Stream</code>.</li>
-        <li>Use the local <strong>Display units</strong> controls when you want to inspect results without changing the stored internal data.</li>
+        <li><strong>Tab 1 is foundational.</strong> If the RTD is not correct, the rest of the app is only propagating a wrong hydrodynamic description.</li>
+        <li><strong>Tab 2 is the first reactive checkpoint.</strong> It is usually the best place to verify whether the chemistry and RTD combination gives sensible trends before using more specialized tabs.</li>
+        <li><strong>Tab 5 does not replace Tab 1.</strong> It assumes the RTD has already been defined upstream and then organizes design-oriented tasks around it.</li>
       </ul>
+      <div class="footer-nav">
+        <span class="small">Next recommended page: the complete guide to RTD Analysis.</span>
+        <a class="button" href="guides/tab-1-rtd-analysis.html">Go to Tab 1 guide</a>
+      </div>
     </section>
   </div>
 </body>

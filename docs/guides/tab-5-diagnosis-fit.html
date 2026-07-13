@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 5 - Diagnosis &amp; Fit</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+        <a href="tab-5-design-optimization.html">Tab 5 overview</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <a href="tab-5-design-optimization.html">Tab 5</a> / <span>Diagnosis &amp; Fit</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Equivalent Families</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Diagnosis &amp; Fit</h1>
+          <p>This subtab tries to reproduce the RTD of Tab 1 with equivalent hydrodynamic families. It is useful when you want an interpretable surrogate such as Tanks-in-Series, Axial Dispersion, or mixed families with dead volume or bypass.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#configure">What you configure</a></li>
+            <li><a href="#good-for">What it does well</a></li>
+            <li><a href="#workflow">Typical workflow</a></li>
+            <li><a href="#results">How to read results</a></li>
+            <li><a href="#mistakes">Typical mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="configure">
+      <h2>What You Configure Here</h2>
+      <table>
+        <tr>
+          <th>Control block</th>
+          <th>Role</th>
+        </tr>
+        <tr><td>RTD source</td><td>Selects which RTD is being fitted. In the current workflow, this is normally the RTD coming from Tab 1.</td></tr>
+        <tr><td>Family</td><td>Chooses the equivalent hydrodynamic family that will try to reproduce the reference RTD.</td></tr>
+        <tr><td>Boundary</td><td>Applies when the selected family needs an axial-dispersion interpretation.</td></tr>
+        <tr><td>Main constraint table</td><td>Defines numeric bounds for the family parameters that are relevant to the current fit route.</td></tr>
+        <tr><td>Scalar constraint table</td><td>Handles the special scalar entries such as reference total residence time or total volume when those are relevant.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="good-for">
+      <h2>What It Does Well</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab5_fit_computed.png" alt="Diagnosis and Fit subtab with computed axial dispersion fit">
+        <figcaption>Representative computed fit. The result panel combines summary fields for the selected family with a direct comparison between the input RTD and the fitted RTD.</figcaption>
+      </figure>
+      <ul>
+        <li>Compare several hydrodynamic families against the same RTD.</li>
+        <li>Report best-fit parameters and family comparison metrics.</li>
+        <li>Provide a fitted RTD that can later be reused by Reactive Performance or Optimization.</li>
+      </ul>
+      <div class="callout success">
+        <strong>Most useful outcome:</strong> a good fit is valuable not only as a score, but because it gives you a compact hydrodynamic story you can carry into later design discussions.
+      </div>
+    </section>
+    <section class="section" id="workflow">
+      <h2>Typical Workflow</h2>
+      <ol>
+        <li>Select the RTD source, normally the RTD from Tab 1.</li>
+        <li>Choose one family or run the multi-family search route.</li>
+        <li>Use constraints only where they make physical sense for the chosen family.</li>
+        <li>Run the fit and compare both parameter values and fit quality.</li>
+      </ol>
+      <div class="grid-2">
+        <div>
+          <h3>When to constrain more</h3>
+          <ul>
+            <li>When you already know a physically realistic range for a parameter.</li>
+            <li>When two families only differ meaningfully in a bounded parameter region.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>When to constrain less</h3>
+          <ul>
+            <li>When you are still exploring which family can explain the RTD at all.</li>
+            <li>When a tight bound is forcing a visually poor fit just to satisfy a guess.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="results">
+      <h2>How to Read the Result Area</h2>
+      <ul>
+        <li><strong>Summary line:</strong> tells you which family was fitted and how closely it matched the input RTD.</li>
+        <li><strong>Residence-time / family-parameter boxes:</strong> give the compact parameter interpretation of the fitted model.</li>
+        <li><strong>Input vs fitted E(t):</strong> is the fastest visual check of whether the fitted family is reproducing the relevant parts of the RTD shape.</li>
+      </ul>
+      <div class="callout info">
+        <strong>Best use of this subtab:</strong> do not stop at "the score is good". Also check whether the fitted parameter values are physically reasonable for the reactor interpretation you want to tell.
+      </div>
+      <p>If you need a more direct RTD-reading refresher before judging fit quality, use the <a href="appendix-rtd-interpretation.html">RTD Interpretation appendix</a>.</p>
+    </section>
+    <section class="section">
+      <h2>What to Watch Closely</h2>
+      <ul>
+        <li>Constraint configuration only makes sense if its units and meaning are consistent with the selected family.</li>
+        <li>The diagnosis flags are engineering hints, not rigorous fault diagnosis.</li>
+        <li>A good numerical fit is not the same as a unique physical explanation of the reactor internals.</li>
+      </ul>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Typical Mistakes</h2>
+      <ul>
+        <li>Over-constraining a family until it can only match the RTD numerically in a distorted way.</li>
+        <li>Comparing families without remembering that some parameters only exist for some family structures.</li>
+        <li>Assuming the best score automatically means the best engineering story for the real reactor.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-5-reactive-performance.html">Next: Reactive Performance</a>
+        <a class="button alt" href="appendix-rtd-interpretation.html">See RTD appendix</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

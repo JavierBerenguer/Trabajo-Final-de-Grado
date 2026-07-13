@@ -3,499 +3,258 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Non-Ideal Reactor Analysis - Technical Guide</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f4f1ea;
-      --panel: #fffdf8;
-      --ink: #1f2933;
-      --muted: #52606d;
-      --line: #d9d2c3;
-      --accent: #1e5f74;
-      --accent-soft: #dff1f5;
-      --code: #f1efe9;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(180deg, #efe8dc 0%, #f8f5ee 100%);
-      color: var(--ink);
-      line-height: 1.58;
-    }
-
-    .page {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 28px 24px 40px;
-    }
-
-    .hero,
-    .section {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      box-shadow: 0 12px 28px rgba(31, 41, 51, 0.06);
-    }
-
-    .hero {
-      padding: 28px 32px;
-      margin-bottom: 24px;
-    }
-
-    .section {
-      padding: 24px 28px;
-      margin-bottom: 18px;
-    }
-
-    h1, h2, h3 {
-      margin-top: 0;
-      color: #12212f;
-    }
-
-    h1 {
-      font-size: 2rem;
-      margin-bottom: 10px;
-    }
-
-    h2 {
-      font-size: 1.45rem;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 2px solid var(--accent-soft);
-    }
-
-    h3 {
-      font-size: 1.05rem;
-      margin-bottom: 8px;
-    }
-
-    p, li {
-      font-size: 0.98rem;
-    }
-
-    .meta {
-      color: var(--muted);
-    }
-
-    code, pre {
-      font-family: Consolas, "Courier New", monospace;
-      background: var(--code);
-      border-radius: 8px;
-    }
-
-    code {
-      padding: 0.08rem 0.3rem;
-    }
-
-    pre {
-      padding: 14px 16px;
-      overflow-x: auto;
-      border: 1px solid var(--line);
-      margin: 12px 0 16px;
-      white-space: pre-wrap;
-    }
-
-    .equation {
-      padding: 14px 16px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--code);
-      margin: 12px 0 16px;
-      font-family: Cambria, "Times New Roman", serif;
-      font-size: 1.04rem;
-      overflow-x: auto;
-    }
-
-    ul, ol {
-      padding-left: 22px;
-      margin-top: 8px;
-    }
-
-    blockquote {
-      margin: 12px 0 16px;
-      padding: 12px 16px;
-      border-left: 4px solid var(--accent);
-      background: #f5fbfc;
-      color: #173341;
-      border-radius: 10px;
-    }
-  </style>
+  <title>Non-Ideal Reactor Analysis - Complete Manual</title>
+  <link rel="stylesheet" href="assets/guide.css">
 </head>
 <body>
   <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="UserGuide.html">User Guide Home</a>
+        <a href="TechnicalChapter.html">Complete Manual</a>
+        <a href="guides/tab-5-design-optimization.html">Tab 5</a>
+        <a href="guides/appendix-units-and-objects.html">Units &amp; Objects</a>
+      </nav>
+    </div>
+
     <section class="hero">
-      <h1>Technical Chapter - Internal Operation of the Non-Ideal Reactor Application</h1>
-      <p class="meta"><strong>Javier Berenguer Sabater</strong><br>TFG - Chemical Engineering</p>
+      <span class="kicker">Complete Manual</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Engineering manual, assumptions, troubleshooting, and linked tab guides</h1>
+          <p>This page is the full documentation hub for the app. Use it when you already know the general workflow and want the connected reference: assumptions, object model, tab-by-tab links, and practical guidance on how the current implementation should be interpreted.</p>
+          <p class="meta"><strong>Important:</strong> this manual follows the current codebase and current UI labels. It is not a generic reactor-theory textbook.</p>
+        </div>
+        <aside class="toc">
+          <h2>Manual Index</h2>
+          <ol>
+            <li><a href="#scope">Scope of the app</a></li>
+            <li><a href="#assumptions">Shared assumptions</a></li>
+            <li><a href="#objects">Shared engineering objects</a></li>
+            <li><a href="#tab-guides">Tab guides</a></li>
+            <li><a href="#appendices">Cross-cutting appendices</a></li>
+            <li><a href="#troubleshooting">Troubleshooting map</a></li>
+          </ol>
+        </aside>
+      </div>
     </section>
 
-    <section class="section">
-      <h2>1. Purpose of This Document</h2>
-      <p>This chapter explains how the application works internally from a <strong>chemical engineering</strong> point of view. Its purpose is not to document MATLAB syntax or UI programming, but to show:</p>
-      <ul>
-        <li>what engineering problem each active tab solves,</li>
-        <li>which reactor-theory model is being applied,</li>
-        <li>how reaction kinetics and feed composition enter the calculation,</li>
-        <li>which assumptions are imposed on the current workflows,</li>
-        <li>and how the numerical results should be interpreted.</li>
-      </ul>
-      <p>The active scope of this chapter is the current <strong>5-tab</strong> application:</p>
-      <ul>
-        <li><strong>Tab 1: RTD Analysis</strong></li>
-        <li><strong>Tab 2: Prediction Models</strong></li>
-        <li><strong>Tab 3: Tanks-in-Series</strong></li>
-        <li><strong>Tab 4: Dispersion Model</strong></li>
-        <li><strong>Tab 5: Design &amp; Optimization</strong></li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>2. Engineering Problem Addressed by the Application</h2>
-      <p>The application is designed to analyze <strong>non-ideal reactors</strong>. In chemical engineering terms, the core question is:</p>
-      <blockquote>
-        <p>Given a residence time distribution and a reaction system, how does non-ideal flow modify conversion, selectivity, and yield compared with ideal reactor assumptions?</p>
-      </blockquote>
-      <p>The software is therefore organized around two complementary tasks:</p>
-      <ol>
-        <li><strong>Characterize the hydrodynamics</strong> through the residence time distribution, RTD.</li>
-        <li><strong>Propagate the RTD through a reaction model</strong> in order to estimate conversion bounds, equivalent-model behavior, or optimization trends.</li>
-      </ol>
-      <p>This is the reason why the application begins with RTD generation and only afterwards moves to conversion prediction or design tasks.</p>
-    </section>
-
-    <section class="section">
-      <h2>3. Global Engineering Workflow</h2>
-      <p>From an engineering point of view, the program follows the sequence:</p>
-      <pre><code>Hydrodynamic description -&gt; RTD object -&gt; Reaction system + feed stream -&gt; Non-ideal reactor model -&gt; Conversion / selectivity / yield result</code></pre>
-      <p>More explicitly:</p>
-      <ol>
-        <li>The user defines or imports an RTD in Tab 1.</li>
-        <li>The RTD is normalized and converted into statistical descriptors.</li>
-        <li>The user defines a <code>ReactionSys</code> and a feed <code>Stream</code>.</li>
-        <li>The selected non-ideal model uses the same chemistry and hydrodynamic information to compute the response.</li>
-        <li>The program reports either:
+    <section class="section" id="scope">
+      <h2>What the Current App Covers</h2>
+      <div class="grid-2">
+        <div>
+          <h3>Hydrodynamics</h3>
           <ul>
-            <li>mixing bounds (<code>Segregation</code>, <code>Max Mixedness</code>),</li>
-            <li>an equivalent reactor response (<code>TIS</code>, <code>Dispersion</code>),</li>
-            <li>or a design-oriented comparison (<code>Diagnosis &amp; Fit</code>, <code>Reactive Performance</code>, <code>Optimization</code>).</li>
+            <li>Analytical RTD generation for several standard families</li>
+            <li>Experimental RTD reconstruction from pulse, step, equation, or table data</li>
+            <li>Moment-based interpretation with overlays in <code>E(t)</code> and <code>E(&theta;)</code></li>
           </ul>
-        </li>
-      </ol>
-      <p>The key design choice is that <strong>hydrodynamics and chemistry are coupled only at the model-evaluation stage</strong>, not while building the RTD itself.</p>
+        </div>
+        <div>
+          <h3>Reactive analysis</h3>
+          <ul>
+            <li>Segregation and Maximum Mixedness bounds</li>
+            <li>Ideal CSTR and Ideal PFR references</li>
+            <li>Equivalent-model routes through Tanks-in-Series and Dispersion Model</li>
+            <li>Design workspace with fitting, reactive comparison, and process optimization</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout info">
+        <strong>Useful mental model:</strong> Tab 1 defines the hydrodynamic description, Tabs 2-4 propagate that description through different reactive viewpoints, and Tab 5 organizes design decisions on top of those earlier layers.
+      </div>
     </section>
 
-    <section class="section">
-      <h2>4. Common Modeling Assumptions</h2>
-      <p>The current application shares the following engineering assumptions.</p>
-
-      <h3>4.1 Internal SI consistency</h3>
-      <p>All internal calculations are performed in SI units:</p>
-      <ul>
-        <li>time in <code>s</code></li>
-        <li>concentration in <code>mol/m^3</code></li>
-        <li>volume in <code>m^3</code></li>
-        <li>volumetric flow rate in <code>m^3/s</code></li>
-      </ul>
-      <p>Unit conversion is intentionally isolated in the input and output layers. This avoids mixing units inside the numerical models.</p>
-
-      <h3>4.2 Isothermal and steady-state prediction routes</h3>
-      <p>The active prediction and design routes are isothermal. Temperature may still exist in the kinetic object, but the tabs described here do not solve an energy balance.</p>
-      <p>Tabs 2-5 are also evaluated in steady state for the reactor response of interest.</p>
-
-      <h3>4.3 Stoichiometry and kinetics must stay consistent</h3>
-      <p>The numerical models assume that:</p>
-      <ul>
-        <li>the stoichiometric matrix is correctly defined,</li>
-        <li>each kinetic expression matches that stoichiometry,</li>
-        <li>and species indexing is used consistently across <code>ReactionSys</code>, <code>Stream</code>, and all reactor models.</li>
-      </ul>
-      <p>This is especially important for custom kinetics, because the backend reuses the same chemistry across all active models.</p>
-
-      <h3>4.4 Multicomponent feed support with key-component reporting</h3>
-      <p>The current workflow uses a full feed concentration vector taken from a <code>Stream</code> object. The models therefore operate on multicomponent inlet conditions, not only on a single <code>C_A0</code> scalar.</p>
-      <p>Even so, the main conversion metric is still tied to a <strong>key reactant</strong>:</p>
-      <div class="equation">X = (C<sub>A,in</sub> - C<sub>A,out</sub>) / C<sub>A,in</sub></div>
-      <p>For multicomponent systems, the program also keeps outlet concentrations for all species and can derive selectivity and yield where relevant.</p>
+    <section class="section" id="assumptions">
+      <h2>Shared Assumptions You Should Keep in Mind</h2>
+      <table>
+        <tr>
+          <th>Assumption</th>
+          <th>Meaning in practice</th>
+        </tr>
+        <tr>
+          <td>Internal SI calculations</td>
+          <td>The app converts at the input/output layer. Internally it works in <code>s</code>, <code>m^3</code>, <code>mol/m^3</code>, and <code>m^3/s</code>.</td>
+        </tr>
+        <tr>
+          <td>RTD first, chemistry second</td>
+          <td>Hydrodynamics are defined before the reactive models are applied. A poor RTD gives poor downstream predictions.</td>
+        </tr>
+        <tr>
+          <td>Isothermal routes</td>
+          <td>The active tabs described here do not solve an energy balance.</td>
+        </tr>
+        <tr>
+          <td>Stoichiometry and kinetics must match</td>
+          <td>Custom rate laws must be consistent with the stoichiometric matrix and species indexing.</td>
+        </tr>
+        <tr>
+          <td>Tab 5 optimization is process-side, not RTD editing</td>
+          <td>The RTD stays fixed while inlet concentrations are varied inside the Optimization subtab.</td>
+        </tr>
+      </table>
+      <div class="callout warn">
+        <strong>Most common interpretation mistake:</strong> a nice numerical result does not automatically mean a physically correct answer. Check RTD quality, units, reaction definition, and whether the selected model assumptions really match the problem.
+      </div>
     </section>
 
-    <section class="section">
-      <h2>5. Representation of the Reaction System</h2>
-      <p>The reaction system is defined by three linked elements:</p>
-      <ol>
-        <li><strong>Stoichiometric matrix</strong></li>
-        <li><strong>Rate law</strong></li>
-        <li><strong>Feed composition vector</strong></li>
-      </ol>
-
-      <h3>5.1 Stoichiometric matrix</h3>
-      <p>Each row corresponds to one reaction and each column to one chemical species. For example, for:</p>
-      <div class="equation">2A &rarr; B</div>
-      <p>the stoichiometric row is:</p>
-      <div class="equation">[-2&nbsp;&nbsp;&nbsp;1]</div>
-      <p>The application uses this matrix to convert reaction rates into species balances.</p>
-
-      <h3>5.2 Meaning of the kinetic expression</h3>
-      <p>In the free-kinetics path (<code>Other kinetics</code>), the user defines the <strong>rate of each reaction</strong>, <code>r_i</code>, not directly the disappearance rate of a specific species.</p>
-      <p>If:</p>
-      <div class="equation">2A &rarr; B</div>
-      <p>and a statement gives:</p>
-      <div class="equation">-r<sub>A</sub> = k C<sub>A</sub><sup>2</sup></div>
-      <p>then the reaction-rate expression entered in the app must be:</p>
-      <div class="equation">r<sub>1</sub> = (1/2) k C<sub>A</sub><sup>2</sup></div>
-      <p>because:</p>
-      <div class="equation">dC<sub>A</sub>/dt = &nu;<sub>A</sub> r<sub>1</sub> = -2r<sub>1</sub></div>
-
-      <h3>5.3 Feed stream</h3>
-      <p>The inlet composition is supplied by a <code>Stream</code> object. This is important because:</p>
-      <ul>
-        <li>Tabs 2-4 use the same concentration vector for all species,</li>
-        <li>Tab 1 can already hold the <code>ReactionSys</code> and <code>Stream</code> that Tab 2 reuses,</li>
-        <li>and Tab 5 reuses the same chemistry for reactive comparison, optimization, and scale-up.</li>
-      </ul>
+    <section class="section" id="objects">
+      <h2>Shared Engineering Objects</h2>
+      <div class="grid-3">
+        <article class="card">
+          <h3><code>RTD</code></h3>
+          <p>The hydrodynamic object created in Tab 1. It stores the residence time distribution, moments, and family metadata used later by other tabs.</p>
+          <a class="button" href="guides/tab-1-rtd-analysis.html">See RTD guide</a>
+        </article>
+        <article class="card">
+          <h3><code>ReactionSys</code></h3>
+          <p>The chemistry object containing stoichiometry and kinetics. It is reused across Prediction, TIS, Dispersion, and Tab 5.</p>
+          <a class="button" href="guides/appendix-units-and-objects.html">See object appendix</a>
+        </article>
+        <article class="card">
+          <h3><code>Stream</code></h3>
+          <p>The inlet state object carrying composition and flow information. In the current Optimization workflow, inlet concentrations are the active decision variables.</p>
+          <a class="button" href="guides/appendix-units-and-objects.html">See object appendix</a>
+        </article>
+      </div>
     </section>
 
-    <section class="section">
-      <h2>6. Tab 1 - RTD Analysis</h2>
-      <p>This tab converts experimental or analytical hydrodynamic information into a usable <strong>residence time distribution</strong>.</p>
-
-      <h3>6.1 Supported RTD sources</h3>
-      <p>The RTD can be generated from:</p>
-      <ul>
-        <li>ideal model expressions,</li>
-        <li>pulse-response experimental data,</li>
-        <li>step-response experimental data,</li>
-        <li>a user-defined <code>C(t)</code> expression,</li>
-        <li>direct tabulated input.</li>
-      </ul>
-      <p>Regardless of the source, the result is transformed into a common RTD representation.</p>
-
-      <h3>6.2 Quantities computed</h3>
-      <p>Once the tracer curve is converted into <code>E(t)</code>, the tab computes:</p>
-      <div class="equation">&tau; = &int;<sub>0</sub><sup>&infin;</sup> t E(t) dt</div>
-      <div class="equation">&sigma;<sup>2</sup> = &int;<sub>0</sub><sup>&infin;</sup> (t - &tau;)<sup>2</sup> E(t) dt</div>
-      <div class="equation">&sigma;<sub>&theta;</sub><sup>2</sup> = &sigma;<sup>2</sup> / &tau;<sup>2</sup></div>
-      <p>and the cumulative distribution:</p>
-      <div class="equation">F(t) = &int;<sub>0</sub><sup>t</sup> E(&xi;) d&xi;</div>
-      <p>The dimensionless RTD is built using:</p>
-      <div class="equation">&theta; = t / &tau;</div>
-      <p>which gives the normalized distribution <code>E(&theta;)</code>.</p>
-
-      <h3>6.3 Effective volume</h3>
-      <p>If the user supplies volumetric flow rate <code>Q_v</code>, the tab also reports:</p>
-      <div class="equation">V<sub>eff</sub> = &tau; Q<sub>v</sub></div>
-
-      <h3>6.4 Role as shared source</h3>
-      <p>Tab 1 is not only an RTD editor. It also acts as a practical handoff point:</p>
-      <ul>
-        <li>the RTD is reused by Tabs 2-5,</li>
-        <li>the <code>ReactionSys</code> and <code>Stream</code> loaded in the RTD utilities can be reused directly by Tab 2,</li>
-        <li>and the <code>F(t)</code> query gives a direct physical interpretation of effluent already exited versus fluid still inside the reactor.</li>
-      </ul>
+    <section class="section" id="tab-guides">
+      <h2>Linked Guides by Tab and Subtab</h2>
+      <div class="card-grid">
+        <article class="card">
+          <h3>Tab 1 - RTD Analysis</h3>
+          <p>RTD sources, import modes, plots, moment overlays, and how the tab feeds the rest of the app.</p>
+          <a class="button" href="guides/tab-1-rtd-analysis.html">Open guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 2 - Prediction Models</h3>
+          <p>Reactive bounds, model comparisons, active reactant logic, and the macromixing/micromixing map.</p>
+          <a class="button" href="guides/tab-2-prediction-models.html">Open guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 3 - Tanks-in-Series</h3>
+          <p>Equivalent cascades, inferred or manual <code>N</code>, and what the output tables mean.</p>
+          <a class="button" href="guides/tab-3-tanks-in-series.html">Open guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 4 - Dispersion Model</h3>
+          <p>Peclet number logic, boundary conditions, supported kinetics, and model-specific warnings.</p>
+          <a class="button" href="guides/tab-4-dispersion-model.html">Open guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 5 - Workspace overview</h3>
+          <p>How Diagnosis &amp; Fit, Reactive Performance, and Optimization connect inside one workspace.</p>
+          <a class="button" href="guides/tab-5-design-optimization.html">Open guide</a>
+        </article>
+        <article class="card">
+          <h3>Tab 5 subtabs</h3>
+          <p>Separate pages are available for Diagnosis &amp; Fit, Reactive Performance, and Optimization.</p>
+          <a class="button" href="guides/tab-5-diagnosis-fit.html">Start with Diagnosis &amp; Fit</a>
+        </article>
+      </div>
+      <figure class="figure-card">
+        <img src="assets/tab2_prediction_computed.png" alt="Prediction Models tab with computed results">
+        <figcaption>Example of a fully computed reactive view. The linked tab guides explain each part of this layout in detail.</figcaption>
+      </figure>
     </section>
 
-    <section class="section">
-      <h2>7. Tab 2 - Prediction Models</h2>
-      <p>This tab computes the two classical <strong>micromixing bounds</strong> for a non-ideal reactor:</p>
-      <ul>
-        <li><strong>Segregation</strong></li>
-        <li><strong>Maximum mixedness</strong></li>
-      </ul>
-      <p>and compares them with ideal <code>CSTR</code> and <code>PFR</code> references.</p>
-
-      <h3>7.1 Segregation model</h3>
-      <p>The model proceeds in two steps.</p>
-      <p>First, the intrinsic batch problem is solved:</p>
-      <div class="equation">dC/dt = &nu; r(C)</div>
-      <p>using the same kinetics defined by the user.</p>
-      <p>Then the outlet state is computed through RTD weighting. In physical terms, the reactor is treated as a superposition of non-interacting fluid packets of different ages.</p>
-
-      <h3>7.2 Maximum mixedness model</h3>
-      <p>The maximum-mixedness route uses the life-expectancy coordinate <code>&lambda;</code> and the RTD pair <code>E(&lambda;)</code>, <code>F(&lambda;)</code>.</p>
-      <p>Its internal balance includes:</p>
-      <ul>
-        <li>the local reaction term,</li>
-        <li>and a mixing term proportional to:</li>
-      </ul>
-      <div class="equation">E(&lambda;) / (1 - F(&lambda;))</div>
-      <p>The exit state is recovered at:</p>
-      <div class="equation">&lambda; = 0</div>
-      <p>In physical terms, this model represents the opposite admissible limit to segregation for the same macroscopic RTD.</p>
-
-      <h3>7.3 Engineering value of the tab</h3>
-      <p>If <code>Segregation</code> and <code>Max Mixedness</code> are close, the effect of micromixing assumptions is weak.</p>
-      <p>If the gap is large, then:</p>
-      <ul>
-        <li>micromixing matters strongly,</li>
-        <li>reaction nonlinearity is important,</li>
-        <li>and RTD alone is not enough to identify a unique reactor response.</li>
-      </ul>
-      <p>The tab therefore acts as both a predictor and a diagnosis tool.</p>
-
-      <h3>7.4 Current outputs</h3>
-      <p>The active UI reports:</p>
-      <ul>
-        <li>reactant conversion comparison for <code>Ideal CSTR</code>, <code>Segregation</code>, <code>Max Mixedness</code>, and <code>Ideal PFR</code>,</li>
-        <li>outlet concentration comparison for all species,</li>
-        <li>an exit summary table with concentrations and per-reactant conversion,</li>
-        <li>and a compact percentage comparison of non-ideal mixing effects.</li>
-      </ul>
+    <section class="section" id="appendices">
+      <h2>Cross-Cutting Appendices</h2>
+      <p>Use these pages when the question is broader than a single tab: data import quality, shared object definitions, interpretation of summary tables, and how the app keeps units and state coherent across workflows.</p>
+      <div class="card-grid">
+        <article class="card">
+          <h3>RTD interpretation</h3>
+          <p>How to read <code>E(t)</code>, <code>F(t)</code>, <code>E(&theta;)</code>, moments, and the current overlay conventions.</p>
+          <a class="button" href="guides/appendix-rtd-interpretation.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>Import formats</h3>
+          <p>How to prepare Excel, CSV, TSV, MAT, and workspace data for pulse and step reconstruction.</p>
+          <a class="button" href="guides/appendix-import-formats.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>Units and shared objects</h3>
+          <p>Internal SI logic, object inheritance, and what later tabs expect from <code>RTD</code>, <code>ReactionSys</code>, and <code>Stream</code>.</p>
+          <a class="button" href="guides/appendix-units-and-objects.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>ReactionSys and Stream setup</h3>
+          <p>Species order, stoichiometry, custom kinetics, inlet composition, and setup checks before you compute.</p>
+          <a class="button" href="guides/appendix-reaction-and-stream-setup.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>Results interpretation</h3>
+          <p>How to read comparison plots and screening tables without over-interpreting small numerical gaps.</p>
+          <a class="button" href="guides/appendix-results-interpretation.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>Cross-tab workflow</h3>
+          <p>How objects move across tabs, what is inherited versus recomputed, and why a restored session may still require a fresh calculation in some views.</p>
+          <a class="button" href="guides/appendix-cross-tab-workflow.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>Glossary and symbols</h3>
+          <p>A compact notation reference for RTD moments, equivalent-model parameters, and the main reactor-comparison labels used throughout the app.</p>
+          <a class="button" href="guides/appendix-glossary-symbols.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>Model selection guide</h3>
+          <p>A side-by-side comparison of the main routes so you can choose the right tab or reactor interpretation for the question you actually need to answer.</p>
+          <a class="button" href="guides/appendix-model-selection.html">Open appendix</a>
+        </article>
+        <article class="card">
+          <h3>FAQ and troubleshooting</h3>
+          <p>A symptom-first guide for the most common runtime doubts: missing objects, blank views after load, import inconsistencies, unsupported routes, and suspicious optimization outputs.</p>
+          <a class="button" href="guides/appendix-faq-troubleshooting.html">Open appendix</a>
+        </article>
+      </div>
     </section>
 
-    <section class="section">
-      <h2>8. Tab 3 - Tanks-in-Series</h2>
-      <p>This tab approximates the real reactor by a cascade of ideal CSTRs in series.</p>
-
-      <h3>8.1 Estimation of the number of tanks</h3>
-      <p>When the user selects <strong>From Calculated Data</strong>, the classical relation between RTD moments and tanks-in-series is used:</p>
-      <div class="equation">N = &tau;<sup>2</sup> / &sigma;<sup>2</sup></div>
-      <p>This links the measured RTD to the equivalent cascade structure.</p>
-      <p>Large <code>N</code> approaches plug-flow behavior, while <code>N = 1</code> corresponds to a single ideal CSTR.</p>
-
-      <h3>8.2 Species balance in each tank</h3>
-      <p>Each tank is solved with the stationary CSTR balance:</p>
-      <div class="equation">C<sub>out</sub> - C<sub>in</sub> - &tau;<sub>i</sub> &nu; r(C<sub>out</sub>) = 0</div>
-      <p>where:</p>
-      <div class="equation">&tau;<sub>i</sub> = &tau;<sub>total</sub> / N</div>
-      <p>The outlet of one tank becomes the inlet of the next one.</p>
-
-      <h3>8.3 Data flow</h3>
-      <p>In calculated mode, the tab imports:</p>
-      <ul>
-        <li><code>N</code> and <code>tau</code> from the RTD in Tab 1,</li>
-        <li>and the chemistry from Tab 2 if a <code>ReactionSys</code> and <code>Stream</code> have already been loaded there.</li>
-      </ul>
-      <p>This preserves consistency when comparing prediction routes.</p>
-    </section>
-
-    <section class="section">
-      <h2>9. Tab 4 - Dispersion Model</h2>
-      <p>This tab represents the reactor as a one-dimensional flow with axial dispersion.</p>
-
-      <h3>9.1 Governing idea</h3>
-      <p>The key hydrodynamic parameter is the <strong>dispersion number</strong>, <code>Bo = D_e/(uL)</code>, and the interface also reports the equivalent <code>Pe = 1/Bo</code>.</p>
-      <p>In engineering terms:</p>
-      <ul>
-        <li>low <code>Bo</code> and high <code>Pe</code> mean weaker axial dispersion and behavior closer to plug flow,</li>
-        <li>high <code>Bo</code> means broader backmixed behavior relative to that limit.</li>
-      </ul>
-
-      <h3>9.2 Current computational route</h3>
-      <p>The active implementation now separates RTD generation from reactive prediction. For <code>closed-closed</code>, the reactive result is obtained from a steady axial-dispersion boundary-value problem with Danckwerts conditions.</p>
-      <p>The <code>open-open</code> route is kept for RTD work and for linear first-order reactive cases only; nonlinear kinetics are blocked instead of being labeled as a general dispersion-model prediction.</p>
-
-      <h3>9.3 Boundary conditions</h3>
-      <p>The class retains the boundary-condition choice for the RTD model:</p>
-      <ul>
-        <li><code>closed-closed</code></li>
-        <li><code>open-open</code></li>
-      </ul>
-      <p>This matters because both formulations do not produce exactly the same RTD shape or the same interpretation of <code>tau</code> outside limiting cases.</p>
-
-      <h3>9.4 Data flow</h3>
-      <p>In calculated mode, the tab imports:</p>
-      <ul>
-        <li><code>tau</code> and a variance-based estimate of <code>Bo</code> from Tab 1, reconstructed consistently with <code>Pe</code> and the selected boundary model,</li>
-        <li>and the chemistry from Tab 2 if available.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>10. Tab 5 - Design &amp; Optimization</h2>
-      <p>This tab is the current design-oriented workspace of the application. It is intentionally narrower than a full process simulator, but it extends the engineering use of the same RTD and chemistry building blocks.</p>
-
-      <h3>10.1 Diagnosis &amp; Fit</h3>
-      <p>This subarea fits equivalent hydrodynamic families to the RTD from Tab 1:</p>
-      <ul>
-        <li><code>Tanks-in-Series</code></li>
-        <li><code>Axial Dispersion</code></li>
-        <li><code>CSTR + Dead Volume</code></li>
-        <li><code>CSTR + Bypass</code></li>
-        <li><code>CSTR + Dead Volume + Bypass</code></li>
-      </ul>
-      <p>The backend combines direct formulas, heuristic indicators, and lightweight numerical fitting. Its purpose is not to identify a unique physical internals model, but to build a compact equivalent representation that reproduces the observed RTD reasonably well.</p>
-
-      <h3>10.2 Reactive Performance</h3>
-      <p>This subarea reuses:</p>
-      <ul>
-        <li>an RTD from <code>Tab 1</code> or from the fitted equivalent model,</li>
-        <li>a <code>ReactionSys</code>,</li>
-        <li>and a feed <code>Stream</code>.</li>
-      </ul>
-      <p>It then compares:</p>
-      <ul>
-        <li><code>Ideal CSTR</code></li>
-        <li><code>Segregation</code></li>
-        <li><code>Max Mixedness</code></li>
-        <li><code>Ideal PFR</code></li>
-      </ul>
-      <p>The outputs include conversion, selectivity, yield, outlet concentrations, and a direct first-order shortcut when the kinetic structure allows it.</p>
-
-      <h3>10.3 Optimization</h3>
-      <p>This subarea optimizes equivalent hydrodynamic parameters such as:</p>
-      <ul>
-        <li><code>tau</code></li>
-        <li><code>N</code></li>
-        <li><code>Bo</code></li>
-        <li><code>bypass</code></li>
-        <li><code>activeFraction</code></li>
-        <li><code>recycleRatio</code></li>
-      </ul>
-      <p>The active implementation uses a lightweight penalized search strategy, evaluates constraints on conversion/selectivity/yield or outlet concentration, and reuses the same chemistry loaded in <code>Reactive Performance</code>.</p>
-      <p>From an engineering standpoint, this tab is useful for:</p>
-      <ul>
-        <li>screening sensitivity to hydrodynamic parameters,</li>
-        <li>comparing equivalent-model families,</li>
-        <li>and building quick what-if scenarios before moving to a more detailed design stage.</li>
-      </ul>
-    </section>
-
-    <section class="section">
-      <h2>11. Units, Persistence, and Reproducibility</h2>
-      <p>From the point of view of engineering reliability, one of the most important implementation choices is the strict separation between:</p>
-      <ul>
-        <li><strong>input/output units</strong>, which may be selected by the user,</li>
-        <li>and <strong>internal calculation units</strong>, which remain SI.</li>
-      </ul>
-      <p>The session system follows the same philosophy:</p>
-      <ul>
-        <li>the app saves explicit state snapshots,</li>
-        <li>domain objects such as <code>RTD</code>, <code>ReactionSys</code>, and <code>Stream</code> are serialized to plain structures,</li>
-        <li>and Tab 5 stores its own workspace state through <code>designWorkspace</code>.</li>
-      </ul>
-      <p>This makes saved sessions more portable and less dependent on MATLAB handle serialization.</p>
-    </section>
-
-    <section class="section">
-      <h2>12. Current Limitations</h2>
-      <ol>
-        <li>The active prediction routes are isothermal and do not solve energy balances.</li>
-        <li>The physical meaning of the answer still depends strongly on the quality of the RTD supplied by the user.</li>
-        <li>Custom kinetics require the user to define <code>r_i</code> consistently with the stoichiometric matrix.</li>
-        <li>The diagnosis flags in Tab 5 are heuristic indicators, not rigorous equipment-fault identifiers.</li>
-        <li>The optimization route is intentionally lightweight and should be treated as a screening tool, not as a final rigorous optimizer.</li>
-        <li>Session load restores the state but does not automatically recompute every tab.</li>
-      </ol>
-    </section>
-
-    <section class="section">
-      <h2>13. File-Level Traceability</h2>
-      <p>The main model responsibilities can be traced to the following files:</p>
-      <ul>
-        <li><code>RTD.m</code>: RTD construction, normalization, moments, and equivalent RTD families</li>
-        <li><code>SegregationModel.m</code>: segregation prediction route</li>
-        <li><code>MaxMixednessModel.m</code>: maximum-mixedness prediction route</li>
-        <li><code>TanksInSeries.m</code>: cascade-of-CSTR equivalent model and ideal references</li>
-        <li><code>DispersionReactor.m</code>: dispersion RTD and reactor response helpers</li>
-        <li><code>ReactionSys.m</code>: stoichiometry and general kinetics definition</li>
-        <li><code>Stream.m</code>: inlet composition container in internal SI units</li>
-        <li><code>DesignWorkspaceHelper.m</code>: backend for Tab 5 fitting, reactive comparison, optimization, and scale-up</li>
-        <li><code>NonIdealReactorApp.m</code>: orchestration of user input, model execution, persistence, and output display</li>
-      </ul>
+    <section class="section" id="troubleshooting">
+      <h2>Troubleshooting Map</h2>
+      <table>
+        <tr>
+          <th>Symptom</th>
+          <th>Where to look first</th>
+          <th>Most likely cause</th>
+        </tr>
+        <tr>
+          <td>No downstream tab can run</td>
+          <td>Tab 1</td>
+          <td>The RTD was not generated, imported, or preserved as expected.</td>
+        </tr>
+        <tr>
+          <td>Prediction/TIS/Dispersion reports missing chemistry</td>
+          <td>Tab 2 or imported source tab</td>
+          <td><code>ReactionSys</code> and/or <code>Stream</code> were not loaded into the selected path.</td>
+        </tr>
+        <tr>
+          <td>Imported experimental data behaves strangely</td>
+          <td>Import appendix</td>
+          <td>Column order, units, or <code>C0</code> interpretation is inconsistent.</td>
+        </tr>
+        <tr>
+          <td>Dispersion open-open refuses to run</td>
+          <td>Tab 4 guide</td>
+          <td>The current kinetics are not supported by the exact open-open route.</td>
+        </tr>
+        <tr>
+          <td>Optimization gives a mathematically better result but not a useful one</td>
+          <td>Optimization guide</td>
+          <td>The target and constraints are screening-level and still depend on the quality of the chosen RTD and chemistry.</td>
+        </tr>
+        <tr>
+          <td>A restored session looks loaded but some plots or summaries are still blank</td>
+          <td>Cross-tab workflow appendix</td>
+          <td>The session restored state, but the current view may still need a fresh <code>Compute</code> to rebuild display-level results.</td>
+        </tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="UserGuide.html">Back to User Guide home</a>
+        <a class="button alt" href="guides/appendix-faq-troubleshooting.html">Open FAQ and troubleshooting</a>
+      </div>
     </section>
   </div>
 </body>

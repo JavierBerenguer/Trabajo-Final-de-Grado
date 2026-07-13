@@ -68,8 +68,7 @@ classdef DispersionReactor < Reactor
             %   solves the steady axial-dispersion BVP with Danckwerts BCs.
             %
             % open-open:
-            %   only available for linear first-order kinetics, where the
-            %   RTD route is exact. Nonlinear kinetics are rejected.
+            %   exact only for linear first-order kinetics.
 
             switch obj.boundaryType
                 case 'closed-closed'
@@ -77,8 +76,8 @@ classdef DispersionReactor < Reactor
 
                 case 'open-open'
                     if ~DispersionReactor.is_supported_open_open_first_order(RS)
-                        error(['Open-open reactive prediction is only available for linear first-order kinetics. ' ...
-                               'For general kinetics use closed-closed.']) ;
+                        error(['Open-open reactive prediction is only exact for linear first-order kinetics. ' ...
+                               'For general kinetics use closed-closed boundary conditions.']) ;
                     end
                     [X, C_out] = obj.compute_conversion_openOpen_firstOrder(RS, C0, tau) ;
 
@@ -173,6 +172,14 @@ classdef DispersionReactor < Reactor
 
     end
 
+    methods (Static)
+
+        function tf = supports_open_open_first_order(RS)
+            tf = DispersionReactor.is_supported_open_open_first_order(RS) ;
+        end
+
+    end
+
     methods (Access = private)
 
         function [X, C_out] = compute_conversion_from_rtd_batch(obj, RS, C0, tau)
@@ -240,7 +247,7 @@ classdef DispersionReactor < Reactor
         function tf = is_supported_open_open_first_order(RS)
             tol = 1e-12 ;
 
-            if isempty(RS) || ~isempty(RS.userDefinedKinetics)
+            if isempty(RS)
                 tf = false ;
                 return
             end
@@ -256,6 +263,15 @@ classdef DispersionReactor < Reactor
                 return
             end
 
+            if isempty(RS.userDefinedKinetics)
+                tf = DispersionReactor.is_structural_first_order_kinetics(RS, tol) ;
+                return
+            end
+
+            tf = DispersionReactor.is_linear_first_order_user_kinetics(RS) ;
+        end
+
+        function tf = is_structural_first_order_kinetics(RS, tol)
             partials = RS.partialOrders ;
             tf = true ;
             for i = 1:size(partials, 1)
@@ -274,6 +290,45 @@ classdef DispersionReactor < Reactor
                     return
                 end
             end
+        end
+
+        function tf = is_linear_first_order_user_kinetics(RS)
+            tol = 1e-9 ;
+            T = 298.15 ;
+            nComp = max(RS.nComponents, 1) ;
+
+            c0 = zeros(1, nComp) ;
+            c1 = linspace(1, nComp, nComp) ;
+            c2 = linspace(0.5, 0.5 * nComp, nComp) ;
+            alpha = 1.7 ;
+
+            try
+                r0 = DispersionReactor.evaluate_rate_vector(RS, c0, T) ;
+                r1 = DispersionReactor.evaluate_rate_vector(RS, c1, T) ;
+                r2 = DispersionReactor.evaluate_rate_vector(RS, c2, T) ;
+                r12 = DispersionReactor.evaluate_rate_vector(RS, c1 + c2, T) ;
+                rAlpha = DispersionReactor.evaluate_rate_vector(RS, alpha * c1, T) ;
+            catch
+                tf = false ;
+                return
+            end
+
+            if any(~isfinite([r0(:); r1(:); r2(:); r12(:); rAlpha(:)]))
+                tf = false ;
+                return
+            end
+
+            scale = max([1; abs(r0(:)); abs(r1(:)); abs(r2(:)); abs(r12(:)); abs(rAlpha(:))]) ;
+            absTol = tol * scale ;
+
+            tf = norm(r0, inf) <= absTol && ...
+                 norm(r12 - (r1 + r2), inf) <= absTol && ...
+                 norm(rAlpha - alpha * r1, inf) <= absTol ;
+        end
+
+        function rates = evaluate_rate_vector(RS, concentration, T)
+            RS_temp = RS.computeRate(concentration, T) ;
+            rates = RS_temp.r_i(:) ;
         end
 
         function X = component_conversion(C0, C_out, idx)

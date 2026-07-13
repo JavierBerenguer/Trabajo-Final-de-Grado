@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix - FAQ and Troubleshooting</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <span>Appendix - FAQ and Troubleshooting</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Appendix</span>
+      <div class="hero-grid">
+        <div>
+          <h1>FAQ and Troubleshooting</h1>
+          <p>This appendix is written from the user's point of view rather than from the tab structure. Start here when the question is "what is going wrong?" rather than "what does this tab do?".</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#foundation">Foundational issues</a></li>
+            <li><a href="#sessions">Session and repaint issues</a></li>
+            <li><a href="#imports">Import issues</a></li>
+            <li><a href="#models">Model-route issues</a></li>
+            <li><a href="#optimization">Optimization issues</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="foundation">
+      <h2>Foundational Issues</h2>
+      <table>
+        <tr>
+          <th>Symptom</th>
+          <th>Most likely cause</th>
+          <th>First thing to do</th>
+        </tr>
+        <tr><td>A downstream tab cannot run at all</td><td>The RTD, <code>ReactionSys</code>, or <code>Stream</code> is still missing or inconsistent.</td><td>Return to the upstream tab and confirm that the foundational object really exists in the current session.</td></tr>
+        <tr><td>A selector is empty or disabled</td><td>The loaded chemistry does not expose a meaningful choice for the current metric.</td><td>Check the species roles and current inlet state first.</td></tr>
+        <tr><td>The names look generic like <code>CA</code>, <code>CB</code>, <code>CC</code></td><td>Explicit component names were not available, so the fallback naming is active.</td><td>Confirm whether that fallback is acceptable or whether the upstream object should be relabeled.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="sessions">
+      <h2>Session and Repaint Issues</h2>
+      <table>
+        <tr>
+          <th>Symptom</th>
+          <th>Interpret it as...</th>
+          <th>What to try</th>
+        </tr>
+        <tr><td>A session loads and the right controls are visible, but a plot stays blank</td><td>The state was restored, but the active view may not have rebuilt its display-level result yet.</td><td>Press <strong>Compute</strong> in that tab.</td></tr>
+        <tr><td>The right RTD source appears selected but results look stale</td><td>The current tab may still be showing an older computed display context.</td><td>Recompute in the current tab and check the selected mode.</td></tr>
+        <tr><td>An equivalent-model tab looks inconsistent with Tab 1</td><td>The tab may be using imported data, a local manual mode, or an older cached result.</td><td>Confirm the active mode and recompute from the intended source.</td></tr>
+      </table>
+      <p>For a fuller explanation of this behavior, see the <a href="appendix-cross-tab-workflow.html">Cross-Tab Workflow appendix</a>.</p>
+    </section>
+    <section class="section" id="imports">
+      <h2>Import Issues</h2>
+      <table>
+        <tr>
+          <th>Symptom</th>
+          <th>Most likely cause</th>
+          <th>First thing to do</th>
+        </tr>
+        <tr><td>The RTD scale looks wrong after import</td><td>The selected time unit does not match the file scale.</td><td>Check the file's real time unit and the tab's selected unit.</td></tr>
+        <tr><td>The imported signal shape looks strange</td><td>Pulse and step logic may have been confused, or the wrong response column was imported.</td><td>Recheck the experiment type and the response column.</td></tr>
+        <tr><td>The importer accepts the file but later tabs behave oddly</td><td>The file was syntactically valid but semantically inconsistent with the intended RTD route.</td><td>Inspect the resulting plots and moments before blaming the reactive model.</td></tr>
+      </table>
+      <p>The detailed import rules live in the <a href="appendix-import-formats.html">Import Formats appendix</a>.</p>
+    </section>
+    <section class="section" id="models">
+      <h2>Model-Route Issues</h2>
+      <table>
+        <tr>
+          <th>Symptom</th>
+          <th>Most likely cause</th>
+          <th>First thing to do</th>
+        </tr>
+        <tr><td>Prediction Models looks physically odd</td><td>The RTD and chemistry may already be inconsistent before any equivalent model is involved.</td><td>Recheck Tab 1 and the loaded chemistry before moving to TIS or Dispersion.</td></tr>
+        <tr><td>Dispersion open-open refuses to run</td><td>The current kinetics are not supported by the exact open-open route.</td><td>Review the boundary assumption and current kinetic compatibility.</td></tr>
+        <tr><td>TIS or Dispersion seems to contradict the direct RTD route</td><td>You may be comparing a surrogate model against the full RTD without acknowledging the compression of information.</td><td>Revisit the <a href="appendix-model-selection.html">Model Selection guide</a>.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="optimization">
+      <h2>Optimization Issues</h2>
+      <table>
+        <tr>
+          <th>Symptom</th>
+          <th>Most likely cause</th>
+          <th>First thing to do</th>
+        </tr>
+        <tr><td>The optimum looks mathematically better but not physically convincing</td><td>The bounds, objective, or fixed RTD basis may not be realistic enough.</td><td>Read the result together with the wide four-model table, not only the objective row.</td></tr>
+        <tr><td>The variable bounds feel inconsistent with the numbers in the solver output</td><td>The display uses inherited input units while the core solver still works in SI.</td><td>Confirm the inherited stream units and revisit the units appendix.</td></tr>
+        <tr><td>Optimization feels premature</td><td>The RTD interpretation or chemistry may still be the dominant uncertainty.</td><td>Go back to Reactive Performance before trusting the optimum.</td></tr>
+      </table>
+      <div class="footer-nav">
+        <a class="button" href="appendix-cross-tab-workflow.html">See cross-tab workflow</a>
+        <a class="button alt" href="appendix-model-selection.html">See model selection guide</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

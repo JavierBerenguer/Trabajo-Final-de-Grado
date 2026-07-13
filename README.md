@@ -1,124 +1,67 @@
-# NonIdealReactorApp - Simulacion de Reactores No Ideales
+# NonIdealReactorApp
 
-Herramienta de MATLAB para analizar reactores no ideales a partir de distribuciones de tiempo de residencia (RTD) y modelos limite de mezcla.
+`NonIdealReactorApp` is a MATLAB application for teaching and studying non-ideal reactors through RTD-based analysis, reactor-performance prediction, equivalent-model interpretation, and design-oriented comparison tools. The current app covers `RTD Analysis`, direct and one-parameter prediction-model routes, and a `Design & Optimization` workspace built on top of the selected RTD, reaction system, and feed stream.
 
-La app actual se ha acotado a **5 tabs**:
+This project extends the original `ReactorApp` line developed at the University of Alicante. The current non-ideal-reactor branch keeps that educational spirit while adding RTD-driven prediction routes, visualization layers, session persistence, and a design workspace for fitting, reactive comparison, and process-side optimization.
 
-1. `RTD Analysis`
-2. `Prediction Models`
-3. `Tanks-in-Series`
-4. `Dispersion Model`
-5. `Design & Optimization`
+## Requirements
 
-## Requisitos
+- MATLAB with support for `uifigure`-based apps
+- A local copy of this project extracted from the distributed ZIP package
 
-- `MATLAB R2020b` o superior
-- `Statistics and Machine Learning Toolbox` opcional
-- `Aspen HYSYS` opcional para integracion via COM
+## Installation and Launch
 
-## Lanzamiento
+There is no installer. Use the project as a normal MATLAB folder:
 
-Desde MATLAB, situate en `ReactorApp toolbox/` y ejecuta:
+1. Download the project ZIP.
+2. Extract it to any local folder.
+3. Open MATLAB.
+4. In MATLAB, either:
+   - set the extracted project folder as the current folder, or
+   - add the extracted folder to the MATLAB path.
+5. Open the `ReactorApp toolbox` folder inside MATLAB if needed.
 
-```matlab
-app = NonIdealReactorApp;
-```
+You can launch the non-ideal app in either of these ways:
 
-Tambien puedes abrir primero la app base de reactores ideales:
+### Direct launch
 
-```matlab
-app = ReactorApp;
-```
-
-## Sesiones
-
-- `File > Guardar` crea un archivo `.mat` de sesion dentro de `saves/`.
-- `File > Cargar` restaura los inputs, objetos `RTD` / `ReactionSys` / `Stream` y las selecciones de visualizacion para continuar trabajando sin reintroducir datos.
-- La carga no recalcula automaticamente; deja la app lista para pulsar `Compute`.
-
-## Alcance funcional
-
-### Tab 1 - RTD Analysis
-
-- Generacion o importacion de `E(t)`, `F(t)` y `E(theta)`.
-- Fuentes: modelos ideales, Tanks-in-Series, dispersion, datos experimentales, `C(t)` y tabla manual.
-- Resultados: `tau_m`, `sigma^2`, `sigma_theta^2`, `s^3`, `N_est` y `V_eff`.
-
-### Tab 2 - Prediction Models
-
-- Prediccion de conversion con `SegregationModel` y `MaxMixednessModel`.
-- Uso de `ReactionSys` definido desde la UI o cargado desde workspace.
-- `Display units` en este tab se centra en concentracion y seleccion de especies/reactivos; no incluye `Time base`.
-- Comparacion de conversion por reactivo con orden fijo `CSTR`, `Segregation`, `Max Mixedness` y `PFR`.
-- Comparacion de concentracion de salida para todas las especies, con multiseleccion independiente de reactivos y especies.
-- Leyenda compartida entre ambas graficas para los cuatro modelos comparados.
-- Resumen compacto `Non-Ideal Mixing Effect (%)` con la perdida relativa de conversion frente a `PFR`.
-
-### Tab 3 - Tanks-in-Series
-
-- Modelo de `N` CSTR iguales en serie.
-- `N` manual o estimado desde la RTD de la Tab 1.
-- Comparacion de conversion con referencias `CSTR` y `PFR`.
-
-### Tab 4 - Dispersion Model
-
-- Modelo de dispersion axial parametrizado con `Bo = 1/Pe`.
-- En modo manual, la UI de Tab 4 pide `Pe` directamente y deja `Bo` solo como valor derivado.
-- Soporte para contornos `open-open` y `closed-closed`.
-- En reactivo general, `closed-closed` resuelve el BVP axial con Danckwerts; `open-open` queda limitado a casos lineales de 1er orden.
-- `Display units` reorganizado como en `Tanks-in-Series`: `Time base` solo para `E(t)`, `Concentration` para concentraciones y listas multiseleccion para `Species` y `Reactants`.
-- Graficas superiores `Outlet Concentration vs Pe` y `Conversion vs Pe`, ambas filtrables por multiseleccion.
-- Tabla `Exit Summary` con `C_in`, `Disp C_out`, referencias `CSTR`/`PFR` y conversion por reactivo.
-- `E(t)` se mantiene en la parte inferior derecha con anotacion de `Bo`, `Pe` y `tau`; para `open-open` tambien se distingue `tau_space`.
-
-### Tab 5 - Design & Optimization
-
-- Workspace abierto para trabajo no ideal en tres subareas:
-  - `Diagnosis & Fit`
-  - `Reactive Performance`
-  - `Optimization`
-- La caracterizacion RTD se hace en `Tab 1 - RTD Analysis`; Tab 5 ya no duplica esa etapa.
-- `Diagnosis & Fit` ajusta `Tanks-in-Series`, `Axial Dispersion`, `CSTR + Dead Volume`, `CSTR + Bypass` y `CSTR + Dead Volume + Bypass` a partir de la RTD de Tab 1.
-- `Reactive Performance` compara `Ideal CSTR`, `Segregation`, `Max Mixedness` e `Ideal PFR`, e incluye deteccion directa de 1er orden cuando aplica.
-- `Optimization` ha sido rehecha desde cero como optimizacion de proceso con RTD fija: usa `Tab 1 RTD` o `Fitted RTD`, selectores propios de especies, optimiza solo `C_in,i`, aplica restricciones sobre metricas reactivas y muestra una comparativa base-vs-optimo sobre `Ideal CSTR`, `Segregation`, `Max Mixedness` e `Ideal PFR`.
-- La persistencia de sesion ya incluye snapshot propio `designWorkspace`.
-
-## Unidades
-
-La app convierte entradas a SI internamente y permite seleccionar unidades de visualizacion por tab.
+Run:
 
 ```matlab
-UnitConverterHelper.launch()
+NonIdealReactorApp
 ```
 
-## Estructura principal
+### Launch through the original main window
 
-```text
-ReactorApp toolbox/
-  NonIdealReactorApp.m
-  DesignWorkspaceHelper.m
-  RTD.m
-  SegregationModel.m
-  MaxMixednessModel.m
-  TanksInSeries.m
-  DispersionReactor.m
-  ReactionSys.m
-  UnitConverterHelper.m
-  InputLayerHelper.m
-  defineReactionSysApp.m
-  docs/
+Run:
+
+```matlab
+ReactorApp
 ```
 
-## Validacion
+Then open the non-ideal branch from the main window by selecting the corresponding non-ideal reactor option.
 
-La validacion reciente del bloque no ideal se apoya en:
+## Academic Origin and Acknowledgment
 
-- problemas de referencia revisados manualmente
-- smoke tests ejecutados via `matlab -batch`
-- documentacion tecnica en `Documentation/`
+This work is rooted in the original `ReactorApp` created by **Isabela Fons** at the **University of Alicante**. The original project should be cited through:
 
-## Autor
+- Journal article: https://www.sciencedirect.com/science/article/pii/S1749772826000096?ref=pdf_download&fr=RR-2&rr=a1a6adaa1fb8c112
+- University of Alicante repository (TFG): https://hdl.handle.net/10045/107785
+- MathWorks File Exchange project: https://es.mathworks.com/matlabcentral/fileexchange/76917-reactorapp-toolbox?s_tid=prof_contriblnk
 
-Javier Berenguer Sabater  
-TFG - Ingenieria Quimica  
-Marzo 2026
+## Current NonIdealReactorApp Author
+
+The current `NonIdealReactorApp` branch and its non-ideal-reactor extensions are authored and maintained by the present project author.
+
+Links to complete here when provided:
+
+- GitHub repository: `[pending link from current NonIdealReactorApp author]`
+- MathWorks project page: `[pending link from current NonIdealReactorApp author]`
+- University of Alicante TFG repository entry: `[pending link from current NonIdealReactorApp author]`
+
+## Documentation
+
+This folder belongs to the technical documentation branch. For user-facing help inside the app, use:
+
+- `Help > User Guide`
+- `Help > Technical Guide`

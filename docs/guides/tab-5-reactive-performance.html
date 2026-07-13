@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab 5 - Reactive Performance</title>
+  <link rel="stylesheet" href="../assets/guide.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">Non-Ideal Reactor Analysis Documentation</div>
+      <nav class="topnav">
+        <a href="../UserGuide.html">User Guide Home</a>
+        <a href="../TechnicalChapter.html">Complete Manual</a>
+        <a href="tab-5-design-optimization.html">Tab 5 overview</a>
+      </nav>
+    </div>
+    <div class="crumbs">
+      <a href="../UserGuide.html">User Guide</a> / <a href="tab-5-design-optimization.html">Tab 5</a> / <span>Reactive Performance</span>
+    </div>
+    <section class="hero">
+      <span class="kicker">Four-Model Comparison</span>
+      <div class="hero-grid">
+        <div>
+          <h1>Reactive Performance</h1>
+          <p>This subtab compares <strong>Ideal CSTR</strong>, <strong>Segregation</strong>, <strong>Maximum Mixedness</strong>, and <strong>Ideal PFR</strong> using one selected RTD source and one shared chemistry definition.</p>
+        </div>
+        <aside class="toc">
+          <h2>On This Page</h2>
+          <ol>
+            <li><a href="#configure">What you configure</a></li>
+            <li><a href="#use">How to use it well</a></li>
+            <li><a href="#controls">Main controls</a></li>
+            <li><a href="#results">Why it is useful</a></li>
+            <li><a href="#mistakes">Typical mistakes</a></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+    <section class="section" id="configure">
+      <h2>What You Configure Here</h2>
+      <figure class="figure-card">
+        <img src="../assets/tab5_reactive_computed.png" alt="Reactive Performance subtab with computed four-model comparison">
+        <figcaption>Representative computed reactive comparison. This subtab is often the best checkpoint before moving to optimization because it shows the four reactor viewpoints side by side.</figcaption>
+      </figure>
+      <ul>
+        <li>The RTD source: <strong>Tab 1 RTD</strong> or <strong>Fitted RTD</strong>.</li>
+        <li>The chemistry objects: <code>ReactionSys</code> and <code>Stream</code>.</li>
+        <li>The key reactant and product selectors used to report conversion, selectivity, yield, and outlet concentration.</li>
+      </ul>
+    </section>
+    <section class="section" id="use">
+      <h2>How to Use It Well</h2>
+      <ol>
+        <li>Load the chemistry carefully and verify that species names and roles make sense.</li>
+        <li>Choose the RTD source explicitly instead of assuming the fitted RTD is automatically better.</li>
+        <li>Use this subtab to verify which model differences are large enough to matter before moving to Optimization.</li>
+      </ol>
+      <div class="callout success">
+        <strong>Recommended habit:</strong> if you intend to optimize later, use this subtab first to confirm that the selected RTD source, reaction mode, and metric already tell a coherent engineering story.
+      </div>
+    </section>
+    <section class="section" id="controls">
+      <h2>What Each Main Control Means</h2>
+      <table>
+        <tr>
+          <th>Control</th>
+          <th>Use it for</th>
+        </tr>
+        <tr><td>RTD source</td><td>Compare chemistry either on the original RTD or on the equivalent fitted RTD from Diagnosis &amp; Fit.</td></tr>
+        <tr><td>ReactionSys var / Feed Stream var</td><td>Identify which workspace objects are loaded into the subtab.</td></tr>
+        <tr><td>Key reactant</td><td>Defines which species is used for the reported conversion and as the denominator reference for some metrics.</td></tr>
+        <tr><td>Desired product</td><td>Defines which species is used to report selectivity and yield.</td></tr>
+        <tr><td>Byproduct</td><td>Provides the complementary product selector for outlet-concentration tracking.</td></tr>
+        <tr><td>Chart metric</td><td>Changes only the plotted comparison metric, not the underlying computed solution set.</td></tr>
+      </table>
+    </section>
+    <section class="section" id="results">
+      <h2>Why This Subtab Is Useful</h2>
+      <ul>
+        <li>It gathers the four core model viewpoints into one place.</li>
+        <li>It is a good check before moving to Optimization.</li>
+        <li>It can reveal whether a fitted RTD changes the engineering conclusion relative to the original RTD.</li>
+      </ul>
+      <table>
+        <tr>
+          <th>Result block</th>
+          <th>What it tells you</th>
+        </tr>
+        <tr><td>Metric table</td><td>How conversion, selectivity, and yield compare across Ideal CSTR, Segregation, Maximum Mixedness, and Ideal PFR.</td></tr>
+        <tr><td>Concentration table</td><td>How all species leave the reactor in each model.</td></tr>
+        <tr><td>Chart</td><td>A quick visual comparison for the currently selected chart metric.</td></tr>
+      </table>
+      <p>If you are unsure how much weight to give a difference between two models, use the <a href="appendix-results-interpretation.html">Results Interpretation appendix</a> before treating a small numerical gap as an important design conclusion.</p>
+    </section>
+    <section class="section" id="mistakes">
+      <h2>Typical Mistakes</h2>
+      <ul>
+        <li>Using the wrong key reactant for the metric you care about.</li>
+        <li>Assuming that the fitted RTD should always be preferred over the original RTD without comparing both.</li>
+        <li>Reading small numeric differences between Segregation and Maximum Mixedness as automatically important without checking engineering scale.</li>
+      </ul>
+      <div class="footer-nav">
+        <a class="button" href="tab-5-optimization.html">Next: Optimization</a>
+        <a class="button alt" href="appendix-results-interpretation.html">See results appendix</a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
