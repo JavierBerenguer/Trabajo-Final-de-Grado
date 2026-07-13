@@ -45,18 +45,16 @@ Then open the non-ideal branch from the main window by selecting the correspondi
 
 This work is rooted in the original `ReactorApp` created by **Isabela Fons** at the **University of Alicante**. The original project should be cited through:
 
-- Journal article: https://www.sciencedirect.com/science/article/pii/S1749772826000096?ref=pdf_download&fr=RR-2&rr=a1a6adaa1fb8c112
-- University of Alicante repository (TFG): https://hdl.handle.net/10045/107785
-- MathWorks File Exchange project: https://es.mathworks.com/matlabcentral/fileexchange/76917-reactorapp-toolbox?s_tid=prof_contriblnk
+- [Journal article](https://www.sciencedirect.com/science/article/pii/S1749772826000096?ref=pdf_download&fr=RR-2&rr=a1a6adaa1fb8c112)
+- [University of Alicante repository (TFG)](https://hdl.handle.net/10045/107785)
+- MathWorks File Exchange project  [![View ReactorApp-toolbox on File Exchange](https://es.mathworks.com/matlabcentral/fileexchange/76917-reactorapp-toolbox?s_tid=prof_contriblnk)
 
 ## Current NonIdealReactorApp Author
 
 The current `NonIdealReactorApp` branch and its non-ideal-reactor extensions are authored and maintained by the present project author.
 
-Links to complete here when provided:
-
 - [GitHub repository](https://github.com/JavierBerenguer/Trabajo-Final-de-Grado.git)
-- MathWorks project page [![View Trabajo-Final-de-Grado on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://es.mathworks.com/matlabcentral/fileexchange/184241-trabajo-final-de-grado)
+- MathWorks project page  [![View Trabajo-Final-de-Grado on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://es.mathworks.com/matlabcentral/fileexchange/184241-trabajo-final-de-grado)
 - University of Alicante TFG repository entry: `[pending link from current NonIdealReactorApp author]`
 
 ## Documentation
